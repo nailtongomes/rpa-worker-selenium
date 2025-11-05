@@ -2,6 +2,12 @@
 
 A production-ready Docker image for running dynamic Python scripts with Selenium automation. This image uses a multi-stage build and comes pre-configured with Chrome, ChromeDriver, and comprehensive dependencies for web automation and RPA tasks.
 
+> **Note**: This repository provides two Dockerfile versions:
+> - `Dockerfile` (default) - Uses Chromium from Debian repos, easier to build
+> - `Dockerfile.chrome` - Uses Google Chrome with matched ChromeDriver for production
+> 
+> See [DOCKERFILE_VERSIONS.md](DOCKERFILE_VERSIONS.md) for details on which to use.
+
 ## Features
 
 - 🐍 Python 3.11 on Debian Bookworm

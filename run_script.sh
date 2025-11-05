@@ -19,6 +19,8 @@ python "$SCRIPT_PATH"
 EXIT_CODE=$?
 
 # Clean up Xvfb
-kill $XVFB_PID 2>/dev/null
+if [ -n "$XVFB_PID" ]; then
+    kill $XVFB_PID 2>/dev/null
+fi
 
 exit $EXIT_CODE
