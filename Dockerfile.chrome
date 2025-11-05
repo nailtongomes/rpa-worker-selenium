@@ -1,5 +1,21 @@
-# rpa-worker-selenium Dockerfile (Chromium fallback version)
-# Use this version if you cannot access Google Chrome downloads
+# rpa-worker-selenium Dockerfile
+# Multi-stage build for optimized image size
+FROM python:3.11-slim-bookworm AS builder
+
+ARG CHROME_VERSION=142.0.7444.59
+ENV DEBIAN_FRONTEND=noninteractive
+
+# Install build dependencies
+RUN apt-get update && apt-get install -y --no-install-recommends curl unzip ca-certificates \
+ && rm -rf /var/lib/apt/lists/*
+
+WORKDIR /downloads
+# Download Chrome and ChromeDriver
+RUN curl --retry 5 --retry-delay 10 -Lo "chrome.deb" "https://dl.google.com/linux/direct/google-chrome-stable_current_amd64.deb" \
+ && curl -fsSL "https://storage.googleapis.com/chrome-for-testing-public/${CHROME_VERSION}/linux64/chromedriver-linux64.zip" -o chromedriver.zip \
+ && unzip chromedriver.zip
+
+# ---------- STAGE 2: runtime
 FROM python:3.11-slim-bookworm
 
 ENV DEBIAN_FRONTEND=noninteractive \
@@ -14,8 +30,6 @@ ENV DEBIAN_FRONTEND=noninteractive \
 # Install runtime dependencies for browsers and automation
 RUN apt-get update \
     && apt-get install -y --no-install-recommends \
-    chromium \
-    chromium-driver \
     xvfb \
     x11vnc \
     x11-utils \
@@ -46,9 +60,15 @@ RUN apt-get update \
     && apt-get install -y --fix-missing zip \
     && rm -rf /var/lib/apt/lists/*
 
-# Create symbolic links for compatibility with scripts expecting google-chrome
-RUN ln -sf /usr/bin/chromium /usr/bin/google-chrome \
-    && ln -sf /usr/bin/chromedriver /usr/local/bin/chromedriver
+# Copy Chrome and ChromeDriver from builder stage
+COPY --from=builder /downloads/chrome.deb /tmp/
+COPY --from=builder /downloads/chromedriver-linux64/chromedriver /usr/local/bin
+
+# Install Chrome
+RUN apt-get update \
+    && apt-get install -y --no-install-recommends /tmp/chrome.deb \
+    && rm -rf /var/lib/apt/lists/* /tmp/chrome.deb \
+    && chmod +x /usr/local/bin/chromedriver
 
 # Create non-root user
 RUN useradd -m -d /app -u 1000 rpauser \
@@ -84,3 +104,4 @@ ENTRYPOINT ["python"]
 
 # Default command (can be overridden)
 CMD ["--version"]
+

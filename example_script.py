@@ -11,18 +11,29 @@ from selenium.webdriver.common.by import By
 from selenium.webdriver.support.ui import WebDriverWait
 from selenium.webdriver.support import expected_conditions as EC
 import sys
+import os
 
 
 def create_driver():
     """Create and configure a Chrome WebDriver instance."""
     chrome_options = Options()
-    chrome_options.add_argument('--headless')
+    
+    # Headless mode configuration
+    chrome_options.add_argument('--headless=new')
     chrome_options.add_argument('--no-sandbox')
     chrome_options.add_argument('--disable-dev-shm-usage')
     chrome_options.add_argument('--disable-gpu')
-    chrome_options.add_argument('--window-size=1920,1080')
+    chrome_options.add_argument(f'--window-size={os.environ.get("SCREEN_WIDTH", "1366")},{os.environ.get("SCREEN_HEIGHT", "768")}')
     
-    driver = webdriver.Chrome(options=chrome_options)
+    # Additional stability options
+    chrome_options.add_argument('--disable-blink-features=AutomationControlled')
+    chrome_options.add_argument('--disable-extensions')
+    chrome_options.add_argument('--disable-infobars')
+    
+    # Create service with explicit chromedriver path
+    service = Service('/usr/local/bin/chromedriver')
+    
+    driver = webdriver.Chrome(service=service, options=chrome_options)
     return driver
 
 
@@ -52,6 +63,8 @@ def example_automation():
         
     except Exception as e:
         print(f"✗ Error during automation: {e}")
+        import traceback
+        traceback.print_exc()
         return False
         
     finally:

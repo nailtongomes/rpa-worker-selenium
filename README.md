@@ -1,15 +1,18 @@
 # rpa-worker-selenium
 
-A Docker image for running dynamic Python scripts with Selenium automation. This image comes pre-configured with Chrome, ChromeDriver, and all necessary dependencies for web automation tasks.
+A production-ready Docker image for running dynamic Python scripts with Selenium automation. This image uses a multi-stage build and comes pre-configured with Chrome, ChromeDriver, and comprehensive dependencies for web automation and RPA tasks.
 
 ## Features
 
-- 🐍 Python 3.11
-- 🌐 Selenium WebDriver
-- 🚀 Google Chrome (headless mode supported)
-- 📦 ChromeDriver (automatically matched to Chrome version)
+- 🐍 Python 3.11 on Debian Bookworm
+- 🌐 Selenium WebDriver & SeleniumBase
+- 🚀 Google Chrome (specific version: 142.0.7444.59)
+- 📦 ChromeDriver (matched to Chrome version from Chrome for Testing)
+- 🖥️ Xvfb (virtual display), VNC support, and OpenBox window manager
 - 🔧 Pre-configured for RPA and automation tasks
-- 📊 Additional packages: requests, beautifulsoup4, pandas, openpyxl, and more
+- 📊 Comprehensive packages: requests, beautifulsoup4, pandas, openpyxl, PyAutoGUI, and more
+- 🔒 Non-root user setup for security
+- 🎯 Multi-stage build for optimized image size
 
 ## Quick Start
 
@@ -45,10 +48,11 @@ docker run --rm -v $(pwd)/my_script.py:/app/scripts/my_script.py rpa-worker-sele
 docker run --rm rpa-worker-selenium your_script.py
 ```
 
-#### Option 3: Use the helper script
+#### Option 3: Use docker-compose
 
 ```bash
-docker run --rm -v $(pwd)/my_script.py:/app/scripts/my_script.py rpa-worker-selenium bash run_script.sh /app/scripts/my_script.py
+# Edit docker-compose.yml to specify your script
+docker-compose up
 ```
 
 ## Writing Selenium Scripts
@@ -58,15 +62,19 @@ Here's a minimal example of a Selenium script:
 ```python
 from selenium import webdriver
 from selenium.webdriver.chrome.options import Options
+from selenium.webdriver.chrome.service import Service
 
 # Configure Chrome options
 chrome_options = Options()
-chrome_options.add_argument('--headless')
+chrome_options.add_argument('--headless=new')
 chrome_options.add_argument('--no-sandbox')
 chrome_options.add_argument('--disable-dev-shm-usage')
 
+# Create service with explicit chromedriver path
+service = Service('/usr/local/bin/chromedriver')
+
 # Create driver
-driver = webdriver.Chrome(options=chrome_options)
+driver = webdriver.Chrome(service=service, options=chrome_options)
 
 # Your automation code
 driver.get("https://example.com")
@@ -78,6 +86,18 @@ driver.quit()
 
 ## Advanced Usage
 
+### Using SeleniumBase
+
+```python
+from seleniumbase import Driver
+
+# Create driver with undetected-chromedriver mode
+driver = Driver(uc=True, headless=True)
+driver.get("https://example.com")
+print(driver.title)
+driver.quit()
+```
+
 ### Interactive Python Shell
 
 ```bash
@@ -87,24 +107,76 @@ docker run --rm -it rpa-worker-selenium
 ### Run with Environment Variables
 
 ```bash
-docker run --rm -e MY_VAR=value rpa-worker-selenium my_script.py
+docker run --rm \
+  -e SCREEN_WIDTH=1920 \
+  -e SCREEN_HEIGHT=1080 \
+  -e USE_XVFB=1 \
+  rpa-worker-selenium my_script.py
 ```
 
 ### Access Container Shell
 
 ```bash
-docker run --rm -it rpa-worker-selenium bash
+docker run --rm -it --entrypoint bash rpa-worker-selenium
 ```
+
+### Run as Root (if needed)
+
+```bash
+docker run --rm -it --user root rpa-worker-selenium bash
+```
+
+## Environment Variables
+
+| Variable | Default | Description |
+|----------|---------|-------------|
+| `SCREEN_WIDTH` | 1366 | Virtual display width |
+| `SCREEN_HEIGHT` | 768 | Virtual display height |
+| `USE_XVFB` | 0 | Enable Xvfb virtual display |
+| `USE_OPENBOX` | 0 | Enable OpenBox window manager |
+| `USE_VNC` | 0 | Enable VNC server |
+| `VNC_PORT` | 5900 | VNC server port |
+| `DISPLAY` | :99 | X11 display number |
 
 ## Installed Python Packages
 
-- selenium >= 4.15.0
-- requests >= 2.31.0
-- beautifulsoup4 >= 4.12.0
-- lxml >= 4.9.0
-- pandas >= 2.1.0
-- openpyxl >= 3.1.0
+### Core Automation
+- selenium >= 4.25.0
+- seleniumbase
+- pyvirtualdisplay
+
+### Web Scraping
+- beautifulsoup4 == 4.13.3
+- lxml == 5.3.0
+- requests == 2.32.3
+
+### Data Processing
+- pandas == 2.2.3
+- openpyxl == 3.1.5
+- PyPDF2 == 3.0.1
+
+### Image Processing & GUI Automation
+- opencv-python == 4.10.0.84
 - pillow >= 10.1.0
+- PyAutoGUI
+- pyperclip == 1.9.0
+
+### Utilities
+- filelock == 3.18.0
+- psutil == 6.1.0
+- pytz == 2024.2
+- tinydb == 4.8.2
+- PyJWT == 2.10.1
+- pyotp == 2.9.0
+
+## Architecture
+
+This image uses a **multi-stage build**:
+
+1. **Builder stage**: Downloads Chrome and ChromeDriver
+2. **Runtime stage**: Installs system dependencies and Python packages
+
+This approach minimizes the final image size while ensuring all necessary components are included.
 
 ## Customization
 
@@ -113,35 +185,68 @@ docker run --rm -it rpa-worker-selenium bash
 Edit `requirements.txt` and rebuild the image:
 
 ```bash
-echo "your-package>=1.0.0" >> requirements.txt
+echo "your-package==1.0.0" >> requirements.txt
 docker build -t rpa-worker-selenium .
 ```
 
-### Changing Python Version
+### Changing Chrome Version
 
-Edit the first line of `Dockerfile`:
+Edit the `CHROME_VERSION` ARG in the Dockerfile:
 
 ```dockerfile
-FROM python:3.12-slim  # or any other version
+ARG CHROME_VERSION=142.0.7444.59  # Change to your desired version
+```
+
+### Using a Different Python Version
+
+Edit the first line of the Dockerfile:
+
+```dockerfile
+FROM python:3.12-slim-bookworm  # or any other version
 ```
 
 ## Troubleshooting
 
 ### Chrome/ChromeDriver Version Mismatch
 
-The Dockerfile automatically installs the correct ChromeDriver version for the installed Chrome. If you encounter issues, rebuild the image:
+The Dockerfile uses a specific Chrome version matched with its corresponding ChromeDriver from Chrome for Testing. If you need a different version, update the `CHROME_VERSION` ARG and rebuild:
 
 ```bash
-docker build --no-cache -t rpa-worker-selenium .
+docker build --build-arg CHROME_VERSION=142.0.7444.59 -t rpa-worker-selenium .
 ```
 
 ### Memory Issues
 
-If you encounter memory issues, increase Docker's memory limit or add this to your Chrome options:
+If you encounter memory issues, increase Docker's memory limit or ensure these options are in your Chrome configuration:
 
 ```python
 chrome_options.add_argument('--disable-dev-shm-usage')
+chrome_options.add_argument('--no-sandbox')
 ```
+
+### Permission Issues
+
+The container runs as a non-root user (`rpauser` with UID 1000). If you need root access:
+
+```bash
+docker run --rm -it --user root rpa-worker-selenium bash
+```
+
+### SSL Certificate Issues
+
+If you encounter SSL certificate issues, the image includes proper CA certificates. You may need to update them:
+
+```bash
+docker run --rm --user root rpa-worker-selenium apt-get update && apt-get install -y ca-certificates
+```
+
+## Security Features
+
+- ✅ Non-root user (`rpauser`) by default
+- ✅ Minimal base image (slim-bookworm)
+- ✅ Multi-stage build reduces attack surface
+- ✅ No unnecessary packages in runtime image
+- ✅ Proper file permissions and ownership
 
 ## License
 
@@ -150,3 +255,7 @@ MIT License - see LICENSE file for details
 ## Contributing
 
 Contributions are welcome! Please feel free to submit a Pull Request.
+
+## Support
+
+For issues and questions, please open an issue on the GitHub repository.
