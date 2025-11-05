@@ -1,0 +1,17 @@
+version: '3.8'
+
+services:
+  rpa-worker:
+    build: .
+    image: rpa-worker-selenium:latest
+    container_name: rpa-worker-selenium
+    volumes:
+      # Mount your scripts directory
+      - ./scripts:/app/scripts
+    environment:
+      # Add any environment variables here
+      - PYTHONUNBUFFERED=1
+    # Override the entrypoint to run a specific script
+    # command: example_script.py
+    # Or to get a shell
+    # command: bash
