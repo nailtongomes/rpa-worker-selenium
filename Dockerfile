@@ -56,7 +56,7 @@ RUN useradd -m -d /app -u 1000 rpauser \
 
 # Set up working directory structure
 WORKDIR /app
-RUN mkdir -p /app/scripts /app/logs /app/tmp \
+RUN mkdir -p /app/src /app/logs /app/tmp \
     /app/.pki/nssdb \
     && chmod 1777 /app/tmp \
     && chmod 700 /app/.pki/nssdb \

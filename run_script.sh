@@ -4,7 +4,7 @@
 
 if [ -z "$1" ]; then
     echo "Usage: $0 <script_path>"
-    echo "Example: $0 /app/scripts/my_script.py"
+    echo "Example: $0 /app/src/my_script.py"
     exit 1
 fi
 

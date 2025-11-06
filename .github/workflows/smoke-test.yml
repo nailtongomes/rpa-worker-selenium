@@ -68,8 +68,23 @@ jobs:
     - name: Run test suite
       run: python test_features.py
     
+    - name: Test helper scripts
+      run: |
+        # Test helper scripts individually
+        python src/helper1.py
+        python src/helper2.py
+        python src/default_script.py
+    
     - name: Create data directory
       run: mkdir -p data
+    
+    - name: Test helper scripts integration
+      env:
+        TEST_HELPERS: "1"
+        TARGET_URL: https://example.com
+        CACHE_DIR: ./data
+        PYTHONPATH: ./src
+      run: python smoke_test.py
     
     - name: Run smoke test
       env:

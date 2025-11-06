@@ -6,6 +6,7 @@ Minimal viable test with SeleniumBase and fallback to requests.
 Environment Variables:
 - TARGET_URL: URL to test (default: https://www.n3wizards.com/index/)
 - CACHE_DIR: Directory to save screenshots/HTML (default: /data)
+- TEST_HELPERS: Test helper scripts functionality (default: 0)
 """
 
 import os
@@ -20,6 +21,7 @@ import re
 TARGET_URL = os.getenv("TARGET_URL", "https://www.n3wizards.com/index/")
 CACHE_DIR = pathlib.Path(os.getenv("CACHE_DIR", "/data"))
 CACHE_DIR.mkdir(parents=True, exist_ok=True)
+TEST_HELPERS = os.getenv("TEST_HELPERS", "0") == "1"
 
 
 def extract_title_from_html(html_content):
@@ -45,11 +47,76 @@ def extract_title_from_html(html_content):
     return "Desconhecido"
 
 
+def test_helper_scripts():
+    """
+    Test helper scripts functionality if they exist.
+    
+    This function tests helper scripts when TEST_HELPERS environment variable is set.
+    If TEST_HELPERS is not set, the test is skipped (returns True).
+    If TEST_HELPERS is set but helpers can't be imported, it fails (returns False).
+    This is intentional - when explicitly testing helpers, their absence is a failure.
+    
+    Returns:
+        bool: True if test passed or skipped, False if failed
+    """
+    if not TEST_HELPERS:
+        print("[smoke] Skipping helper scripts test (TEST_HELPERS not set)")
+        return True
+    
+    print("[smoke] Testing helper scripts functionality...")
+    
+    # Add /app/src to path if it exists
+    src_dir = pathlib.Path("/app/src")
+    if src_dir.exists() and str(src_dir) not in sys.path:
+        sys.path.insert(0, str(src_dir))
+    
+    try:
+        # Try to import helper1
+        import helper1
+        print("[smoke] ✓ Successfully imported helper1")
+        
+        # Test helper1 functions
+        test_url = TARGET_URL
+        is_valid = helper1.validate_url(test_url)
+        normalized = helper1.normalize_url(test_url)
+        print(f"[smoke] ✓ helper1.validate_url('{test_url}') = {is_valid}")
+        print(f"[smoke] ✓ helper1.normalize_url('{test_url}') = '{normalized}'")
+        
+        # Try to import helper2
+        import helper2
+        print("[smoke] ✓ Successfully imported helper2")
+        
+        # Test helper2 functions
+        domain = helper2.extract_domain(test_url)
+        print(f"[smoke] ✓ helper2.extract_domain('{test_url}') = '{domain}'")
+        
+        test_text = "  Example   Test  "
+        clean = helper2.clean_text(test_text)
+        print(f"[smoke] ✓ helper2.clean_text('{test_text}') = '{clean}'")
+        
+        print("[smoke] ✓ All helper scripts tests passed")
+        return True
+        
+    except ImportError as e:
+        print(f"[smoke] ✗ Failed to import helper scripts: {e}")
+        return False
+    except Exception as e:
+        print(f"[smoke] ✗ Error testing helper scripts: {e}")
+        import traceback
+        traceback.print_exc()
+        return False
+
+
 def main():
     """
     Main function to run smoke test.
     Tries SeleniumBase first, falls back to requests if unavailable.
     """
+    # Test helper scripts first if requested
+    if TEST_HELPERS and not test_helper_scripts():
+        print("[smoke] Helper scripts test failed")
+        return 1
+    
     # Check if seleniumbase is available
     seleniumbase_available = importlib.util.find_spec("seleniumbase") is not None
     

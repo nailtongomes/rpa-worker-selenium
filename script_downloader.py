@@ -6,7 +6,7 @@ Downloads Python scripts from URLs specified via environment variables.
 Environment Variables:
 - SCRIPT_URL: URL of the main script to download and execute (required)
 - HELPER_URLS: Comma-separated list of helper script URLs to download (optional)
-- SCRIPTS_DIR: Directory to save helper scripts (default: /app/scripts)
+- SCRIPTS_DIR: Directory to save helper scripts (default: /app/src)
 """
 
 import os
@@ -101,7 +101,7 @@ def download_main_script(script_url, temp_dir="/tmp"):
     return None
 
 
-def download_helper_scripts(helper_urls, scripts_dir="/app/scripts"):
+def download_helper_scripts(helper_urls, scripts_dir="/app/src"):
     """
     Download helper scripts to the scripts directory.
     
@@ -154,7 +154,7 @@ def main():
     # Get environment variables
     script_url = os.getenv("SCRIPT_URL")
     helper_urls = os.getenv("HELPER_URLS")
-    scripts_dir = os.getenv("SCRIPTS_DIR", "/app/scripts")
+    scripts_dir = os.getenv("SCRIPTS_DIR", "/app/src")
     
     print("[downloader] Script Downloader starting...")
     print(f"[downloader] SCRIPT_URL: {script_url or 'Not set'}")
