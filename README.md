@@ -161,7 +161,7 @@ Helper scripts are downloaded to `/app/scripts/` and can be imported by the main
 A smoke test is included to verify the setup:
 
 ```bash
-# Using default URL (https://www.n3wizards.com/index/)
+# Using default URL ([https://example.com/](https://example.com/))
 docker run --rm -v $(pwd)/data:/data rpa-worker-selenium python /app/smoke_test.py
 
 # Using custom URL
@@ -180,7 +180,7 @@ The smoke test tries SeleniumBase first and falls back to requests if unavailabl
 | `SCRIPT_URL` | - | URL of the main Python script to download and execute |
 | `HELPER_URLS` | - | Comma-separated list of helper script URLs to download |
 | `SCRIPTS_DIR` | /app/scripts | Directory to save helper scripts |
-| `TARGET_URL` | https://www.n3wizards.com/index/ | URL for smoke test |
+| `TARGET_URL` | https://example.com/ | URL for smoke test |
 | `CACHE_DIR` | /data | Directory for smoke test outputs |
 | `SCREEN_WIDTH` | 1366 | Virtual display width |
 | `SCREEN_HEIGHT` | 768 | Virtual display height |
