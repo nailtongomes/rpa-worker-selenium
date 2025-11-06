@@ -99,3 +99,55 @@ jobs:
         name: smoke-test-results
         path: data/
         retention-days: 7
+
+  docker-smoke-test:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - dockerfile: Dockerfile
+            name: chromium
+            tag: rpa-worker-selenium:chromium
+          - dockerfile: Dockerfile.chrome
+            name: chrome
+            tag: rpa-worker-selenium:chrome
+          - dockerfile: Dockerfile.firefox
+            name: firefox
+            tag: rpa-worker-selenium:firefox
+          - dockerfile: Dockerfile.brave
+            name: brave
+            tag: rpa-worker-selenium:brave
+    
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+    
+    - name: Set up Docker Buildx
+      uses: docker/setup-buildx-action@v3
+    
+    - name: Build Docker image
+      run: |
+        docker build -f ${{ matrix.dockerfile }} -t ${{ matrix.tag }} .
+    
+    - name: Create data directory
+      run: mkdir -p data
+    
+    - name: Run smoke test in container
+      run: |
+        docker run --rm \
+          -e TARGET_URL=https://example.com \
+          -e CACHE_DIR=/data \
+          -v $(pwd)/data:/data \
+          ${{ matrix.tag }} \
+          python /app/smoke_test.py
+    
+    - name: Upload Docker smoke test artifacts
+      if: always()
+      uses: actions/upload-artifact@v4
+      with:
+        name: docker-smoke-test-${{ matrix.name }}-results
+        path: data/
+        retention-days: 7
