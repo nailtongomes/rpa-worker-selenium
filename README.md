@@ -132,10 +132,56 @@ docker run --rm -it --entrypoint bash rpa-worker-selenium
 docker run --rm -it --user root rpa-worker-selenium bash
 ```
 
+## Running Scripts from URLs
+
+The image supports downloading and executing scripts from URLs using environment variables:
+
+### Download and Execute a Script
+
+```bash
+docker run --rm \
+  -e SCRIPT_URL=https://example.com/my_script.py \
+  rpa-worker-selenium
+```
+
+### Download Script with Helper Scripts
+
+```bash
+docker run --rm \
+  -e SCRIPT_URL=https://example.com/main_script.py \
+  -e HELPER_URLS=https://example.com/helper1.py,https://example.com/helper2.py \
+  -v $(pwd)/data:/data \
+  rpa-worker-selenium
+```
+
+Helper scripts are downloaded to `/app/scripts/` and can be imported by the main script.
+
+### Run the Smoke Test
+
+A smoke test is included to verify the setup:
+
+```bash
+# Using default URL (https://www.n3wizards.com/index/)
+docker run --rm -v $(pwd)/data:/data rpa-worker-selenium python /app/smoke_test.py
+
+# Using custom URL
+docker run --rm \
+  -e TARGET_URL=https://example.com \
+  -v $(pwd)/data:/data \
+  rpa-worker-selenium python /app/smoke_test.py
+```
+
+The smoke test tries SeleniumBase first and falls back to requests if unavailable.
+
 ## Environment Variables
 
 | Variable | Default | Description |
 |----------|---------|-------------|
+| `SCRIPT_URL` | - | URL of the main Python script to download and execute |
+| `HELPER_URLS` | - | Comma-separated list of helper script URLs to download |
+| `SCRIPTS_DIR` | /app/scripts | Directory to save helper scripts |
+| `TARGET_URL` | https://www.n3wizards.com/index/ | URL for smoke test |
+| `CACHE_DIR` | /data | Directory for smoke test outputs |
 | `SCREEN_WIDTH` | 1366 | Virtual display width |
 | `SCREEN_HEIGHT` | 768 | Virtual display height |
 | `USE_XVFB` | 0 | Enable Xvfb virtual display |
@@ -210,6 +256,20 @@ Edit the first line of the Dockerfile:
 ```dockerfile
 FROM python:3.12-slim-bookworm  # or any other version
 ```
+
+## Testing
+
+The repository includes a test suite to validate the functionality:
+
+```bash
+# Run the test suite
+python test_features.py
+```
+
+The test suite validates:
+- Script downloader URL parsing and filename extraction
+- Smoke test title extraction logic
+- Environment variable handling
 
 ## Troubleshooting
 

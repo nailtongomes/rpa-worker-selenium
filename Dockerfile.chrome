@@ -90,6 +90,9 @@ RUN python -m pip install --upgrade --trusted-host pypi.org --trusted-host files
 # Copy application files
 COPY . .
 
+# Make entrypoint script executable
+RUN chmod +x /app/entrypoint.sh /app/script_downloader.py /app/smoke_test.py
+
 # Environment variables for control (all optional; defaults to lightweight/headless)
 ENV USE_XVFB=0 \
     USE_OPENBOX=0 \
@@ -99,9 +102,8 @@ ENV USE_XVFB=0 \
 # Switch to non-root user
 USER rpauser
 
-# Set up entrypoint for dynamic script execution
-ENTRYPOINT ["python"]
+# Set up entrypoint for dynamic script execution with download support
+ENTRYPOINT ["/app/entrypoint.sh"]
 
 # Default command (can be overridden)
-CMD ["--version"]
-
+CMD ["python", "--version"]
