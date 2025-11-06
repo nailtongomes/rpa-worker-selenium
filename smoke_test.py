@@ -51,6 +51,11 @@ def test_helper_scripts():
     """
     Test helper scripts functionality if they exist.
     
+    This function tests helper scripts when TEST_HELPERS environment variable is set.
+    If TEST_HELPERS is not set, the test is skipped (returns True).
+    If TEST_HELPERS is set but helpers can't be imported, it fails (returns False).
+    This is intentional - when explicitly testing helpers, their absence is a failure.
+    
     Returns:
         bool: True if test passed or skipped, False if failed
     """

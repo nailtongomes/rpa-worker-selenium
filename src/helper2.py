@@ -32,7 +32,7 @@ def extract_domain(url):
 
 def clean_text(text):
     """
-    Clean text by removing extra whitespace and special characters.
+    Clean text by removing extra whitespace.
     
     Args:
         text: Text string to clean
