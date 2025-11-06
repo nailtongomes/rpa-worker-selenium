@@ -65,7 +65,6 @@ def main():
             try:
                 driver.set_window_size(1366, 768)
                 driver.open(TARGET_URL)
-                driver.wait_for_ready_state_complete()
                 
                 ts = datetime.datetime.now().strftime("%Y%m%d_%H%M%S")
                 out = CACHE_DIR / f"smoke_{ts}.png"
