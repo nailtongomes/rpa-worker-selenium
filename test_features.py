@@ -134,6 +134,67 @@ def test_environment_variables():
     print("✓ All environment variable tests passed!\n")
 
 
+def test_brave_example_script():
+    """Test Brave example script structure and configuration."""
+    print("Testing example_script_brave.py...")
+    
+    # Test 1: Check script exists and is readable
+    import pathlib
+    script_path = pathlib.Path(__file__).parent / 'example_script_brave.py'
+    assert script_path.exists(), "example_script_brave.py not found"
+    print("  ✓ Script file exists")
+    
+    # Test 2: Parse the script without executing it
+    import ast
+    
+    with open(script_path, 'r') as f:
+        script_source = f.read()
+    
+    try:
+        tree = ast.parse(script_source)
+        print("  ✓ Script has valid Python syntax")
+    except SyntaxError as e:
+        raise AssertionError(f"Script has syntax error: {e}")
+    
+    # Test 3: Check for required functions
+    function_names = [node.name for node in ast.walk(tree) if isinstance(node, ast.FunctionDef)]
+    
+    assert 'create_brave_driver' in function_names, "Missing create_brave_driver function"
+    print("  ✓ create_brave_driver function exists")
+    
+    assert 'example_automation' in function_names, "Missing example_automation function"
+    print("  ✓ example_automation function exists")
+    
+    # Test 4: Verify the script has proper imports
+    imports = []
+    for node in ast.walk(tree):
+        if isinstance(node, ast.ImportFrom):
+            if node.module:
+                imports.append(node.module)
+        elif isinstance(node, ast.Import):
+            for alias in node.names:
+                imports.append(alias.name)
+    
+    required_imports = ['selenium', 'sys', 'os']
+    
+    for imp in required_imports:
+        assert any(imp in i or i in imp for i in imports if i), f"Missing import: {imp}"
+    
+    print("  ✓ All required imports present")
+    
+    # Test 5: Check that the script configures Brave binary location
+    assert 'binary_location' in script_source, "Script should set binary_location for Brave"
+    assert '/usr/bin/brave-browser' in script_source, "Script should reference Brave browser path"
+    print("  ✓ Brave binary location configured correctly")
+    
+    # Test 6: Check for headless mode configuration
+    assert '--headless' in script_source, "Script should configure headless mode"
+    print("  ✓ Headless mode configuration present")
+    
+    print("✓ All Brave example script tests passed!\n")
+
+
+
 def main():
     """Run all tests."""
     print("=" * 60)
@@ -145,6 +206,7 @@ def main():
         test_script_downloader()
         test_smoke_test_title_extraction()
         test_environment_variables()
+        test_brave_example_script()
         
         print("=" * 60)
         print("✓ All tests passed successfully!")
