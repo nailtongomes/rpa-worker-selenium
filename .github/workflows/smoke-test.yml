@@ -37,9 +37,24 @@ jobs:
         CHROME_VERSION=$(google-chrome --version | sed -E 's/.* ([0-9]+\.[0-9]+\.[0-9]+\.[0-9]+).*/\1/')
         echo "Chrome version: $CHROME_VERSION"
         
-        # Get matching ChromeDriver version
-        CHROMEDRIVER_VERSION=$(curl -s "https://googlechromelabs.github.io/chrome-for-testing/LATEST_RELEASE_${CHROME_VERSION%.*.*}")
+        # Validate Chrome version was extracted
+        if [ -z "$CHROME_VERSION" ]; then
+          echo "Error: Failed to extract Chrome version"
+          exit 1
+        fi
+        
+        # Extract major version
+        MAJOR_VERSION=$(echo $CHROME_VERSION | cut -d. -f1)
+        
+        # Get matching ChromeDriver version using Chrome for Testing JSON API
+        CHROMEDRIVER_VERSION=$(curl -s "https://googlechromelabs.github.io/chrome-for-testing/LATEST_RELEASE_${MAJOR_VERSION}")
         echo "ChromeDriver version: $CHROMEDRIVER_VERSION"
+        
+        # Validate ChromeDriver version was retrieved
+        if [ -z "$CHROMEDRIVER_VERSION" ]; then
+          echo "Error: Failed to retrieve ChromeDriver version"
+          exit 1
+        fi
         
         # Download and install ChromeDriver
         wget -q "https://storage.googleapis.com/chrome-for-testing-public/$CHROMEDRIVER_VERSION/linux64/chromedriver-linux64.zip"
