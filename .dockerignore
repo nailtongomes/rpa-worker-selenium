@@ -39,3 +39,4 @@ Thumbs.db
 tests/
 test_*.py
 *_test.py
+!smoke_test.py
