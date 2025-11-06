@@ -1,6 +1,6 @@
 # Dockerfile Versions
 
-This repository provides three Dockerfile versions:
+This repository provides four Dockerfile versions:
 
 ## 1. Dockerfile (Default - Chromium from Debian repos)
 
@@ -57,6 +57,31 @@ docker run --rm rpa-worker-selenium-brave example_script_brave.py
 - `storage.googleapis.com` (for ChromeDriver download)
 - `googlechromelabs.github.io` (for ChromeDriver version lookup)
 
+## 4. Dockerfile.firefox (Firefox Browser)
+
+**Recommended for: Firefox-specific testing, Gecko engine compatibility, Mozilla standards**
+
+- Uses multi-stage build for optimization
+- Downloads specific Firefox version (136.0)
+- Downloads matched GeckoDriver (v0.36.0) from GitHub releases
+- Mozilla's Gecko rendering engine
+- Full support for Firefox WebDriver capabilities
+- **Requires internet access to ftp.mozilla.org and github.com during build**
+
+**Build command:**
+```bash
+docker build -f Dockerfile.firefox -t rpa-worker-selenium-firefox .
+```
+
+**Example usage:**
+```bash
+docker run --rm rpa-worker-selenium-firefox example_script_firefox.py
+```
+
+**Note:** If building behind a corporate firewall or in a restricted network environment, ensure that the following domains are accessible during build:
+- `ftp.mozilla.org` (for Firefox download)
+- `github.com` (for GeckoDriver download)
+
 ## Which Should You Use?
 
 - **Use `Dockerfile`** if:
@@ -76,5 +101,11 @@ docker run --rm rpa-worker-selenium-brave example_script_brave.py
   - You want built-in ad-blocking capabilities
   - You're testing websites with Brave browser specifically
   - You prefer Brave's Chromium-based features
+
+- **Use `Dockerfile.firefox`** if:
+  - You need to test with Firefox/Gecko engine specifically
+  - You need Mozilla-specific WebDriver features
+  - You're validating cross-browser compatibility
+  - You prefer Firefox's rendering and standards compliance
 
 All versions include all the same Python packages and provide the same functionality for Selenium automation.

@@ -2,10 +2,11 @@
 
 A production-ready Docker image for running dynamic Python scripts with Selenium automation. This image uses a multi-stage build and comes pre-configured with Chrome, ChromeDriver, and comprehensive dependencies for web automation and RPA tasks.
 
-> **Note**: This repository provides three Dockerfile versions:
+> **Note**: This repository provides four Dockerfile versions:
 > - `Dockerfile` (default) - Uses Chromium from Debian repos, easier to build
 > - `Dockerfile.chrome` - Uses Google Chrome with matched ChromeDriver for production
 > - `Dockerfile.brave` - Uses Brave browser for privacy-focused automation
+> - `Dockerfile.firefox` - Uses Firefox browser with GeckoDriver for Mozilla automation
 > 
 > See [DOCKERFILE_VERSIONS.md](DOCKERFILE_VERSIONS.md) for details on which to use.
 
@@ -42,9 +43,15 @@ docker build -f Dockerfile.chrome -t rpa-worker-selenium .
 docker build -f Dockerfile.brave -t rpa-worker-selenium-brave .
 ```
 
-> **Note:** Building `Dockerfile.chrome` and `Dockerfile.brave` requires internet access to specific domains during build:
+**With Firefox:**
+```bash
+docker build -f Dockerfile.firefox -t rpa-worker-selenium-firefox .
+```
+
+> **Note:** Building `Dockerfile.chrome`, `Dockerfile.brave`, and `Dockerfile.firefox` requires internet access to specific domains during build:
 > - Chrome: `dl.google.com`, `storage.googleapis.com`
 > - Brave: `brave-browser-apt-release.s3.brave.com`, `storage.googleapis.com`, `googlechromelabs.github.io`
+> - Firefox: `ftp.mozilla.org`, `github.com`
 > 
 > If you're behind a corporate firewall or in a restricted network, use the default `Dockerfile` (Chromium) instead.
 
@@ -140,6 +147,37 @@ Or use the included example script:
 
 ```bash
 docker run --rm rpa-worker-selenium-brave example_script_brave.py
+```
+
+### Using Firefox Browser
+
+When using the Firefox browser Dockerfile, configure Selenium for Firefox:
+
+```python
+from selenium import webdriver
+from selenium.webdriver.firefox.options import Options
+from selenium.webdriver.firefox.service import Service
+
+# Configure Firefox options
+firefox_options = Options()
+firefox_options.add_argument('--headless')
+firefox_options.add_argument('--no-sandbox')
+firefox_options.add_argument('--disable-dev-shm-usage')
+
+# Create service with explicit geckodriver path
+service = Service('/usr/local/bin/geckodriver')
+
+# Create driver
+driver = webdriver.Firefox(service=service, options=firefox_options)
+driver.get("https://example.com")
+print(driver.title)
+driver.quit()
+```
+
+Or use the included example script:
+
+```bash
+docker run --rm rpa-worker-selenium-firefox example_script_firefox.py
 ```
 
 ### Using SeleniumBase
