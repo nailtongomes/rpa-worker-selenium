@@ -1,6 +1,6 @@
 # Dockerfile Versions
 
-This repository provides two Dockerfile versions:
+This repository provides three Dockerfile versions:
 
 ## 1. Dockerfile (Default - Chromium from Debian repos)
 
@@ -32,6 +32,31 @@ docker build -t rpa-worker-selenium .
 docker build -f Dockerfile.chrome -t rpa-worker-selenium .
 ```
 
+## 3. Dockerfile.brave (Brave Browser)
+
+**Recommended for: Privacy-focused automation, ad-blocking, Brave-specific features**
+
+- Uses Brave browser from official Brave repository
+- Built on Chromium, fully compatible with Selenium/ChromeDriver
+- Enhanced privacy features and built-in ad-blocking
+- Latest stable Brave browser version
+- **Requires internet access to brave-browser-apt-release.s3.brave.com and storage.googleapis.com during build**
+
+**Build command:**
+```bash
+docker build -f Dockerfile.brave -t rpa-worker-selenium-brave .
+```
+
+**Example usage:**
+```bash
+docker run --rm rpa-worker-selenium-brave example_script_brave.py
+```
+
+**Note:** If building behind a corporate firewall or in a restricted network environment, ensure that the following domains are accessible during build:
+- `brave-browser-apt-release.s3.brave.com` (for Brave browser installation)
+- `storage.googleapis.com` (for ChromeDriver download)
+- `googlechromelabs.github.io` (for ChromeDriver version lookup)
+
 ## Which Should You Use?
 
 - **Use `Dockerfile`** if:
@@ -46,4 +71,10 @@ docker build -f Dockerfile.chrome -t rpa-worker-selenium .
   - You need maximum compatibility
   - You have unrestricted internet access during builds
 
-Both versions include all the same Python packages and provide the same functionality for Selenium automation.
+- **Use `Dockerfile.brave`** if:
+  - You need privacy-focused browsing automation
+  - You want built-in ad-blocking capabilities
+  - You're testing websites with Brave browser specifically
+  - You prefer Brave's Chromium-based features
+
+All versions include all the same Python packages and provide the same functionality for Selenium automation.

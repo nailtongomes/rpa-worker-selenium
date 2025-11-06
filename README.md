@@ -2,9 +2,10 @@
 
 A production-ready Docker image for running dynamic Python scripts with Selenium automation. This image uses a multi-stage build and comes pre-configured with Chrome, ChromeDriver, and comprehensive dependencies for web automation and RPA tasks.
 
-> **Note**: This repository provides two Dockerfile versions:
+> **Note**: This repository provides three Dockerfile versions:
 > - `Dockerfile` (default) - Uses Chromium from Debian repos, easier to build
 > - `Dockerfile.chrome` - Uses Google Chrome with matched ChromeDriver for production
+> - `Dockerfile.brave` - Uses Brave browser for privacy-focused automation
 > 
 > See [DOCKERFILE_VERSIONS.md](DOCKERFILE_VERSIONS.md) for details on which to use.
 
@@ -24,11 +25,28 @@ A production-ready Docker image for running dynamic Python scripts with Selenium
 
 ### Building the Docker Image
 
+**Default (Chromium):**
 ```bash
 git clone https://github.com/nailtongomes/rpa-worker-selenium.git
 cd rpa-worker-selenium
 docker build -t rpa-worker-selenium .
 ```
+
+**With Google Chrome:**
+```bash
+docker build -f Dockerfile.chrome -t rpa-worker-selenium .
+```
+
+**With Brave Browser:**
+```bash
+docker build -f Dockerfile.brave -t rpa-worker-selenium-brave .
+```
+
+> **Note:** Building `Dockerfile.chrome` and `Dockerfile.brave` requires internet access to specific domains during build:
+> - Chrome: `dl.google.com`, `storage.googleapis.com`
+> - Brave: `brave-browser-apt-release.s3.brave.com`, `storage.googleapis.com`, `googlechromelabs.github.io`
+> 
+> If you're behind a corporate firewall or in a restricted network, use the default `Dockerfile` (Chromium) instead.
 
 ### Running the Example Script
 
@@ -91,6 +109,38 @@ driver.quit()
 ```
 
 ## Advanced Usage
+
+### Using Brave Browser
+
+When using the Brave browser Dockerfile, you need to specify the Brave binary location:
+
+```python
+from selenium import webdriver
+from selenium.webdriver.chrome.options import Options
+from selenium.webdriver.chrome.service import Service
+
+# Configure options for Brave
+chrome_options = Options()
+chrome_options.binary_location = "/usr/bin/brave-browser"
+chrome_options.add_argument('--headless=new')
+chrome_options.add_argument('--no-sandbox')
+chrome_options.add_argument('--disable-dev-shm-usage')
+
+# Create service
+service = Service('/usr/local/bin/chromedriver')
+
+# Create driver
+driver = webdriver.Chrome(service=service, options=chrome_options)
+driver.get("https://example.com")
+print(driver.title)
+driver.quit()
+```
+
+Or use the included example script:
+
+```bash
+docker run --rm rpa-worker-selenium-brave example_script_brave.py
+```
 
 ### Using SeleniumBase
 
