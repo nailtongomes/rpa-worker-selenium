@@ -47,3 +47,6 @@ htmlcov/
 tmp/
 temp/
 *.tmp
+
+# Data directory - test outputs
+data/
