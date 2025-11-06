@@ -40,7 +40,7 @@ docker build -f Dockerfile.chrome -t rpa-worker-selenium .
 - Built on Chromium, fully compatible with Selenium/ChromeDriver
 - Enhanced privacy features and built-in ad-blocking
 - Latest stable Brave browser version
-- Requires internet access to brave-browser-apt-release.s3.brave.com during build
+- **Requires internet access to brave-browser-apt-release.s3.brave.com and storage.googleapis.com during build**
 
 **Build command:**
 ```bash
@@ -51,6 +51,11 @@ docker build -f Dockerfile.brave -t rpa-worker-selenium-brave .
 ```bash
 docker run --rm rpa-worker-selenium-brave example_script_brave.py
 ```
+
+**Note:** If building behind a corporate firewall or in a restricted network environment, ensure that the following domains are accessible during build:
+- `brave-browser-apt-release.s3.brave.com` (for Brave browser installation)
+- `storage.googleapis.com` (for ChromeDriver download)
+- `googlechromelabs.github.io` (for ChromeDriver version lookup)
 
 ## Which Should You Use?
 

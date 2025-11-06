@@ -42,6 +42,12 @@ docker build -f Dockerfile.chrome -t rpa-worker-selenium .
 docker build -f Dockerfile.brave -t rpa-worker-selenium-brave .
 ```
 
+> **Note:** Building `Dockerfile.chrome` and `Dockerfile.brave` requires internet access to specific domains during build:
+> - Chrome: `dl.google.com`, `storage.googleapis.com`
+> - Brave: `brave-browser-apt-release.s3.brave.com`, `storage.googleapis.com`, `googlechromelabs.github.io`
+> 
+> If you're behind a corporate firewall or in a restricted network, use the default `Dockerfile` (Chromium) instead.
+
 ### Running the Example Script
 
 ```bash
