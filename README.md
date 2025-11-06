@@ -59,7 +59,7 @@ docker run --rm rpa-worker-selenium example_script.py
 #### Option 1: Mount a script from your local machine
 
 ```bash
-docker run --rm -v $(pwd)/my_script.py:/app/scripts/my_script.py rpa-worker-selenium /app/scripts/my_script.py
+docker run --rm -v $(pwd)/my_script.py:/app/src/my_script.py rpa-worker-selenium /app/src/my_script.py
 ```
 
 #### Option 2: Build the script into the image
@@ -204,7 +204,7 @@ docker run --rm \
   rpa-worker-selenium
 ```
 
-Helper scripts are downloaded to `/app/scripts/` and can be imported by the main script.
+Helper scripts are downloaded to `/app/src/` and can be imported by the main script.
 
 ### Run the Smoke Test
 
@@ -229,7 +229,7 @@ The smoke test tries SeleniumBase first and falls back to requests if unavailabl
 |----------|---------|-------------|
 | `SCRIPT_URL` | - | URL of the main Python script to download and execute |
 | `HELPER_URLS` | - | Comma-separated list of helper script URLs to download |
-| `SCRIPTS_DIR` | /app/scripts | Directory to save helper scripts |
+| `SCRIPTS_DIR` | /app/src | Directory to save helper scripts |
 | `TARGET_URL` | https://example.com/ | URL for smoke test |
 | `CACHE_DIR` | /data | Directory for smoke test outputs |
 | `SCREEN_WIDTH` | 1366 | Virtual display width |

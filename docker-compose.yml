@@ -6,7 +6,7 @@ services:
     container_name: rpa-worker-selenium
     volumes:
       # Mount your scripts directory
-      - ./scripts:/app/scripts
+      - ./scripts:/app/src
     environment:
       # Add any environment variables here
       - PYTHONUNBUFFERED=1
