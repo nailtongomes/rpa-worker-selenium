@@ -151,3 +151,60 @@ jobs:
         name: docker-smoke-test-${{ matrix.name }}-results
         path: data/
         retention-days: 7
+
+  docker-pjeoffice-smoke-test:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - dockerfile: Dockerfile.chrome
+            name: chrome-pjeoffice
+            tag: rpa-worker-selenium:chrome-pje
+    
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+    
+    - name: Set up Docker Buildx
+      uses: docker/setup-buildx-action@v3
+    
+    - name: Build Docker image with PJeOffice
+      run: |
+        docker build -f ${{ matrix.dockerfile }} --build-arg BUILD_PJEOFFICE=1 -t ${{ matrix.tag }} .
+    
+    - name: Create data directory
+      run: mkdir -p data && chmod 777 data
+    
+    - name: Run smoke test with Xvfb and PJeOffice
+      run: |
+        docker run --rm \
+          -e USE_XVFB=1 \
+          -e USE_OPENBOX=1 \
+          -e USE_PJEOFFICE=1 \
+          -e CHECK_PROCESSES=1 \
+          -e TARGET_URL=https://example.com \
+          -e CACHE_DIR=/data \
+          -v $(pwd)/data:/data \
+          ${{ matrix.tag }} \
+          bash -c "sleep 5 && python /app/smoke_test.py"
+    
+    - name: Verify processes in container
+      run: |
+        # Run a container and check if processes are running
+        docker run --rm \
+          -e USE_XVFB=1 \
+          -e USE_OPENBOX=1 \
+          -e USE_PJEOFFICE=1 \
+          ${{ matrix.tag }} \
+          bash -c "sleep 5 && pgrep -f Xvfb && pgrep -f pjeoffice && echo 'All processes running'"
+    
+    - name: Upload Docker PJeOffice smoke test artifacts
+      if: always()
+      uses: actions/upload-artifact@v4
+      with:
+        name: docker-pjeoffice-smoke-test-${{ matrix.name }}-results
+        path: data/
+        retention-days: 7
