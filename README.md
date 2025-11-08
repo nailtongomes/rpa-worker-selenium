@@ -18,11 +18,13 @@ A production-ready Docker image for running dynamic Python scripts with Selenium
 - 🌐 Selenium WebDriver & SeleniumBase
 - 🚀 Google Chrome (specific version: 142.0.7444.59)
 - 📦 ChromeDriver (matched to Chrome version from Chrome for Testing)
-- 🖥️ Xvfb (virtual display), VNC support, and OpenBox window manager
+- 🖥️ Optional Xvfb (virtual display), OpenBox window manager, and VNC support
+- ⚖️ Optional PJeOffice support (for Brazilian legal system automations)
 - 🔧 Pre-configured for RPA and automation tasks
 - 📊 Comprehensive packages: requests, beautifulsoup4, pandas, openpyxl, PyAutoGUI, and more
 - 🔒 Non-root user setup for security
 - 🎯 Multi-stage build for optimized image size
+- 💡 Lightweight by default - optional services disabled for minimal resource usage
 
 ## Quick Start
 
@@ -222,6 +224,87 @@ docker run --rm -it --entrypoint bash rpa-worker-selenium
 docker run --rm -it --user root rpa-worker-selenium bash
 ```
 
+## Optional Services (PJeOffice, Xvfb, OpenBox)
+
+The image supports optional services that can be enabled at build time (PJeOffice) or runtime (Xvfb, OpenBox).
+
+### Building with PJeOffice Support
+
+To include PJeOffice (required for some Brazilian legal system automations), use the `BUILD_PJEOFFICE` build argument:
+
+```bash
+# Default Dockerfile
+docker build --build-arg BUILD_PJEOFFICE=1 -t rpa-worker-selenium-pje .
+
+# Chrome variant
+docker build -f Dockerfile.chrome --build-arg BUILD_PJEOFFICE=1 -t rpa-worker-selenium-pje .
+
+# Firefox variant
+docker build -f Dockerfile.firefox --build-arg BUILD_PJEOFFICE=1 -t rpa-worker-selenium-pje .
+
+# Brave variant
+docker build -f Dockerfile.brave --build-arg BUILD_PJEOFFICE=1 -t rpa-worker-selenium-pje .
+```
+
+**Note:** PJeOffice download requires access to `pje-office.pje.jus.br` during build.
+
+### Running with Optional Services
+
+Enable services at runtime using environment variables:
+
+#### With Xvfb (Virtual Display)
+
+```bash
+docker run --rm \
+  -e USE_XVFB=1 \
+  rpa-worker-selenium my_script.py
+```
+
+#### With OpenBox Window Manager
+
+OpenBox requires Xvfb to be enabled:
+
+```bash
+docker run --rm \
+  -e USE_XVFB=1 \
+  -e USE_OPENBOX=1 \
+  rpa-worker-selenium my_script.py
+```
+
+#### With PJeOffice
+
+PJeOffice must be installed at build time (BUILD_PJEOFFICE=1):
+
+```bash
+docker run --rm \
+  -e USE_XVFB=1 \
+  -e USE_OPENBOX=1 \
+  -e USE_PJEOFFICE=1 \
+  rpa-worker-selenium-pje my_script.py
+```
+
+#### All Services Combined
+
+```bash
+docker run --rm \
+  -e USE_XVFB=1 \
+  -e USE_OPENBOX=1 \
+  -e USE_PJEOFFICE=1 \
+  -e SCREEN_WIDTH=1920 \
+  -e SCREEN_HEIGHT=1080 \
+  rpa-worker-selenium-pje my_script.py
+```
+
+### Default Behavior (Lightweight Mode)
+
+By default, all optional services are disabled for lightweight, headless operation:
+- `USE_XVFB=0` - No virtual display
+- `USE_OPENBOX=0` - No window manager
+- `USE_PJEOFFICE=0` - PJeOffice not started (even if installed)
+- `USE_VNC=0` - No VNC server
+
+This allows the container to run with minimal resources when these features are not needed.
+
 ## Running Scripts from URLs
 
 The image supports downloading and executing scripts from URLs using environment variables:
@@ -274,9 +357,10 @@ The smoke test tries SeleniumBase first and falls back to requests if unavailabl
 | `CACHE_DIR` | /data | Directory for smoke test outputs |
 | `SCREEN_WIDTH` | 1366 | Virtual display width |
 | `SCREEN_HEIGHT` | 768 | Virtual display height |
-| `USE_XVFB` | 0 | Enable Xvfb virtual display |
-| `USE_OPENBOX` | 0 | Enable OpenBox window manager |
-| `USE_VNC` | 0 | Enable VNC server |
+| `USE_XVFB` | 0 | Enable Xvfb virtual display (set to 1 to enable) |
+| `USE_OPENBOX` | 0 | Enable OpenBox window manager (set to 1 to enable) |
+| `USE_PJEOFFICE` | 0 | Enable PJeOffice (set to 1 to enable, requires BUILD_PJEOFFICE=1 at build time) |
+| `USE_VNC` | 0 | Enable VNC server (set to 1 to enable) |
 | `VNC_PORT` | 5900 | VNC server port |
 | `DISPLAY` | :99 | X11 display number |
 
