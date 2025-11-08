@@ -2,6 +2,9 @@
 # Use this version if you cannot access Google Chrome downloads
 FROM python:3.11-slim-bookworm
 
+# Build argument to control PJeOffice installation (default: not installed)
+ARG BUILD_PJEOFFICE=0
+
 ENV DEBIAN_FRONTEND=noninteractive \
     PYTHONUNBUFFERED=1 \
     PYTHONDONTWRITEBYTECODE=1 \
@@ -65,6 +68,22 @@ RUN mkdir -p /app/src /app/logs /app/tmp \
     && chmod 777 /data \
     && chown -R rpauser:rpauser /app
 
+# Optional: Install PJeOffice (controlled by BUILD_PJEOFFICE build argument)
+RUN if [ "$BUILD_PJEOFFICE" = "1" ]; then \
+    mkdir -p /opt/pjeoffice && \
+    cd /tmp && \
+    curl -Lo "pjeoffice.zip" "https://pje-office.pje.jus.br/pro/pjeoffice-pro-v2.5.16u-linux_x64.zip" && \
+    unzip pjeoffice.zip && \
+    cp -r pjeoffice-pro/* /opt/pjeoffice/ && \
+    rm -rf pjeoffice.zip pjeoffice-pro && \
+    chown -R rpauser:rpauser /opt/pjeoffice && \
+    chmod -R 755 /opt/pjeoffice && \
+    chmod +x /opt/pjeoffice/pjeoffice-pro.sh && \
+    mkdir -p /app/.pjeoffice-pro && \
+    chown -R rpauser:rpauser /app/.pjeoffice-pro && \
+    chmod -R 755 /app/.pjeoffice-pro; \
+fi
+
 # Install Python dependencies
 COPY requirements.txt .
 RUN python -m pip install --upgrade --trusted-host pypi.org --trusted-host files.pythonhosted.org pip \
@@ -81,6 +100,7 @@ RUN chmod +x /app/entrypoint.sh /app/script_downloader.py /app/smoke_test.py
 ENV USE_XVFB=0 \
     USE_OPENBOX=0 \
     USE_VNC=0 \
+    USE_PJEOFFICE=0 \
     VNC_PORT=5900 \
     XDG_CACHE_HOME=/app/.cache
 
