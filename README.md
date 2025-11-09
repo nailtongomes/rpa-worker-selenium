@@ -283,6 +283,26 @@ docker run --rm \
   rpa-worker-selenium-pje my_script.py
 ```
 
+##### Using Custom PJeOffice Paths
+
+If PJeOffice is installed in a non-standard location, you can specify custom paths:
+
+```bash
+docker run --rm \
+  -e USE_XVFB=1 \
+  -e USE_OPENBOX=1 \
+  -e USE_PJEOFFICE=1 \
+  -e PJEOFFICE_EXECUTABLE=/custom/path/pjeoffice-pro.sh \
+  -e PJEOFFICE_CONFIG_DIR=/custom/config/dir \
+  -e PJEOFFICE_CONFIG_FILE=/custom/config/dir/pjeoffice-pro.config \
+  rpa-worker-selenium-pje my_script.py
+```
+
+The PJeOffice path environment variables allow you to:
+- Edit the configuration file at runtime using the `PJEOFFICE_CONFIG_FILE` path
+- Execute PJeOffice from a custom location using the `PJEOFFICE_EXECUTABLE` path
+- Store configuration in a custom directory using the `PJEOFFICE_CONFIG_DIR` path
+
 #### All Services Combined
 
 ```bash
@@ -389,6 +409,9 @@ The `CHECK_PROCESSES=1` flag enables verification that:
 | `USE_VNC` | 0 | Enable VNC server (set to 1 to enable) |
 | `VNC_PORT` | 5900 | VNC server port |
 | `DISPLAY` | :99 | X11 display number |
+| `PJEOFFICE_CONFIG_DIR` | /app/.pjeoffice-pro | Directory for PJeOffice configuration files |
+| `PJEOFFICE_CONFIG_FILE` | /app/.pjeoffice-pro/pjeoffice-pro.config | Full path to PJeOffice configuration file |
+| `PJEOFFICE_EXECUTABLE` | /opt/pjeoffice/pjeoffice-pro.sh | Path to PJeOffice executable script |
 
 ## Installed Python Packages
 

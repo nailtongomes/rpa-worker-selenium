@@ -114,6 +114,25 @@ def check_entrypoint_env_checks(entrypoint_path):
         print(f"✗ Error reading {entrypoint_path}: {e}")
         return False
 
+def check_pjeoffice_env_vars(entrypoint_path):
+    """Check if entrypoint.sh defines PJeOffice path environment variables"""
+    pjeoffice_env_vars = ['PJEOFFICE_CONFIG_DIR', 'PJEOFFICE_CONFIG_FILE', 'PJEOFFICE_EXECUTABLE']
+    
+    try:
+        with open(entrypoint_path, 'r') as f:
+            content = f.read()
+            all_found = True
+            for var in pjeoffice_env_vars:
+                if var in content:
+                    print(f"  ✓ PJeOffice environment variable {var} is defined")
+                else:
+                    print(f"  ✗ PJeOffice environment variable {var} not defined")
+                    all_found = False
+            return all_found
+    except Exception as e:
+        print(f"✗ Error reading {entrypoint_path}: {e}")
+        return False
+
 def main():
     """Run all tests"""
     print("=" * 60)
@@ -132,11 +151,14 @@ def main():
     print("\n3. Testing entrypoint.sh environment variable checks...")
     results.append(check_entrypoint_env_checks('entrypoint.sh'))
     
+    print("\n4. Testing entrypoint.sh PJeOffice path environment variables...")
+    results.append(check_pjeoffice_env_vars('entrypoint.sh'))
+    
     # Test Dockerfiles
     dockerfiles = ['Dockerfile', 'Dockerfile.chrome', 'Dockerfile.firefox', 'Dockerfile.brave']
     
     for dockerfile in dockerfiles:
-        print(f"\n4. Testing {dockerfile}...")
+        print(f"\n5. Testing {dockerfile}...")
         print(f"   a. Checking BUILD_PJEOFFICE argument...")
         results.append(check_dockerfile_args(dockerfile))
         

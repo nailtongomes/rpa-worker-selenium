@@ -12,6 +12,11 @@ export LANG=C.UTF-8
 export LC_ALL=C.UTF-8
 export DISPLAY=${DISPLAY:-:99}
 
+# PJeOffice paths - configurable via environment variables
+export PJEOFFICE_CONFIG_DIR=${PJEOFFICE_CONFIG_DIR:-/app/.pjeoffice-pro}
+export PJEOFFICE_CONFIG_FILE=${PJEOFFICE_CONFIG_FILE:-${PJEOFFICE_CONFIG_DIR}/pjeoffice-pro.config}
+export PJEOFFICE_EXECUTABLE=${PJEOFFICE_EXECUTABLE:-/opt/pjeoffice/pjeoffice-pro.sh}
+
 # PIDs for background processes
 XVFB_PID=""
 OPENBOX_PID=""
@@ -30,8 +35,8 @@ setup_directories() {
     
     # Setup PJeOffice directory if PJeOffice is installed
     if [ -d "/opt/pjeoffice" ]; then
-        mkdir -p /app/.pjeoffice-pro 2>/dev/null || true
-        chmod 755 /app/.pjeoffice-pro 2>/dev/null || true
+        mkdir -p "${PJEOFFICE_CONFIG_DIR}" 2>/dev/null || true
+        chmod 755 "${PJEOFFICE_CONFIG_DIR}" 2>/dev/null || true
     fi
     
     # Setup PKI directory for certificates
@@ -121,13 +126,13 @@ start_pjeoffice() {
         return 0
     fi
     
-    if [ ! -f "/opt/pjeoffice/pjeoffice-pro.sh" ]; then
-        echo "[entrypoint] PJeOffice not installed, skipping"
+    if [ ! -f "${PJEOFFICE_EXECUTABLE}" ]; then
+        echo "[entrypoint] PJeOffice not installed at ${PJEOFFICE_EXECUTABLE}, skipping"
         return 0
     fi
     
-    echo "[entrypoint] Starting PJeOffice..."
-    /opt/pjeoffice/pjeoffice-pro.sh &
+    echo "[entrypoint] Starting PJeOffice from ${PJEOFFICE_EXECUTABLE}..."
+    "${PJEOFFICE_EXECUTABLE}" &
     PJEOFFICE_PID=$!
     
     echo "[entrypoint] PJeOffice started (PID: ${PJEOFFICE_PID})"

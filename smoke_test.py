@@ -122,7 +122,7 @@ def check_pjeoffice_alive():
         return True
     
     # Check if PJeOffice is installed
-    pjeoffice_path = "/opt/pjeoffice/pjeoffice-pro.sh"
+    pjeoffice_path = os.getenv("PJEOFFICE_EXECUTABLE", "/opt/pjeoffice/pjeoffice-pro.sh")
     if not os.path.exists(pjeoffice_path):
         print(f"[smoke] ✗ PJeOffice not installed at {pjeoffice_path}")
         return False
