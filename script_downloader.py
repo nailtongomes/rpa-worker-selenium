@@ -88,7 +88,7 @@ def get_filename_from_url(url: str) -> str:
     # procura por .py em qualquer segmento (da direita p/ esquerda)
     for seg in reversed(segments):
         if seg.lower().endswith(".py"):
-            return _sanitize(Path(seg).name)
+            return _sanitize(pathlib.Path(seg).name)
 
     # fallback estável
     url_hash = hashlib.md5(url.encode()).hexdigest()[:16]
