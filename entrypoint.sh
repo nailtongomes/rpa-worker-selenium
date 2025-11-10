@@ -17,15 +17,20 @@ export PJEOFFICE_CONFIG_DIR=${PJEOFFICE_CONFIG_DIR:-/app/.pjeoffice-pro}
 export PJEOFFICE_CONFIG_FILE=${PJEOFFICE_CONFIG_FILE:-${PJEOFFICE_CONFIG_DIR}/pjeoffice-pro.config}
 export PJEOFFICE_EXECUTABLE=${PJEOFFICE_EXECUTABLE:-/opt/pjeoffice/pjeoffice-pro.sh}
 
+# Screen recording configuration
+export RECORDING_DIR=${RECORDING_DIR:-/app/recordings}
+export RECORDING_FILENAME=${RECORDING_FILENAME:-recording_$(date +%Y%m%d_%H%M%S).mp4}
+
 # PIDs for background processes
 XVFB_PID=""
 OPENBOX_PID=""
 PJEOFFICE_PID=""
+FFMPEG_PID=""
 
 # Setup directories with proper permissions
 setup_directories() {
     echo "[entrypoint] Setting up directories..."
-    local dirs=("/app/logs" "/app/tmp" "/app/src")
+    local dirs=("/app/logs" "/app/tmp" "/app/src" "${RECORDING_DIR}")
     
     for dir in "${dirs[@]}"; do
         if [ ! -d "$dir" ]; then
@@ -51,9 +56,16 @@ setup_directories() {
 # Signal handling for graceful shutdown
 handle_sigterm() {
     echo "[entrypoint] Received shutdown signal, cleaning up..."
+    [ -n "$FFMPEG_PID" ] && kill -TERM "$FFMPEG_PID" 2>/dev/null || true
     [ -n "$XVFB_PID" ] && kill -TERM "$XVFB_PID" 2>/dev/null || true
     [ -n "$OPENBOX_PID" ] && kill -TERM "$OPENBOX_PID" 2>/dev/null || true
     [ -n "$PJEOFFICE_PID" ] && kill -TERM "$PJEOFFICE_PID" 2>/dev/null || true
+    
+    # Wait a moment for FFmpeg to finalize the recording
+    if [ -n "$FFMPEG_PID" ]; then
+        sleep 2
+    fi
+    
     exit 0
 }
 
@@ -139,6 +151,67 @@ start_pjeoffice() {
     return 0
 }
 
+# Start screen recording
+start_screen_recording() {
+    if [ "${USE_SCREEN_RECORDING}" != "1" ]; then
+        echo "[entrypoint] Screen recording disabled (USE_SCREEN_RECORDING=${USE_SCREEN_RECORDING})"
+        return 0
+    fi
+    
+    # Screen recording requires Xvfb to be running
+    if [ "${USE_XVFB}" != "1" ]; then
+        echo "[entrypoint] WARNING: Screen recording requires Xvfb (USE_XVFB=1), skipping recording"
+        return 0
+    fi
+    
+    echo "[entrypoint] Starting screen recording..."
+    
+    # Ensure recording directory exists
+    mkdir -p "${RECORDING_DIR}" 2>/dev/null || true
+    
+    # Get screen dimensions
+    local width=${SCREEN_WIDTH:-1366}
+    local height=${SCREEN_HEIGHT:-768}
+    
+    # Construct full output path
+    local output_file="${RECORDING_DIR}/${RECORDING_FILENAME}"
+    
+    # Start FFmpeg to record the screen
+    # Using x11grab to capture from the Xvfb display
+    # Options:
+    #   -video_size: screen resolution
+    #   -framerate: frames per second (15 fps for smaller file size)
+    #   -f x11grab: use X11 screen capture
+    #   -i :99: capture from display :99
+    #   -c:v libx264: use H.264 codec for good compression
+    #   -preset ultrafast: fastest encoding (lower CPU usage)
+    #   -pix_fmt yuv420p: pixel format for compatibility
+    ffmpeg -video_size "${width}x${height}" \
+           -framerate 15 \
+           -f x11grab \
+           -i "${DISPLAY}" \
+           -c:v libx264 \
+           -preset ultrafast \
+           -pix_fmt yuv420p \
+           "${output_file}" \
+           > /dev/null 2>&1 &
+    
+    FFMPEG_PID=$!
+    
+    # Wait a moment to ensure FFmpeg started successfully
+    sleep 1
+    
+    if ps -p "$FFMPEG_PID" > /dev/null 2>&1; then
+        echo "[entrypoint] Screen recording started (PID: ${FFMPEG_PID})"
+        echo "[entrypoint] Recording to: ${output_file}"
+        return 0
+    else
+        echo "[entrypoint] ERROR: Failed to start screen recording"
+        FFMPEG_PID=""
+        return 1
+    fi
+}
+
 # Function to download and execute a script
 download_and_execute() {
     echo "[entrypoint] Checking for SCRIPT_URL environment variable..."
@@ -186,6 +259,7 @@ main() {
     start_xvfb
     start_openbox
     start_pjeoffice
+    start_screen_recording
     
     # Check if SCRIPT_URL is set
     if [ -n "$SCRIPT_URL" ]; then

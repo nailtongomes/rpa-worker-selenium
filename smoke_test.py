@@ -136,6 +136,50 @@ def check_pjeoffice_alive():
         return False
 
 
+def check_screen_recording():
+    """
+    Check if screen recording is working.
+    
+    Returns:
+        bool: True if screen recording is working or not enabled, False if enabled but not working
+    """
+    use_recording = os.getenv("USE_SCREEN_RECORDING", "0") == "1"
+    
+    if not use_recording:
+        print("[smoke] Screen recording not enabled (USE_SCREEN_RECORDING=0), skipping check")
+        return True
+    
+    # Check if FFmpeg process is running
+    if not check_process_alive("ffmpeg"):
+        print("[smoke] ✗ FFmpeg process not running")
+        return False
+    
+    print("[smoke] ✓ FFmpeg process is alive")
+    
+    # Check if recording directory exists
+    recording_dir = os.getenv("RECORDING_DIR", "/app/recordings")
+    if not os.path.exists(recording_dir):
+        print(f"[smoke] ✗ Recording directory does not exist: {recording_dir}")
+        return False
+    
+    print(f"[smoke] ✓ Recording directory exists: {recording_dir}")
+    
+    # Check if recording file is being created
+    # The filename should be recording_*.mp4 or the custom name
+    recording_files = []
+    for file in os.listdir(recording_dir):
+        if file.startswith("recording_") and file.endswith(".mp4"):
+            recording_files.append(file)
+    
+    if recording_files:
+        print(f"[smoke] ✓ Recording file(s) found: {', '.join(recording_files)}")
+        return True
+    else:
+        # It might be too early, file hasn't been created yet
+        print("[smoke] ⚠ No recording files found yet (may be starting)")
+        return True
+
+
 def check_processes():
     """
     Check if required processes are alive.
@@ -166,6 +210,14 @@ def check_processes():
         results.append(check_pjeoffice_alive())
     else:
         print("[smoke] PJeOffice not enabled (USE_PJEOFFICE=0), skipping check")
+    
+    # Check screen recording if USE_SCREEN_RECORDING is enabled
+    use_recording = os.getenv("USE_SCREEN_RECORDING", "0") == "1"
+    if use_recording:
+        print("[smoke] Checking screen recording (USE_SCREEN_RECORDING=1)...")
+        results.append(check_screen_recording())
+    else:
+        print("[smoke] Screen recording not enabled (USE_SCREEN_RECORDING=0), skipping check")
     
     # If no processes were checked, return True
     if not results:

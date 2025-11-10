@@ -208,3 +208,64 @@ jobs:
         name: docker-pjeoffice-smoke-test-${{ matrix.name }}-results
         path: data/
         retention-days: 7
+
+  docker-screen-recording-test:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - dockerfile: Dockerfile.chrome
+            name: chrome-recording
+            tag: rpa-worker-selenium:chrome-rec
+    
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+    
+    - name: Set up Docker Buildx
+      uses: docker/setup-buildx-action@v3
+    
+    - name: Build Docker image
+      run: |
+        docker build -f ${{ matrix.dockerfile }} -t ${{ matrix.tag }} .
+    
+    - name: Create directories
+      run: |
+        mkdir -p data recordings
+        chmod 777 data recordings
+    
+    - name: Run smoke test with screen recording
+      run: |
+        docker run --rm \
+          -e USE_XVFB=1 \
+          -e USE_SCREEN_RECORDING=1 \
+          -e CHECK_PROCESSES=1 \
+          -e TARGET_URL=https://example.com \
+          -e CACHE_DIR=/data \
+          -e RECORDING_DIR=/recordings \
+          -v $(pwd)/data:/data \
+          -v $(pwd)/recordings:/recordings \
+          ${{ matrix.tag }} \
+          bash -c "sleep 5 && python /app/smoke_test.py && sleep 2"
+    
+    - name: Verify recording file exists
+      run: |
+        if [ -z "$(ls -A recordings/*.mp4 2>/dev/null)" ]; then
+          echo "Error: No recording file found"
+          exit 1
+        fi
+        echo "Recording file(s) found:"
+        ls -lh recordings/*.mp4
+    
+    - name: Upload screen recording artifacts
+      if: always()
+      uses: actions/upload-artifact@v4
+      with:
+        name: docker-screen-recording-test-${{ matrix.name }}-results
+        path: |
+          data/
+          recordings/
+        retention-days: 7

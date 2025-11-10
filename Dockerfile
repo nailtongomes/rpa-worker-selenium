@@ -46,6 +46,7 @@ RUN apt-get update \
     x11-apps \
     ghostscript \
     bc zip unzip \
+    ffmpeg \
     && apt-get install -y --fix-missing zip \
     && rm -rf /var/lib/apt/lists/*
 
@@ -59,13 +60,14 @@ RUN useradd -m -d /app -u 1000 rpauser \
 
 # Set up working directory structure
 WORKDIR /app
-RUN mkdir -p /app/src /app/logs /app/tmp \
+RUN mkdir -p /app/src /app/logs /app/tmp /app/recordings \
     /app/.pki/nssdb \
     /app/.cache \
     /data \
     && chmod 1777 /app/tmp \
     && chmod 700 /app/.pki/nssdb \
     && chmod 777 /data \
+    && chmod 777 /app/recordings \
     && chown -R rpauser:rpauser /app
 
 # Optional: Install PJeOffice (controlled by BUILD_PJEOFFICE build argument)
@@ -101,7 +103,9 @@ ENV USE_XVFB=0 \
     USE_OPENBOX=0 \
     USE_VNC=0 \
     USE_PJEOFFICE=0 \
+    USE_SCREEN_RECORDING=0 \
     VNC_PORT=5900 \
+    RECORDING_DIR=/app/recordings \
     XDG_CACHE_HOME=/app/.cache
 
 # Switch to non-root user
