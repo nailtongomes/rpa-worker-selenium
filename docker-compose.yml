@@ -14,3 +14,24 @@ services:
     # command: example_script.py
     # Or to get a shell
     # command: bash
+  
+  # Example service with VNC enabled for remote debugging
+  rpa-worker-vnc:
+    build: .
+    image: rpa-worker-selenium:latest
+    container_name: rpa-worker-selenium-vnc
+    ports:
+      - "5900:5900"  # VNC port
+    volumes:
+      - ./scripts:/app/src
+      - ./recordings:/app/recordings
+    environment:
+      - PYTHONUNBUFFERED=1
+      - USE_XVFB=1
+      - USE_VNC=1
+      - USE_OPENBOX=1
+      - SCREEN_WIDTH=1920
+      - SCREEN_HEIGHT=1080
+    # command: python /app/src/my_script.py
+    profiles:
+      - debug  # Only start with: docker-compose --profile debug up
