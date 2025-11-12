@@ -480,12 +480,29 @@ def test_script_downloader() -> bool:
 def test_helper_scripts() -> bool:
     """Test helper scripts functionality."""
     log("Testing helper scripts...")
-    
-    # Add /app/src to path if it exists
-    src_dir = pathlib.Path("/app/src")
-    if src_dir.exists() and str(src_dir) not in sys.path:
-        sys.path.insert(0, str(src_dir))
-    
+
+    # Detect helper script locations before importing them
+    helper_paths: List[pathlib.Path] = []
+
+    # 1) Local src directory relative to this script (useful for local runs)
+    local_src = pathlib.Path(__file__).parent / "src"
+    helper_paths.append(local_src)
+
+    # 2) Default container path
+    helper_paths.append(pathlib.Path("/app/src"))
+
+    # 3) Optional HELPER_PATHS env var (colon-separated)
+    extra_paths = os.getenv("HELPER_PATHS", "")
+    for entry in extra_paths.split(":"):
+        if entry.strip():
+            helper_paths.append(pathlib.Path(entry.strip()))
+
+    for path in helper_paths:
+        if path.exists():
+            resolved = str(path.resolve())
+            if resolved not in sys.path:
+                sys.path.insert(0, resolved)
+
     try:
         # Import helper1
         import helper1
