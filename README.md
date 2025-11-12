@@ -73,6 +73,27 @@ docker build -f Dockerfile.ubuntu -t rpa-worker-selenium-ubuntu .
 docker run --rm rpa-worker-selenium example_script.py
 ```
 
+### Running the VNC Debugging Example
+
+Test the VNC remote debugging feature with the included example:
+
+```bash
+# Build the image
+docker build -t rpa-worker-selenium .
+
+# Run with VNC enabled
+docker run --rm \
+  -e USE_XVFB=1 \
+  -e USE_VNC=1 \
+  -p 5900:5900 \
+  rpa-worker-selenium example_vnc_debug.py
+
+# In another terminal, connect with VNC client
+vncviewer localhost:5900
+```
+
+This example demonstrates a browser automation that you can observe live via VNC. It's perfect for understanding how the remote debugging feature works.
+
 ### Running Your Own Scripts
 
 #### Option 1: Mount a script from your local machine
