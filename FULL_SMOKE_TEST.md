@@ -268,7 +268,30 @@ Run unit tests:
 python test_full_smoke_test.py
 ```
 
+## Browser WebDriver Tests
+
+A dedicated test script `test_browser_drivers.py` provides focused testing of browser WebDriver initialization:
+- Tests conventional Selenium WebDriver (without SeleniumBase)
+- Validates Chrome, Firefox, and Brave browser initialization
+- Ensures compatibility with automations that require regular WebDriver
+- Uses local HTML files for reliable testing
+- Flexible driver path detection (/usr/local/bin and /usr/bin)
+
+Run browser WebDriver tests:
+```bash
+python test_browser_drivers.py
+```
+
+This test is particularly important for validating that conventional WebDriver works correctly in all Docker images, addressing concerns about Chrome initialization failures in specific Dockerfiles.
+
 ## Version History
+
+### v1.1.0 (2025-11-12)
+- Added dedicated browser WebDriver tests (test_browser_drivers.py)
+- Updated browser tests to use flexible driver paths
+- Changed to use local HTML files for more reliable testing
+- Improved compatibility with different driver installation locations
+- Better handling of network-isolated environments
 
 ### v1.0.0 (2025-11-12)
 - Initial release
