@@ -176,6 +176,8 @@ print(driver.title)
 driver.quit()
 ```
 
+You can also provide the `BRAVE_BROWSER_PATH` environment variable when starting the container (or running the smoke tests) so that scripts know where the Brave binary lives.
+
 Or use the included example script:
 
 ```bash
@@ -761,6 +763,7 @@ Environment variables for customizing the full smoke test:
 | `TARGET_URL` | https://example.com | URL to test during browser validation |
 | `CACHE_DIR` | /data | Directory to save test outputs and reports |
 | `TEST_ALL_BROWSERS` | 0 | Test all available browsers (set to 1 to enable) |
+| `BRAVE_BROWSER_PATH` | /usr/bin/brave-browser | Absolute path to the Brave browser binary (required for Brave tests) |
 | `CHECK_PROCESSES` | 0 | Check if Xvfb and PJeOffice processes are alive (set to 1 to enable) |
 | `VERBOSE` | 0 | Enable verbose output (set to 1 to enable) |
 
@@ -785,6 +788,8 @@ docker run --rm \
 ```
 
 The full smoke test generates detailed JSON reports with test results, timestamps, and success rates.
+
+> **Note:** The Brave browser portion of the smoke test is only required for images built from `Dockerfile.brave`. Enable it by setting `TEST_ALL_BROWSERS=1` and pointing `BRAVE_BROWSER_PATH` to a valid Brave binary; other images will report the Brave test as skipped.
 
 ## Troubleshooting
 
