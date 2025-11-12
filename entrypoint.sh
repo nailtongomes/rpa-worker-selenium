@@ -120,6 +120,33 @@ start_openbox() {
         return 0
     fi
     
+    echo "[entrypoint] Setting up OpenBox configuration..."
+    
+    # Create OpenBox configuration directory
+    mkdir -p "${HOME}/.config/openbox" 2>/dev/null || true
+    
+    # Create a minimal menu.xml if it doesn't exist
+    if [ ! -f "${HOME}/.config/openbox/menu.xml" ]; then
+        cat > "${HOME}/.config/openbox/menu.xml" << 'EOF'
+<?xml version="1.0" encoding="UTF-8"?>
+<openbox_menu xmlns="http://openbox.org/3.4/menu">
+    <menu id="root-menu" label="Openbox 3">
+        <item label="Terminal">
+            <action name="Execute">
+                <command>xterm</command>
+            </action>
+        </item>
+        <separator />
+        <item label="Exit">
+            <action name="Exit">
+                <prompt>no</prompt>
+            </action>
+        </item>
+    </menu>
+</openbox_menu>
+EOF
+    fi
+    
     echo "[entrypoint] Starting OpenBox window manager..."
     openbox --sm-disable &
     OPENBOX_PID=$!

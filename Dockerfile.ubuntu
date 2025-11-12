@@ -198,6 +198,18 @@ RUN mkdir -p /app/src /app/logs /app/tmp /app/recordings \
     && chmod 777 /app/recordings \
     && chown -R rpauser:rpauser /app
 
+# Set up OpenBox configuration to prevent menu warnings
+RUN mkdir -p /var/lib/openbox && \
+    echo '<?xml version="1.0" encoding="UTF-8"?>' > /var/lib/openbox/debian-menu.xml && \
+    echo '<openbox_menu xmlns="http://openbox.org/3.4/menu">' >> /var/lib/openbox/debian-menu.xml && \
+    echo '    <menu id="root-menu" label="Openbox 3">' >> /var/lib/openbox/debian-menu.xml && \
+    echo '        <item label="Terminal">' >> /var/lib/openbox/debian-menu.xml && \
+    echo '            <action name="Execute"><command>xterm</command></action>' >> /var/lib/openbox/debian-menu.xml && \
+    echo '        </item>' >> /var/lib/openbox/debian-menu.xml && \
+    echo '    </menu>' >> /var/lib/openbox/debian-menu.xml && \
+    echo '</openbox_menu>' >> /var/lib/openbox/debian-menu.xml && \
+    chmod 644 /var/lib/openbox/debian-menu.xml
+
 # Optional: Install PJeOffice (controlled by BUILD_PJEOFFICE build argument)
 RUN if [ "$BUILD_PJEOFFICE" = "1" ]; then \
     mkdir -p /opt/pjeoffice && \
