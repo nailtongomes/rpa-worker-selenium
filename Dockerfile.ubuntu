@@ -218,7 +218,7 @@ fi
 COPY requirements.txt .
 RUN python3 -m pip install --upgrade --trusted-host pypi.org --trusted-host files.pythonhosted.org pip \
     && pip install --no-cache-dir --trusted-host pypi.org --trusted-host files.pythonhosted.org -r requirements.txt \
-    && chmod -R 777 /usr/local/lib/python3.11/site-packages/seleniumbase/drivers || true
+    && chmod -R 777 /usr/local/lib/python3.11/dist-packages/seleniumbase/drivers || true
 
 # Copy application files
 COPY . .
