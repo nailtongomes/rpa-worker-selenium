@@ -26,6 +26,7 @@ XVFB_PID=""
 OPENBOX_PID=""
 PJEOFFICE_PID=""
 FFMPEG_PID=""
+VNC_PID=""
 
 # Setup directories with proper permissions
 setup_directories() {
@@ -56,6 +57,7 @@ setup_directories() {
 # Signal handling for graceful shutdown
 handle_sigterm() {
     echo "[entrypoint] Received shutdown signal, cleaning up..."
+    [ -n "$VNC_PID" ] && kill -TERM "$VNC_PID" 2>/dev/null || true
     [ -n "$FFMPEG_PID" ] && kill -TERM "$FFMPEG_PID" 2>/dev/null || true
     [ -n "$XVFB_PID" ] && kill -TERM "$XVFB_PID" 2>/dev/null || true
     [ -n "$OPENBOX_PID" ] && kill -TERM "$OPENBOX_PID" 2>/dev/null || true
@@ -239,6 +241,59 @@ start_screen_recording() {
     fi
 }
 
+# Start VNC server for remote debugging
+start_vnc() {
+    if [ "${USE_VNC}" != "1" ]; then
+        echo "[entrypoint] VNC server disabled (USE_VNC=${USE_VNC})"
+        return 0
+    fi
+    
+    # VNC requires Xvfb to be running
+    if [ "${USE_XVFB}" != "1" ]; then
+        echo "[entrypoint] WARNING: VNC server requires Xvfb (USE_XVFB=1), skipping VNC"
+        return 0
+    fi
+    
+    echo "[entrypoint] Starting VNC server..."
+    
+    # Get VNC port configuration
+    local vnc_port=${VNC_PORT:-5900}
+    
+    # Start x11vnc server
+    # Options:
+    #   -display: specify X display to connect to
+    #   -forever: keep listening for new connections (don't exit after first client disconnects)
+    #   -shared: allow multiple VNC clients to connect simultaneously
+    #   -rfbport: VNC server port
+    #   -nopw: no password required (suitable for local/trusted networks)
+    #   -bg: run in background
+    #   -o: log file location
+    x11vnc -display "${DISPLAY}" \
+           -forever \
+           -shared \
+           -rfbport "${vnc_port}" \
+           -nopw \
+           -bg \
+           -o /app/logs/x11vnc.log
+    
+    # Get the PID of x11vnc
+    # Wait a moment for x11vnc to start and write its PID
+    sleep 1
+    VNC_PID=$(pgrep -f "x11vnc.*${DISPLAY}" | head -1)
+    
+    if [ -n "$VNC_PID" ] && ps -p "$VNC_PID" > /dev/null 2>&1; then
+        echo "[entrypoint] VNC server started successfully (PID: ${VNC_PID})"
+        echo "[entrypoint] VNC server listening on port: ${vnc_port}"
+        echo "[entrypoint] Connect with: vncviewer <container-ip>:${vnc_port}"
+        echo "[entrypoint] Or use port mapping: docker run -p ${vnc_port}:${vnc_port} ..."
+        return 0
+    else
+        echo "[entrypoint] WARNING: Failed to start VNC server"
+        VNC_PID=""
+        return 1
+    fi
+}
+
 # Function to download and execute a script
 download_and_execute() {
     echo "[entrypoint] Checking for SCRIPT_URL environment variable..."
@@ -286,6 +341,7 @@ main() {
     start_xvfb
     start_openbox
     start_pjeoffice
+    start_vnc
     start_screen_recording
     
     # Check if SCRIPT_URL is set

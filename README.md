@@ -358,6 +358,100 @@ docker run --rm \
   rpa-worker-selenium-pje my_script.py
 ```
 
+### Remote Debugging with VNC
+
+The image supports VNC (Virtual Network Computing) for remote debugging, allowing you to connect to the container and visually observe the automation in real-time. This is particularly useful when video recording is not working as expected or when you need to see what's happening during execution.
+
+#### Enable VNC Server
+
+VNC requires Xvfb to be enabled. The VNC server allows read-only viewing - you can see the automation but cannot interact with it:
+
+```bash
+docker run --rm \
+  -e USE_XVFB=1 \
+  -e USE_VNC=1 \
+  -p 5900:5900 \
+  rpa-worker-selenium my_script.py
+```
+
+Then connect with any VNC client to `localhost:5900`:
+
+```bash
+# Using vncviewer (Linux/Mac)
+vncviewer localhost:5900
+
+# Using RealVNC Viewer (Windows/Mac/Linux)
+# Connect to: localhost:5900
+
+# Using TightVNC (Windows)
+# Connect to: localhost:5900
+```
+
+#### VNC with Custom Port
+
+```bash
+docker run --rm \
+  -e USE_XVFB=1 \
+  -e USE_VNC=1 \
+  -e VNC_PORT=5901 \
+  -p 5901:5901 \
+  rpa-worker-selenium my_script.py
+```
+
+#### VNC with PJeOffice and OpenBox
+
+To debug PJeOffice interactions with visual feedback:
+
+```bash
+docker run --rm \
+  -e USE_XVFB=1 \
+  -e USE_OPENBOX=1 \
+  -e USE_PJEOFFICE=1 \
+  -e USE_VNC=1 \
+  -p 5900:5900 \
+  rpa-worker-selenium-pje my_script.py
+```
+
+#### VNC with Docker Compose
+
+Create a `docker-compose.yml` file:
+
+```yaml
+services:
+  rpa-worker:
+    image: rpa-worker-selenium:latest
+    ports:
+      - "5900:5900"
+    environment:
+      - USE_XVFB=1
+      - USE_VNC=1
+      - SCREEN_WIDTH=1920
+      - SCREEN_HEIGHT=1080
+    volumes:
+      - ./scripts:/app/src
+    command: python /app/src/my_script.py
+```
+
+Then run:
+
+```bash
+docker-compose up
+```
+
+#### VNC Security Considerations
+
+**Important:** The default VNC configuration uses no password (`-nopw` flag) for simplicity in local development. This is suitable for:
+- Local development on your own machine
+- Trusted internal networks
+- Containers that are not exposed to the internet
+
+For production or untrusted networks, consider:
+- Using SSH tunneling to connect to VNC
+- Setting up a reverse proxy with authentication
+- Running the container in a private network
+
+**Note:** VNC requires Xvfb to be running (`USE_XVFB=1`). If Xvfb is not enabled, VNC will be skipped with a warning message.
+
 ### Screen Recording for Debugging
 
 The image supports optional screen recording to help debug automation issues, especially when working with PJeOffice or visual interactions.
