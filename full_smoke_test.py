@@ -39,6 +39,7 @@ CACHE_DIR = pathlib.Path(os.getenv("CACHE_DIR", "/data"))
 TEST_ALL_BROWSERS = os.getenv("TEST_ALL_BROWSERS", "0") == "1"
 CHECK_PROCESSES = os.getenv("CHECK_PROCESSES", "0") == "1"
 VERBOSE = os.getenv("VERBOSE", "0") == "1"
+BRAVE_BROWSER_PATH = os.getenv("BRAVE_BROWSER_PATH", "/usr/bin/brave-browser")
 
 # Ensure cache directory exists
 CACHE_DIR.mkdir(parents=True, exist_ok=True)
@@ -60,14 +61,18 @@ def log_verbose(message: str) -> None:
         log(message, "DEBUG")
 
 
-def record_test(test_name: str, passed: bool, details: str = "") -> None:
+def record_test(test_name: str, passed: bool, details: str = "", skipped: bool = False) -> None:
     """Record test result."""
     test_results[test_name] = {
         "passed": passed,
         "details": details,
-        "timestamp": datetime.datetime.now().isoformat()
+        "timestamp": datetime.datetime.now().isoformat(),
+        "skipped": skipped,
     }
-    status = "✓ PASS" if passed else "✗ FAIL"
+    if skipped:
+        status = "⚠ SKIP"
+    else:
+        status = "✓ PASS" if passed else "✗ FAIL"
     log(f"{status}: {test_name} - {details}")
 
 
@@ -311,12 +316,17 @@ def test_firefox_selenium() -> bool:
 def test_brave_selenium() -> bool:
     """Test basic Selenium with Brave."""
     log("Testing Selenium with Brave...")
-    
+
     # Check if Brave is installed
-    brave_path = "/usr/bin/brave-browser"
-    if not os.path.exists(brave_path):
-        record_test("brave_selenium", False, f"Brave browser not found at {brave_path}")
-        return False
+    brave_path = BRAVE_BROWSER_PATH
+    if not brave_path or not os.path.exists(brave_path):
+        record_test(
+            "brave_selenium",
+            True,
+            f"Skipped - Brave browser not found at {brave_path}",
+            skipped=True,
+        )
+        return True
     
     try:
         from selenium import webdriver
@@ -650,20 +660,29 @@ def test_network_connectivity() -> bool:
         return False
 
 
-def generate_report() -> Tuple[int, int]:
+def generate_report() -> Tuple[int, int, int]:
     """Generate and print test report."""
     log("\n" + "=" * 80)
     log("FULL SMOKE TEST REPORT")
     log("=" * 80)
     
-    passed = sum(1 for result in test_results.values() if result["passed"])
     total = len(test_results)
-    failed = total - passed
-    
+    skipped = sum(1 for result in test_results.values() if result.get("skipped"))
+    executed = total - skipped
+    passed = sum(
+        1
+        for result in test_results.values()
+        if result["passed"] and not result.get("skipped")
+    )
+    failed = executed - passed
+    success_rate = (passed / executed * 100) if executed else 0.0
+
     log(f"\nTotal Tests: {total}")
+    log(f"Executed: {executed}")
     log(f"Passed: {passed}")
     log(f"Failed: {failed}")
-    log(f"Success Rate: {(passed/total*100):.1f}%\n")
+    log(f"Skipped: {skipped}")
+    log(f"Success Rate: {success_rate:.1f}%\n")
     
     if failed > 0:
         log("Failed Tests:")
@@ -673,7 +692,7 @@ def generate_report() -> Tuple[int, int]:
     
     log("\nDetailed Results:")
     for test_name, result in test_results.items():
-        status = "✓ PASS" if result["passed"] else "✗ FAIL"
+        status = "⚠ SKIP" if result.get("skipped") else ("✓ PASS" if result["passed"] else "✗ FAIL")
         log(f"  {status} {test_name}: {result['details']}")
     
     # Save report to file
@@ -683,9 +702,11 @@ def generate_report() -> Tuple[int, int]:
     report_data = {
         "timestamp": timestamp,
         "total_tests": total,
+        "executed_tests": executed,
         "passed": passed,
         "failed": failed,
-        "success_rate": passed/total*100,
+        "skipped": skipped,
+        "success_rate": success_rate,
         "tests": test_results
     }
     
@@ -695,7 +716,7 @@ def generate_report() -> Tuple[int, int]:
     log(f"\nReport saved to: {report_path}")
     log("=" * 80 + "\n")
     
-    return passed, total
+    return passed, executed, skipped
 
 
 def main() -> int:
@@ -717,13 +738,35 @@ def main() -> int:
     
     # Browser tests
     test_chrome_selenium()
+    brave_available = bool(BRAVE_BROWSER_PATH) and os.path.exists(BRAVE_BROWSER_PATH)
     if TEST_ALL_BROWSERS:
         test_firefox_selenium()
-        test_brave_selenium()
+        if brave_available:
+            test_brave_selenium()
+        else:
+            record_test(
+                "brave_selenium",
+                True,
+                f"Skipped - BRAVE_BROWSER_PATH missing or invalid ({BRAVE_BROWSER_PATH})",
+                skipped=True,
+            )
+    else:
+        record_test(
+            "brave_selenium",
+            True,
+            "Skipped - TEST_ALL_BROWSERS disabled",
+            skipped=True,
+        )
     
     # Skip SeleniumBase test for now (initialization timeout issue)
     # test_seleniumbase()
     log("⚠ Skipping SeleniumBase test (initialization timeout issue)")
+    record_test(
+        "seleniumbase",
+        True,
+        "Skipped - SeleniumBase initialization timeout issue",
+        skipped=True,
+    )
     
     test_requests_fallback()
     
@@ -742,14 +785,14 @@ def main() -> int:
     test_network_connectivity()
     
     # Generate report
-    passed, total = generate_report()
-    
+    passed, executed, skipped = generate_report()
+
     # Return exit code
-    if passed == total:
+    if executed == 0 or passed == executed:
         log("✓ All tests passed!")
         return 0
     else:
-        log(f"✗ {total - passed} test(s) failed!")
+        log(f"✗ {executed - passed} test(s) failed!")
         return 1
 
 

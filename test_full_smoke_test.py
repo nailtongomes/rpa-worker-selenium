@@ -71,6 +71,7 @@ def test_record_test_function():
         record_test("test_pass", True, "This test passed")
         assert "test_pass" in test_results
         assert test_results["test_pass"]["passed"] is True
+        assert test_results["test_pass"].get("skipped") is False
         
         # Record a failing test
         record_test("test_fail", False, "This test failed")
@@ -237,11 +238,12 @@ def test_report_generation():
         fsm.record_test("test1", True, "Test 1 passed")
         fsm.record_test("test2", False, "Test 2 failed")
         fsm.record_test("test3", True, "Test 3 passed")
-        
-        passed, total = fsm.generate_report()
-        
+
+        passed, executed, skipped = fsm.generate_report()
+
         assert passed == 2
-        assert total == 3
+        assert executed == 3
+        assert skipped == 0
         
         # Check if report file was created
         report_files = list(pathlib.Path(cache_dir).glob("full_smoke_test_report_*.json"))
@@ -251,8 +253,10 @@ def test_report_generation():
         with open(report_files[0]) as f:
             report = json.load(f)
             assert report["total_tests"] == 3
+            assert report["executed_tests"] == 3
             assert report["passed"] == 2
             assert report["failed"] == 1
+            assert report["skipped"] == 0
             assert "test1" in report["tests"]
             assert "test2" in report["tests"]
             assert "test3" in report["tests"]
@@ -279,6 +283,7 @@ def test_configuration_from_env():
         os.environ['TEST_ALL_BROWSERS'] = '1'
         os.environ['CHECK_PROCESSES'] = '1'
         os.environ['VERBOSE'] = '1'
+        os.environ['BRAVE_BROWSER_PATH'] = '/opt/brave'
         
         # Reload module to pick up new env vars
         import importlib
@@ -290,6 +295,7 @@ def test_configuration_from_env():
         assert fsm.TEST_ALL_BROWSERS is True
         assert fsm.CHECK_PROCESSES is True
         assert fsm.VERBOSE is True
+        assert fsm.BRAVE_BROWSER_PATH == '/opt/brave'
         
         print("  ✓ Configuration from environment variables works correctly")
         return True
