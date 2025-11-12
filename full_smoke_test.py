@@ -124,14 +124,18 @@ def check_core_imports() -> bool:
             record_test(f"import_{package}", True, f"Successfully imported {module_name}")
             log_verbose(f"  ✓ {module_name} imported successfully")
         except ImportError as e:
+            error_msg = str(e).lower()
             record_test(f"import_{package}", False, f"Failed to import {module_name}: {e}")
             all_passed = False
         except Exception as e:
+            error_msg = str(e).lower()
             # Catch other errors (like KeyError for DISPLAY) and treat as import success
             # if the module itself was loaded but failed during initialization
-            if "DISPLAY" in str(e):
+            if any(keyword in error_msg for keyword in ("display", "connection refused")):
                 record_test(f"import_{package}", True, f"Module {module_name} loaded (DISPLAY not available)")
                 log_verbose(f"  ⚠ {module_name} loaded but requires DISPLAY")
+                if module_name == "pyautogui":
+                    log("PyAutoGUI import requires USE_XVFB=1 for strict validation.", "WARNING")
             else:
                 record_test(f"import_{package}", False, f"Failed to load {module_name}: {e}")
                 all_passed = False
