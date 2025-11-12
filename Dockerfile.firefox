@@ -79,6 +79,7 @@ RUN apt-get update \
     ghostscript \
     bc zip unzip \
     ffmpeg \
+    openjdk-17-jre-headless \
     && apt-get install -y --fix-missing zip \
     && rm -rf /var/lib/apt/lists/*
 
