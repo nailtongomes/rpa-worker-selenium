@@ -92,6 +92,9 @@ jobs:
         CACHE_DIR: ./data
       run: python smoke_test.py
     
+    - name: Run browser WebDriver tests
+      run: python test_browser_drivers.py
+    
     - name: Upload smoke test artifacts
       if: always()
       uses: actions/upload-artifact@v4
@@ -146,6 +149,14 @@ jobs:
           -v $(pwd)/data:/data \
           ${{ matrix.tag }} \
           python /app/smoke_test.py
+    
+    - name: Run browser WebDriver tests in container
+      run: |
+        docker run --rm \
+          -e CACHE_DIR=/data \
+          -v $(pwd)/data:/data \
+          ${{ matrix.tag }} \
+          python /app/test_browser_drivers.py
     
     - name: Upload Docker smoke test artifacts
       if: always()
