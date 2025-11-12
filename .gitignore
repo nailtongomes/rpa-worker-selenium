@@ -55,3 +55,6 @@ data/
 test_recordings/
 test_data/
 recordings/
+
+# Selenium artifacts
+downloaded_files/

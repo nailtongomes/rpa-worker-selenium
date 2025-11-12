@@ -581,17 +581,75 @@ FROM python:3.12-slim-bookworm  # or any other version
 
 ## Testing
 
-The repository includes a test suite to validate the functionality:
+The repository includes multiple test suites to validate the functionality:
+
+### Quick Test Suite
 
 ```bash
-# Run the test suite
+# Run the quick test suite
 python test_features.py
 ```
 
-The test suite validates:
+The quick test suite validates:
 - Script downloader URL parsing and filename extraction
 - Smoke test title extraction logic
 - Environment variable handling
+- Brave browser example script structure
+
+### Full Smoke Test
+
+```bash
+# Run the comprehensive smoke test
+python full_smoke_test.py
+```
+
+The full smoke test performs extensive validation:
+- Python version compatibility
+- Core package imports (selenium, seleniumbase, requests, beautifulsoup4, pandas, etc.)
+- Browser drivers availability (ChromeDriver, GeckoDriver)
+- Selenium functionality with different browsers (Chrome, Firefox, Brave - optional)
+- SeleniumBase functionality
+- Requests library as fallback
+- Script downloader functionality
+- Helper scripts integration
+- Environment variables configuration
+- Process health checks (Xvfb, PJeOffice, screen recording - when enabled)
+- Filesystem operations
+- Network connectivity
+
+#### Full Smoke Test Options
+
+Environment variables for customizing the full smoke test:
+
+| Variable | Default | Description |
+|----------|---------|-------------|
+| `TARGET_URL` | https://example.com | URL to test during browser validation |
+| `CACHE_DIR` | /data | Directory to save test outputs and reports |
+| `TEST_ALL_BROWSERS` | 0 | Test all available browsers (set to 1 to enable) |
+| `CHECK_PROCESSES` | 0 | Check if Xvfb and PJeOffice processes are alive (set to 1 to enable) |
+| `VERBOSE` | 0 | Enable verbose output (set to 1 to enable) |
+
+**Examples:**
+
+```bash
+# Run with custom URL and verbose output
+TARGET_URL=https://example.com VERBOSE=1 python full_smoke_test.py
+
+# Run with all browsers and process checks
+TEST_ALL_BROWSERS=1 CHECK_PROCESSES=1 python full_smoke_test.py
+
+# Run in Docker container with all features
+docker run --rm \
+  -e USE_XVFB=1 \
+  -e CHECK_PROCESSES=1 \
+  -e TARGET_URL=https://example.com \
+  -e CACHE_DIR=/data \
+  -v $(pwd)/data:/data \
+  rpa-worker-selenium \
+  python /app/full_smoke_test.py
+```
+
+The full smoke test generates detailed JSON reports with test results, timestamps, and success rates.
 
 ## Troubleshooting
 
