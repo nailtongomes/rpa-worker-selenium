@@ -473,6 +473,26 @@ For production or untrusted networks, consider:
 
 **Note:** VNC requires Xvfb to be running (`USE_XVFB=1`). If Xvfb is not enabled, VNC will be skipped with a warning message.
 
+#### VNC with Reverse Proxy (Production)
+
+For production deployments, use a reverse proxy with authentication and HTTPS. See the complete guide: **[VNC_CADDY_PROXY.md](VNC_CADDY_PROXY.md)**
+
+Quick example with Caddy:
+
+```bash
+# Start with Caddy reverse proxy
+docker-compose -f docker-compose.caddy.yml up -d
+
+# Access via browser (noVNC)
+open http://localhost:8080
+```
+
+The Caddy setup provides:
+- Basic authentication
+- HTTPS with automatic certificates (Let's Encrypt)
+- Browser-based VNC client (noVNC)
+- Centralized access control
+
 ### Screen Recording for Debugging
 
 The image supports optional screen recording to help debug automation issues, especially when working with PJeOffice or visual interactions.

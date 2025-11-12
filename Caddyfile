@@ -1,0 +1,34 @@
+# Caddy configuration for VNC reverse proxy
+# This is a basic configuration for local development
+# For production, see VNC_CADDY_PROXY.md
+
+# VNC proxy on port 5901
+:5901 {
+    # Optional: Uncomment for basic authentication
+    # Generate password hash with: docker run --rm caddy:2-alpine caddy hash-password
+    # basicauth {
+    #     admin JDJhJDE0JFpreDlYTGlXNlZZb3VMSFI1Tm1mT0ZVMHJ6R1ROSm1wvdC9CnFiUjdoeDJ3Z2hDeTRXdktl
+    # }
+
+    # Reverse proxy to VNC server
+    reverse_proxy rpa-worker-vnc:5900 {
+        # Enable websocket support for VNC
+        header_up Upgrade {http.request.header.Upgrade}
+        header_up Connection {http.request.header.Connection}
+    }
+
+    # Security headers
+    header {
+        X-Frame-Options "SAMEORIGIN"
+        X-Content-Type-Options "nosniff"
+    }
+
+    # Logging
+    log {
+        output file /var/log/caddy/vnc.log
+        level INFO
+    }
+}
+
+# noVNC web interface on port 8080
+# Access directly without Caddy - container exposes port 8080

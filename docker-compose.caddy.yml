@@ -1,0 +1,67 @@
+version: '3.8'
+
+services:
+  # RPA Worker with VNC enabled
+  rpa-worker-vnc:
+    build: .
+    image: rpa-worker-selenium:latest
+    container_name: rpa-worker-vnc
+    environment:
+      - USE_XVFB=1
+      - USE_VNC=1
+      - SCREEN_WIDTH=1920
+      - SCREEN_HEIGHT=1080
+    volumes:
+      - ./scripts:/app/src
+      - ./recordings:/app/recordings
+    # Don't expose VNC port directly - access through Caddy
+    # ports:
+    #   - "5900:5900"  # Commented out for security
+    networks:
+      - rpa-network
+    restart: unless-stopped
+    command: python /app/example_vnc_debug.py
+
+  # Caddy reverse proxy with websocket support for VNC
+  caddy:
+    image: caddy:2-alpine
+    container_name: caddy-vnc-proxy
+    ports:
+      - "80:80"      # HTTP
+      - "443:443"    # HTTPS
+      - "5901:5901"  # VNC through Caddy (for local development)
+    volumes:
+      - ./Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy_data:/data
+      - caddy_config:/config
+      - ./logs/caddy:/var/log/caddy
+    networks:
+      - rpa-network
+    restart: unless-stopped
+    depends_on:
+      - rpa-worker-vnc
+
+  # noVNC web client (browser-based VNC viewer)
+  novnc:
+    image: theasp/novnc:latest
+    container_name: novnc-viewer
+    environment:
+      - DISPLAY_WIDTH=1920
+      - DISPLAY_HEIGHT=1080
+      - RUN_XTERM=no
+    ports:
+      - "8080:8080"
+    networks:
+      - rpa-network
+    restart: unless-stopped
+    depends_on:
+      - rpa-worker-vnc
+    command: --vnc rpa-worker-vnc:5900
+
+networks:
+  rpa-network:
+    driver: bridge
+
+volumes:
+  caddy_data:
+  caddy_config:
