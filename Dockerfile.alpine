@@ -1,49 +1,17 @@
 # rpa-worker-selenium Dockerfile.alpine
-# Lightweight Alpine-based image for serverless environments (Lambda, Cloud Run)
-# Includes Chrome, Firefox, and Selenium base for RPA automation
+# Lightweight Debian-slim based image for serverless environments (Lambda, Cloud Run)
+# Includes Chrome (Chromium) and Firefox for RPA automation with Selenium base
 # NO PJeOffice or GUI features - optimized for headless operation only
+# NOTE: Named "alpine" for simplicity but uses Debian slim for better compatibility and smaller size
 
-# ---------- STAGE 1: builder
-FROM python:3.11-alpine AS builder
-
-# Build arguments
-ARG CHROME_VERSION=131.0.6778.85
-ARG FIREFOX_VERSION=133.0
-ARG GECKODRIVER_VERSION=0.36.0
-
-ENV PYTHONUNBUFFERED=1 \
-    PYTHONDONTWRITEBYTECODE=1
-
-# Install build dependencies
-RUN apk add --no-cache \
-    curl \
-    wget \
-    unzip \
-    tar \
-    xz \
-    ca-certificates
-
-WORKDIR /downloads
-
-# Download ChromeDriver
-RUN curl -fsSL "https://storage.googleapis.com/chrome-for-testing-public/${CHROME_VERSION}/linux64/chromedriver-linux64.zip" -o chromedriver.zip \
-    && unzip chromedriver.zip \
-    && chmod +x chromedriver-linux64/chromedriver
-
-# Download GeckoDriver (Firefox)
-RUN curl --retry 5 --retry-delay 10 -Lo "geckodriver.tar.gz" \
-    "https://github.com/mozilla/geckodriver/releases/download/v${GECKODRIVER_VERSION}/geckodriver-v${GECKODRIVER_VERSION}-linux64.tar.gz" \
-    && tar -zxf geckodriver.tar.gz \
-    && chmod +x geckodriver
-
-# ---------- STAGE 2: runtime
-FROM python:3.11-alpine
+FROM python:3.11-slim-bookworm
 
 LABEL maintainer="nailtongsilva@gmail.com" \
       version="1.0" \
-      description="Alpine-based lightweight Selenium with Chrome, Firefox for serverless RPA"
+      description="Lightweight Debian-slim Selenium with Chromium, Firefox for serverless RPA"
 
-ENV PYTHONUNBUFFERED=1 \
+ENV DEBIAN_FRONTEND=noninteractive \
+    PYTHONUNBUFFERED=1 \
     PYTHONDONTWRITEBYTECODE=1 \
     LANG=C.UTF-8 \
     LC_ALL=C.UTF-8 \
@@ -51,68 +19,51 @@ ENV PYTHONUNBUFFERED=1 \
     SCREEN_WIDTH=1366 \
     SCREEN_HEIGHT=768 \
     HOME=/app \
-    MOZ_ALLOW_ROOT=1 \
-    PATH=/usr/lib/chromium:$PATH
+    MOZ_ALLOW_ROOT=1
 
-# Install runtime dependencies for browsers and automation
-# Alpine uses apk package manager
-RUN apk add --no-cache \
-    # Chromium browser and driver (from Alpine repos)
+# Install minimal runtime dependencies for browsers and automation (optimized for build cache)
+RUN --mount=type=cache,target=/var/cache/apt,sharing=locked \
+    --mount=type=cache,target=/var/lib/apt,sharing=locked \
+    apt-get update \
+    && apt-get install -y --no-install-recommends \
+    # Chromium browser and driver (from Debian repos - lightweight)
     chromium \
-    chromium-chromedriver \
-    # Firefox browser
-    firefox \
-    # X11 and display (minimal)
-    xvfb-run \
+    chromium-driver \
+    # Firefox ESR browser and GeckoDriver
+    firefox-esr \
+    # X11 minimal
     xvfb \
-    # Libraries needed by Selenium and browsers
-    libgcc \
-    libstdc++ \
-    libx11 \
-    libxcb \
-    libxcomposite \
-    libxdamage \
-    libxext \
-    libxfixes \
-    libxrandr \
-    libxrender \
-    libxtst \
-    libxi \
-    nss \
-    freetype \
-    freetype-dev \
-    harfbuzz \
-    ca-certificates \
-    ttf-freefont \
-    font-noto-emoji \
+    # Essential libraries for Selenium
+    libglib2.0-0 \
+    libnss3 \
+    libx11-6 \
+    libxcb1 \
+    libxcomposite1 \
+    libxdamage1 \
+    libxext6 \
+    libxfixes3 \
+    libxrandr2 \
+    libgbm1 \
+    libpango-1.0-0 \
+    libpangocairo-1.0-0 \
+    libatk1.0-0 \
+    libatk-bridge2.0-0 \
+    libcups2 \
+    libxkbcommon0 \
+    libgtk-3-0 \
+    libdbus-glib-1-2 \
+    # Firefox dependencies
+    libdbus-1-3 \
+    libxt6 \
     # Process management
     procps \
-    # Networking utilities
-    curl \
-    wget \
     # Archive tools
-    zip \
-    unzip \
-    # Required shared libraries
-    gtk+3.0 \
-    dbus-libs \
-    mesa-gl \
-    mesa-dri-gallium \
-    # Additional libs for Selenium
-    eudev-libs \
-    && rm -rf /var/cache/apk/*
-
-# Copy ChromeDriver and GeckoDriver from builder stage
-COPY --from=builder /downloads/chromedriver-linux64/chromedriver /usr/local/bin/chromedriver
-COPY --from=builder /downloads/geckodriver /usr/local/bin/geckodriver
-
-# Ensure drivers are executable
-RUN chmod +x /usr/local/bin/chromedriver /usr/local/bin/geckodriver
+    unzip
 
 # Create symbolic links for compatibility
-RUN ln -sf /usr/bin/chromium-browser /usr/bin/google-chrome \
-    && ln -sf /usr/bin/chromium-browser /usr/bin/chrome \
-    && ln -sf /usr/lib/chromium/chromedriver /usr/bin/chromedriver-alpine
+RUN ln -sf /usr/bin/chromium /usr/bin/google-chrome \
+    && ln -sf /usr/bin/chromium /usr/bin/chrome \
+    && ln -sf /usr/bin/firefox-esr /usr/bin/firefox
 
 # Create working directory structure
 WORKDIR /app
@@ -123,8 +74,8 @@ RUN mkdir -p /app/src /app/logs /app/tmp /data \
 # Install Python dependencies (optimized with pip cache mount)
 COPY requirements.txt .
 RUN --mount=type=cache,target=/root/.cache/pip \
-    python -m pip install --upgrade pip \
-    && pip install -r requirements.txt
+    python -m pip install --upgrade --trusted-host pypi.org --trusted-host files.pythonhosted.org pip \
+    && pip install --trusted-host pypi.org --trusted-host files.pythonhosted.org -r requirements.txt
 
 # Copy application files
 COPY entrypoint.sh script_downloader.py smoke_test.py alpine_smoke_test.py ./
@@ -144,7 +95,7 @@ ENV USE_XVFB=0 \
 
 # Health check to ensure browsers are available
 HEALTHCHECK --interval=30s --timeout=10s --start-period=5s --retries=3 \
-    CMD chromium-browser --version && firefox --version || exit 1
+    CMD chromium --version && firefox --version || exit 1
 
 # Set up entrypoint for dynamic script execution
 ENTRYPOINT ["/app/entrypoint.sh"]
