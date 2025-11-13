@@ -24,7 +24,7 @@ A production-ready Docker image for running dynamic Python scripts with Selenium
 - ⚖️ Optional PJeOffice support (for Brazilian legal system automations)
 - 🔧 Pre-configured for RPA and automation tasks
 - 📊 Comprehensive packages: requests, beautifulsoup4, pandas, openpyxl, PyAutoGUI, and more
-- 🔒 Non-root user setup for security
+- 🔒 Runs as root by default for maximum compatibility (non-root user available if needed)
 - 🎯 Multi-stage build for optimized image size
 - 💡 Lightweight by default - optional services disabled for minimal resource usage
 
@@ -281,8 +281,10 @@ docker run --rm -it --entrypoint bash rpa-worker-selenium
 
 ### Run as Root (if needed)
 
+Since version updates, the container runs as root by default for compatibility. The `rpauser` is still created for backward compatibility but not used by default.
+
 ```bash
-docker run --rm -it --user root rpa-worker-selenium bash
+docker run --rm -it rpa-worker-selenium bash
 ```
 
 ## Optional Services (PJeOffice, Xvfb, OpenBox)
@@ -812,10 +814,10 @@ chrome_options.add_argument('--no-sandbox')
 
 ### Permission Issues
 
-The container runs as a non-root user (`rpauser` with UID 1000). If you need root access:
+The container runs as root by default for maximum compatibility. The non-root user `rpauser` (UID 1000) is still created for backward compatibility. If you need to run as the non-root user:
 
 ```bash
-docker run --rm -it --user root rpa-worker-selenium bash
+docker run --rm -it --user rpauser rpa-worker-selenium bash
 ```
 
 ### SSL Certificate Issues
@@ -823,12 +825,12 @@ docker run --rm -it --user root rpa-worker-selenium bash
 If you encounter SSL certificate issues, the image includes proper CA certificates. You may need to update them:
 
 ```bash
-docker run --rm --user root rpa-worker-selenium apt-get update && apt-get install -y ca-certificates
+docker run --rm rpa-worker-selenium apt-get update && apt-get install -y ca-certificates
 ```
 
 ## Security Features
 
-- ✅ Non-root user (`rpauser`) by default
+- ✅ Root user by default for compatibility (non-root user `rpauser` available if needed)
 - ✅ Minimal base image (slim-bookworm)
 - ✅ Multi-stage build reduces attack surface
 - ✅ No unnecessary packages in runtime image
