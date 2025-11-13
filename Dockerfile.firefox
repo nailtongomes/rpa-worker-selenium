@@ -157,8 +157,8 @@ ENV USE_XVFB=0 \
     RECORDING_DIR=/app/recordings \
     XDG_CACHE_HOME=/app/.cache
 
-# Switch to non-root user
-USER rpauser
+# Run as root user (rpauser kept for compatibility but not used)
+# USER rpauser
 
 # Set up entrypoint for dynamic script execution with download support
 ENTRYPOINT ["/app/entrypoint.sh"]

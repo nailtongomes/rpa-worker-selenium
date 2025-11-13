@@ -43,7 +43,8 @@ ENV DEBIAN_FRONTEND=noninteractive \
     SCREEN_WIDTH=1366 \
     SCREEN_HEIGHT=768 \
     HOME=/app \
-    TZ=America/Sao_Paulo
+    TZ=America/Sao_Paulo \
+    MOZ_ALLOW_ROOT=1
 
 # Install core system dependencies and desktop environment components
 RUN apt-get update && apt-get install -y --no-install-recommends \
@@ -257,8 +258,8 @@ ENV USE_XVFB=0 \
     XDG_DATA_HOME=/app/.local/share \
     DBUS_SESSION_BUS_ADDRESS=unix:path=/var/run/dbus/system_bus_socket
 
-# Switch to non-root user
-USER rpauser
+# Run as root user (rpauser kept for compatibility but not used)
+# USER rpauser
 
 # Set up entrypoint for dynamic script execution with download support
 ENTRYPOINT ["/app/entrypoint.sh"]

@@ -29,7 +29,8 @@ ENV DEBIAN_FRONTEND=noninteractive \
     DISPLAY=:99 \
     SCREEN_WIDTH=1366 \
     SCREEN_HEIGHT=768 \
-    HOME=/app
+    HOME=/app \
+    MOZ_ALLOW_ROOT=1
 
 # Install runtime dependencies for browsers and automation
 RUN apt-get update \
@@ -142,8 +143,8 @@ ENV USE_XVFB=0 \
     RECORDING_DIR=/app/recordings \
     XDG_CACHE_HOME=/app/.cache
 
-# Switch to non-root user
-USER rpauser
+# Run as root user (rpauser kept for compatibility but not used)
+# USER rpauser
 
 # Set up entrypoint for dynamic script execution with download support
 ENTRYPOINT ["/app/entrypoint.sh"]
