@@ -65,8 +65,6 @@ RUN apt-get update \
         bc zip unzip \
         openjdk-17-jre-headless \
         ffmpeg \
-        atk \
-        libatk-bridge2.0-0 \
         libxcomposite1 \
         libxrandr2 \
         libgbm1 \
