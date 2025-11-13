@@ -47,7 +47,8 @@ ENV DEBIAN_FRONTEND=noninteractive \
     SCREEN_WIDTH=1366 \
     SCREEN_HEIGHT=768 \
     MOZ_ALLOW_ROOT=1 \
-    HOME=/app
+    HOME=/root \
+    XDG_RUNTIME_DIR=/tmp/runtime-root
 
 # Install runtime dependencies for browsers and automation (optimized for build cache)
 RUN --mount=type=cache,target=/var/cache/apt,sharing=locked \
@@ -116,6 +117,10 @@ RUN --mount=type=cache,target=/var/cache/apt,sharing=locked \
     bc zip unzip \
     ffmpeg \
     openjdk-17-jre-headless
+
+# Ensure runtime directory exists for Firefox sandbox when running as root
+RUN mkdir -p /tmp/runtime-root \
+    && chmod 700 /tmp/runtime-root
 
 # Copy Firefox and GeckoDriver from builder stage
 COPY --from=builder /downloads/firefox /opt/firefox/
