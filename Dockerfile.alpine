@@ -14,14 +14,13 @@ ARG GECKODRIVER_VERSION=0.36.0
 ENV DEBIAN_FRONTEND=noninteractive
 
 # Install build dependencies
-RUN --mount=type=cache,target=/var/cache/apt,sharing=locked \
-    --mount=type=cache,target=/var/lib/apt,sharing=locked \
-    apt-get update && apt-get install -y --no-install-recommends \
-    curl \
-    wget \
-    bzip2 \
-    xz-utils \
-    ca-certificates
+RUN apt-get update && apt-get install -y --no-install-recommends \
+        curl \
+        wget \
+        bzip2 \
+        xz-utils \
+        ca-certificates \
+    && rm -rf /var/lib/apt/lists/*
 
 WORKDIR /downloads
 
@@ -53,10 +52,8 @@ ENV DEBIAN_FRONTEND=noninteractive \
     HOME=/app \
     MOZ_ALLOW_ROOT=1
 
-# Install minimal runtime dependencies for browsers and automation (optimized for build cache)
-RUN --mount=type=cache,target=/var/cache/apt,sharing=locked \
-    --mount=type=cache,target=/var/lib/apt,sharing=locked \
-    apt-get update \
+# Install minimal runtime dependencies for browsers and automation
+RUN apt-get update \
     && apt-get install -y --no-install-recommends \
     # Chromium browser and driver (from Debian repos - lightweight)
     chromium \
@@ -88,7 +85,8 @@ RUN --mount=type=cache,target=/var/cache/apt,sharing=locked \
     # Process management
     procps \
     # Archive tools
-    unzip
+    unzip \
+    && rm -rf /var/lib/apt/lists/*
 
 # Copy Firefox and GeckoDriver from builder stage
 COPY --from=builder /downloads/firefox /opt/firefox/
@@ -108,10 +106,9 @@ RUN mkdir -p /app/src /app/logs /app/tmp /data \
     && chmod 1777 /app/tmp \
     && chmod 777 /data
 
-# Install Python dependencies (optimized with pip cache mount)
+# Install Python dependencies
 COPY requirements.txt .
-RUN --mount=type=cache,target=/root/.cache/pip \
-    python -m pip install --upgrade --trusted-host pypi.org --trusted-host files.pythonhosted.org pip \
+RUN python -m pip install --upgrade --trusted-host pypi.org --trusted-host files.pythonhosted.org pip \
     && pip install --trusted-host pypi.org --trusted-host files.pythonhosted.org -r requirements.txt
 
 # Copy application files

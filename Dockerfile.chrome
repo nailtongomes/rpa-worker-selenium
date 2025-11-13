@@ -6,10 +6,9 @@ ARG CHROME_VERSION=142.0.7444.59
 ARG BUILD_PJEOFFICE=0
 ENV DEBIAN_FRONTEND=noninteractive
 
-# Install build dependencies (optimized with cache mount)
-RUN --mount=type=cache,target=/var/cache/apt,sharing=locked \
-    --mount=type=cache,target=/var/lib/apt,sharing=locked \
-    apt-get update && apt-get install -y --no-install-recommends curl unzip ca-certificates
+# Install build dependencies
+RUN apt-get update && apt-get install -y --no-install-recommends curl unzip ca-certificates \
+    && rm -rf /var/lib/apt/lists/*
 
 WORKDIR /downloads
 # Download Chrome and ChromeDriver (optimized with separate layers for better caching)
@@ -33,52 +32,50 @@ ENV DEBIAN_FRONTEND=noninteractive \
     HOME=/app \
     MOZ_ALLOW_ROOT=1
 
-# Install runtime dependencies for browsers and automation (optimized for build cache)
-RUN --mount=type=cache,target=/var/cache/apt,sharing=locked \
-    --mount=type=cache,target=/var/lib/apt,sharing=locked \
-    apt-get update \
+# Install runtime dependencies for browsers and automation
+RUN apt-get update \
     && apt-get install -y --no-install-recommends \
-    xvfb \
-    x11vnc \
-    x11-utils \
-    libgtk-3-0 \
-    libdbus-glib-1-2 \
-    libx11-xcb1 \
-    libxt6 \
-    libxdamage1 \
-    libnss3 \
-    libcups2 \
-    libxss1 \
-    libasound2 \
-    procps \
-    libpangocairo-1.0-0 \
-    libu2f-udev \
-    libvulkan1 \
-    curl \
-    fonts-liberation \
-    libnss3-tools \
-    openssl \
-    sudo \
-    openbox \
-    xdotool \
-    imagemagick \
-    x11-apps \
-    ghostscript \
-    bc zip unzip \
-    ffmpeg \
-    openjdk-17-jre-headless
+        xvfb \
+        x11vnc \
+        x11-utils \
+        libgtk-3-0 \
+        libdbus-glib-1-2 \
+        libx11-xcb1 \
+        libxt6 \
+        libxdamage1 \
+        libnss3 \
+        libcups2 \
+        libxss1 \
+        libasound2 \
+        procps \
+        libpangocairo-1.0-0 \
+        libu2f-udev \
+        libvulkan1 \
+        curl \
+        fonts-liberation \
+        libnss3-tools \
+        openssl \
+        sudo \
+        openbox \
+        xdotool \
+        imagemagick \
+        x11-apps \
+        ghostscript \
+        bc zip unzip \
+        ffmpeg \
+        openjdk-17-jre-headless \
+    && rm -rf /var/lib/apt/lists/*
 
 # Copy Chrome and ChromeDriver from builder stage
 COPY --from=builder /downloads/chrome.deb /tmp/
 COPY --from=builder /downloads/chromedriver-linux64/chromedriver /usr/local/bin
 
-# Install Chrome (optimized with cache mount)
-RUN --mount=type=cache,target=/var/cache/apt,sharing=locked \
-    --mount=type=cache,target=/var/lib/apt,sharing=locked \
-    apt-get update \
+# Install Chrome
+RUN apt-get update \
     && apt-get install -y --no-install-recommends /tmp/chrome.deb \
     && rm -rf /tmp/chrome.deb \
-    && chmod +x /usr/local/bin/chromedriver
+    && chmod +x /usr/local/bin/chromedriver \
+    && rm -rf /var/lib/apt/lists/*
 
 # Create non-root user
 RUN useradd -m -d /app -u 1000 rpauser \
@@ -124,10 +121,9 @@ RUN if [ "$BUILD_PJEOFFICE" = "1" ]; then \
     chmod -R 755 /app/.pjeoffice-pro; \
 fi
 
-# Install Python dependencies (optimized with pip cache mount)
+# Install Python dependencies
 COPY requirements.txt .
-RUN --mount=type=cache,target=/root/.cache/pip \
-    python -m pip install --upgrade --trusted-host pypi.org --trusted-host files.pythonhosted.org pip \
+RUN python -m pip install --upgrade --trusted-host pypi.org --trusted-host files.pythonhosted.org pip \
  && pip install --trusted-host pypi.org --trusted-host files.pythonhosted.org -r requirements.txt \
  && chmod -R 777 /usr/local/lib/python3.11/site-packages/seleniumbase/drivers || true
 
