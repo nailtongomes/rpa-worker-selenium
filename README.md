@@ -18,8 +18,9 @@ A production-ready Docker image for running dynamic Python scripts with Selenium
 
 - 🐍 Python 3.11 on Debian Bookworm
 - 🌐 Selenium WebDriver & SeleniumBase
-- 🚀 Google Chrome (specific version: 142.0.7444.162) from Chrome for Testing
-- 📦 ChromeDriver (matched to Chrome version from Chrome for Testing)
+- 🚀 Google Chrome (stable version) installed via official .deb package
+- 📦 ChromeDriver (automatically matched to stable Chrome version)
+- 🔐 Certificate support for .pfx files (CA/A1 tokens) with initialized NSS database
 - 🖥️ Optional Xvfb (virtual display), OpenBox window manager, and VNC support
 - 🎥 Optional screen recording with FFmpeg for debugging
 - ⚖️ Optional PJeOffice support (for Brazilian legal system automations)
@@ -712,12 +713,21 @@ echo "your-package==1.0.0" >> requirements.txt
 docker build -t rpa-worker-selenium .
 ```
 
-### Changing Chrome Version
+### Chrome Version
 
-Edit the `CHROME_VERSION` ARG in the Dockerfile:
+The Dockerfile automatically downloads the latest stable version of Google Chrome and its matching ChromeDriver. This ensures you always have the most recent stable release with security updates and bug fixes.
+
+If you need a specific Chrome version instead:
+
+1. Modify the builder stage to download a specific .deb version from Google's archive
+2. Or switch back to Chrome for Testing by specifying a version:
 
 ```dockerfile
-ARG CHROME_VERSION=142.0.7444.162  # Change to your desired version
+# In builder stage, replace the stable download with:
+ARG CHROME_VERSION=142.0.7444.162
+RUN curl -Lo "chrome-linux64.zip" "https://storage.googleapis.com/chrome-for-testing-public/${CHROME_VERSION}/linux64/chrome-linux64.zip" \
+ && unzip chrome-linux64.zip
+# And adjust the runtime stage to extract and link accordingly
 ```
 
 ### Using a Different Python Version
@@ -807,11 +817,15 @@ The full smoke test generates detailed JSON reports with test results, timestamp
 
 ### Chrome/ChromeDriver Version Mismatch
 
-The Dockerfile uses a specific Chrome version matched with its corresponding ChromeDriver from Chrome for Testing. If you need a different version, update the `CHROME_VERSION` ARG and rebuild:
+The Dockerfile automatically downloads the latest stable Chrome version and matching ChromeDriver, so version mismatches should not occur. Both are synchronized to use the same stable release version.
+
+If you experience issues, rebuild the image to get the latest versions:
 
 ```bash
-docker build --build-arg CHROME_VERSION=142.0.7444.162 -t rpa-worker-selenium .
+docker build -t rpa-worker-selenium .
 ```
+
+For a specific version, see the "Chrome Version" section under Customization.
 
 ### Memory Issues
 
@@ -837,6 +851,43 @@ If you encounter SSL certificate issues, the image includes proper CA certificat
 ```bash
 docker run --rm rpa-worker-selenium apt-get update && apt-get install -y ca-certificates
 ```
+
+### Client Certificate Authentication (.pfx/.p12 files)
+
+The image includes support for client certificate authentication using .pfx (PKCS#12) files, commonly used for CA certificates or A1 digital tokens in Brazil. The NSS certificate database is pre-initialized for both the default app user and root user.
+
+#### Using .pfx certificates with Chrome
+
+To import a .pfx certificate into Chrome's certificate store:
+
+```bash
+# Import certificate into NSS database (run inside container)
+pk12util -i /path/to/certificate.pfx -d sql:/app/.pki/nssdb
+
+# Or for root user:
+pk12util -i /path/to/certificate.pfx -d sql:/root/.pki/nssdb
+```
+
+You can also mount your certificate file when running the container:
+
+```bash
+docker run --rm \
+  -v /path/to/your/certificate.pfx:/app/certs/certificate.pfx \
+  rpa-worker-selenium \
+  bash -c "pk12util -i /app/certs/certificate.pfx -d sql:/app/.pki/nssdb && python your_script.py"
+```
+
+#### Listing installed certificates
+
+```bash
+# List certificates in the database
+certutil -L -d sql:/app/.pki/nssdb
+
+# Or for root user:
+certutil -L -d sql:/root/.pki/nssdb
+```
+
+**Note**: The NSS database password is empty by default for simplified automation. Chrome will automatically use certificates from the NSS database when accessing websites that require client authentication.
 
 ## Security Features
 
