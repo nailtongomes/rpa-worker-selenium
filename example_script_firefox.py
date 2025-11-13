@@ -16,7 +16,7 @@ def main():
     firefox_options.add_argument('--disable-dev-shm-usage')
     
     # Create service with explicit geckodriver path
-    service = Service('/usr/local/bin/geckodriver')
+    service = Service() #'/usr/local/bin/geckodriver')
     
     # Create driver
     print("Starting Firefox browser...")
