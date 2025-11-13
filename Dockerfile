@@ -2,20 +2,26 @@
 # Multi-stage build for optimized image size
 FROM python:3.11-slim-bookworm AS builder
 
-ARG CHROME_VERSION=142.0.7444.162
 ARG BUILD_PJEOFFICE=0
 ENV DEBIAN_FRONTEND=noninteractive
 
-# Install build dependencies
-RUN apt-get update && apt-get install -y --no-install-recommends curl unzip ca-certificates \
+# Install build dependencies including wget for downloading .deb package
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    curl \
+    wget \
+    unzip \
+    ca-certificates \
     && rm -rf /var/lib/apt/lists/*
 
 WORKDIR /downloads
-# Download Chrome and ChromeDriver from Chrome for Testing
-RUN curl -Lo "chromedriver-linux64.zip" "https://storage.googleapis.com/chrome-for-testing-public/${CHROME_VERSION}/linux64/chromedriver-linux64.zip" \
- && curl -Lo "chrome-linux64.zip" "https://storage.googleapis.com/chrome-for-testing-public/${CHROME_VERSION}/linux64/chrome-linux64.zip" \
- && unzip chromedriver-linux64.zip \
- && unzip chrome-linux64.zip
+
+# Download stable Google Chrome .deb package
+RUN wget -q https://dl.google.com/linux/direct/google-chrome-stable_current_amd64.deb
+
+# Download latest stable ChromeDriver
+RUN CHROMEDRIVER_VERSION=$(curl -sS https://googlechromelabs.github.io/chrome-for-testing/LATEST_RELEASE_STABLE) && \
+    curl -Lo "chromedriver-linux64.zip" "https://storage.googleapis.com/chrome-for-testing-public/${CHROMEDRIVER_VERSION}/linux64/chromedriver-linux64.zip" && \
+    unzip chromedriver-linux64.zip
 
 # ---------- STAGE 2: runtime
 FROM python:3.11-slim-bookworm
@@ -72,15 +78,18 @@ RUN apt-get update \
         libxfixes3 \
     && rm -rf /var/lib/apt/lists/*
 
-# Copy Chrome and ChromeDriver from builder stage
-COPY --from=builder /downloads/chrome-linux64 /opt/chrome
+# Copy ChromeDriver from builder stage
 COPY --from=builder /downloads/chromedriver-linux64/chromedriver /usr/local/bin/chromedriver
 
-# Create symbolic links and set permissions
-RUN ln -s /opt/chrome/chrome /usr/local/bin/chrome \
-    && ln -s /opt/chrome/chrome /usr/local/bin/google-chrome \
-    && chmod +x /usr/local/bin/chromedriver \
-    && chmod +x /opt/chrome/chrome
+# Copy and install Chrome .deb package from builder stage
+COPY --from=builder /downloads/google-chrome-stable_current_amd64.deb /tmp/
+RUN apt-get update \
+    && apt-get install -y --no-install-recommends /tmp/google-chrome-stable_current_amd64.deb \
+    && rm /tmp/google-chrome-stable_current_amd64.deb \
+    && rm -rf /var/lib/apt/lists/*
+
+# Set ChromeDriver permissions
+RUN chmod +x /usr/local/bin/chromedriver
 
 # Create non-root user
 RUN useradd -m -d /app -u 1000 rpauser \
@@ -97,6 +106,14 @@ RUN mkdir -p /app/src /app/logs /app/tmp /app/recordings \
     && chmod 777 /data \
     && chmod 777 /app/recordings \
     && chown -R rpauser:rpauser /app
+
+# Initialize NSS database for certificate support (Chrome will use this for .pfx certificates)
+RUN certutil -N -d sql:/app/.pki/nssdb --empty-password || true
+
+# Set up root user certificate database as well (since container runs as root by default)
+RUN mkdir -p /root/.pki/nssdb \
+    && chmod 700 /root/.pki/nssdb \
+    && certutil -N -d sql:/root/.pki/nssdb --empty-password || true
 
 # Set up OpenBox configuration to prevent menu warnings
 RUN mkdir -p /var/lib/openbox && \
