@@ -15,8 +15,10 @@ ENV DEBIAN_FRONTEND=noninteractive \
     HOME=/app \
     MOZ_ALLOW_ROOT=1
 
-# Install runtime dependencies for browsers and automation
-RUN apt-get update \
+# Install runtime dependencies for browsers and automation (optimized for build cache)
+RUN --mount=type=cache,target=/var/cache/apt,sharing=locked \
+    --mount=type=cache,target=/var/lib/apt,sharing=locked \
+    apt-get update \
     && apt-get install -y --no-install-recommends \
     xvfb \
     x11vnc \
@@ -48,17 +50,16 @@ RUN apt-get update \
     gnupg \
     apt-transport-https \
     ca-certificates \
-    ffmpeg \
-    && apt-get install -y --fix-missing zip \
-    && rm -rf /var/lib/apt/lists/*
+    ffmpeg
 
-# Install Brave browser from official repository
+# Install Brave browser from official repository (optimized with cache mount)
 # Note: This requires access to brave-browser-apt-release.s3.brave.com during build
 RUN curl -fsSL https://brave-browser-apt-release.s3.brave.com/brave-browser-archive-keyring.gpg | gpg --dearmor -o /usr/share/keyrings/brave-browser-archive-keyring.gpg \
-    && echo "deb [signed-by=/usr/share/keyrings/brave-browser-archive-keyring.gpg arch=amd64] https://brave-browser-apt-release.s3.brave.com/ stable main" | tee /etc/apt/sources.list.d/brave-browser-release.list \
-    && apt-get update \
-    && apt-get install -y brave-browser \
-    && rm -rf /var/lib/apt/lists/*
+    && echo "deb [signed-by=/usr/share/keyrings/brave-browser-archive-keyring.gpg arch=amd64] https://brave-browser-apt-release.s3.brave.com/ stable main" | tee /etc/apt/sources.list.d/brave-browser-release.list
+RUN --mount=type=cache,target=/var/cache/apt,sharing=locked \
+    --mount=type=cache,target=/var/lib/apt,sharing=locked \
+    apt-get update \
+    && apt-get install -y brave-browser
 
 # Install ChromeDriver (Brave uses Chromium, so ChromeDriver works with it)
 # We'll use the latest stable ChromeDriver that's compatible with Brave
@@ -117,10 +118,11 @@ RUN if [ "$BUILD_PJEOFFICE" = "1" ]; then \
     chmod -R 755 /app/.pjeoffice-pro; \
 fi
 
-# Install Python dependencies
+# Install Python dependencies (optimized with pip cache mount)
 COPY requirements.txt .
-RUN python -m pip install --upgrade --trusted-host pypi.org --trusted-host files.pythonhosted.org pip \
- && pip install --no-cache-dir --trusted-host pypi.org --trusted-host files.pythonhosted.org -r requirements.txt \
+RUN --mount=type=cache,target=/root/.cache/pip \
+    python -m pip install --upgrade --trusted-host pypi.org --trusted-host files.pythonhosted.org pip \
+ && pip install --trusted-host pypi.org --trusted-host files.pythonhosted.org -r requirements.txt \
  && chmod -R 777 /usr/local/lib/python3.11/site-packages/seleniumbase/drivers || true
 
 # Copy application files

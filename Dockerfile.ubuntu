@@ -10,19 +10,20 @@ ARG BUILD_PJEOFFICE=0
 
 ENV DEBIAN_FRONTEND=noninteractive
 
-# Install build dependencies
-RUN apt-get update && apt-get install -y --no-install-recommends \
+# Install build dependencies (optimized with cache mount)
+RUN --mount=type=cache,target=/var/cache/apt,sharing=locked \
+    --mount=type=cache,target=/var/lib/apt,sharing=locked \
+    apt-get update && apt-get install -y --no-install-recommends \
     curl \
     wget \
     unzip \
-    ca-certificates \
-    && rm -rf /var/lib/apt/lists/*
+    ca-certificates
 
 WORKDIR /downloads
 
-# Download Chrome and ChromeDriver
-RUN curl --retry 5 --retry-delay 10 -Lo "chrome.deb" "https://dl.google.com/linux/direct/google-chrome-stable_current_amd64.deb" \
-    && curl --retry 5 --retry-delay 10 -fsSL "https://storage.googleapis.com/chrome-for-testing-public/${CHROME_VERSION}/linux64/chromedriver-linux64.zip" -o chromedriver.zip \
+# Download Chrome and ChromeDriver (optimized with separate layers for better caching)
+RUN curl --retry 5 --retry-delay 10 -Lo "chrome.deb" "https://dl.google.com/linux/direct/google-chrome-stable_current_amd64.deb"
+RUN curl --retry 5 --retry-delay 10 -fsSL "https://storage.googleapis.com/chrome-for-testing-public/${CHROME_VERSION}/linux64/chromedriver-linux64.zip" -o chromedriver.zip \
     && unzip chromedriver.zip
 
 # ---------- STAGE 2: runtime
@@ -164,18 +165,18 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     x11-apps \
     # PolicyKit for authentication dialogs
     policykit-1 \
-    openjdk-17-jre-headless \
-    && apt-get install -y --fix-missing zip \
-    && rm -rf /var/lib/apt/lists/*
+    openjdk-17-jre-headless
 
 # Copy Chrome and ChromeDriver from builder stage
 COPY --from=builder /downloads/chrome.deb /tmp/
 COPY --from=builder /downloads/chromedriver-linux64/chromedriver /usr/local/bin
 
-# Install Chrome
-RUN apt-get update \
+# Install Chrome (optimized with cache mount)
+RUN --mount=type=cache,target=/var/cache/apt,sharing=locked \
+    --mount=type=cache,target=/var/lib/apt,sharing=locked \
+    apt-get update \
     && apt-get install -y --no-install-recommends /tmp/chrome.deb \
-    && rm -rf /var/lib/apt/lists/* /tmp/chrome.deb \
+    && rm -rf /tmp/chrome.deb \
     && chmod +x /usr/local/bin/chromedriver
 
 # Create symlinks for Python
@@ -229,10 +230,11 @@ RUN if [ "$BUILD_PJEOFFICE" = "1" ]; then \
     chmod -R 755 /app/.pjeoffice-pro; \
 fi
 
-# Install Python dependencies
+# Install Python dependencies (optimized with pip cache mount)
 COPY requirements.txt .
-RUN python3 -m pip install --upgrade --trusted-host pypi.org --trusted-host files.pythonhosted.org pip \
-    && pip install --no-cache-dir --trusted-host pypi.org --trusted-host files.pythonhosted.org -r requirements.txt \
+RUN --mount=type=cache,target=/root/.cache/pip \
+    python3 -m pip install --upgrade --trusted-host pypi.org --trusted-host files.pythonhosted.org pip \
+    && pip install --trusted-host pypi.org --trusted-host files.pythonhosted.org -r requirements.txt \
     && chmod -R 777 /usr/local/lib/python3.11/dist-packages/seleniumbase/drivers || true
 
 # Copy application files

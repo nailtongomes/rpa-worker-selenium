@@ -133,6 +133,9 @@ jobs:
           - dockerfile: Dockerfile.ubuntu
             name: ubuntu
             tag: rpa-worker-selenium:ubuntu
+          - dockerfile: Dockerfile.alpine
+            name: alpine
+            tag: rpa-worker-selenium:alpine
     
     steps:
     - name: Checkout code
@@ -164,6 +167,17 @@ jobs:
           -v $(pwd)/data:/data \
           ${{ matrix.tag }} \
           python /app/test_browser_drivers.py
+    
+    - name: Run Alpine smoke test
+      if: matrix.name == 'alpine'
+      run: |
+        docker run --rm \
+          -e TARGET_URL=https://example.com \
+          -e CACHE_DIR=/data \
+          -e VERBOSE=1 \
+          -v $(pwd)/data:/data \
+          ${{ matrix.tag }} \
+          python /app/alpine_smoke_test.py
     
     - name: Upload Docker smoke test artifacts
       if: always()

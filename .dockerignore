@@ -40,4 +40,6 @@ tests/
 test_*.py
 *_test.py
 !smoke_test.py
+!full_smoke_test.py
+!alpine_smoke_test.py
 !test_browser_drivers.py

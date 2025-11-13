@@ -15,8 +15,10 @@ ENV DEBIAN_FRONTEND=noninteractive \
     HOME=/app \
     MOZ_ALLOW_ROOT=1
 
-# Install runtime dependencies for browsers and automation
-RUN apt-get update \
+# Install runtime dependencies for browsers and automation (optimized for build cache)
+RUN --mount=type=cache,target=/var/cache/apt,sharing=locked \
+    --mount=type=cache,target=/var/lib/apt,sharing=locked \
+    apt-get update \
     && apt-get install -y --no-install-recommends \
     chromium \
     chromium-driver \
@@ -48,9 +50,7 @@ RUN apt-get update \
     ghostscript \
     bc zip unzip \
     openjdk-17-jre-headless \
-    ffmpeg \
-    && apt-get install -y --fix-missing zip \
-    && rm -rf /var/lib/apt/lists/*
+    ffmpeg
 
 # Create symbolic links for compatibility with scripts expecting google-chrome
 RUN ln -sf /usr/bin/chromium /usr/bin/google-chrome \
@@ -100,10 +100,11 @@ RUN if [ "$BUILD_PJEOFFICE" = "1" ]; then \
     chmod -R 755 /app/.pjeoffice-pro; \
 fi
 
-# Install Python dependencies
+# Install Python dependencies (optimized with pip cache mount)
 COPY requirements.txt .
-RUN python -m pip install --upgrade --trusted-host pypi.org --trusted-host files.pythonhosted.org pip \
- && pip install --no-cache-dir --trusted-host pypi.org --trusted-host files.pythonhosted.org -r requirements.txt \
+RUN --mount=type=cache,target=/root/.cache/pip \
+    python -m pip install --upgrade --trusted-host pypi.org --trusted-host files.pythonhosted.org pip \
+ && pip install --trusted-host pypi.org --trusted-host files.pythonhosted.org -r requirements.txt \
  && chmod -R 777 /usr/local/lib/python3.11/site-packages/seleniumbase/drivers || true
 
 # Copy application files

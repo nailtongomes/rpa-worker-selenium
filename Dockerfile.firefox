@@ -8,23 +8,24 @@ ARG GECKODRIVER_VERSION=0.36.0
 ARG BUILD_PJEOFFICE=0
 ENV DEBIAN_FRONTEND=noninteractive
 
-# Install build dependencies
-RUN apt-get update && apt-get install -y --no-install-recommends \
+# Install build dependencies (optimized with cache mount)
+RUN --mount=type=cache,target=/var/cache/apt,sharing=locked \
+    --mount=type=cache,target=/var/lib/apt,sharing=locked \
+    apt-get update && apt-get install -y --no-install-recommends \
     curl \
     wget \
     unzip \
     bzip2 \
     xz-utils \
-    ca-certificates \
-    && rm -rf /var/lib/apt/lists/*
+    ca-certificates
 
 WORKDIR /downloads
 
-# Download Firefox and GeckoDriver
+# Download Firefox and GeckoDriver (optimized with separate layers for better caching)
 RUN curl --retry 5 --retry-delay 10 -Lo "firefox.tar.xz" \
     "https://ftp.mozilla.org/pub/firefox/releases/${FIREFOX_VERSION}/linux-x86_64/en-US/firefox-${FIREFOX_VERSION}.tar.xz" \
-    && tar -xf firefox.tar.xz \
-    && curl --retry 5 --retry-delay 10 -Lo "geckodriver.tar.gz" \
+    && tar -xf firefox.tar.xz
+RUN curl --retry 5 --retry-delay 10 -Lo "geckodriver.tar.gz" \
     "https://github.com/mozilla/geckodriver/releases/download/v${GECKODRIVER_VERSION}/geckodriver-v${GECKODRIVER_VERSION}-linux64.tar.gz" \
     && tar -zxf geckodriver.tar.gz
 
@@ -48,8 +49,10 @@ ENV DEBIAN_FRONTEND=noninteractive \
     MOZ_ALLOW_ROOT=1 \
     HOME=/app
 
-# Install runtime dependencies for browsers and automation
-RUN apt-get update \
+# Install runtime dependencies for browsers and automation (optimized for build cache)
+RUN --mount=type=cache,target=/var/cache/apt,sharing=locked \
+    --mount=type=cache,target=/var/lib/apt,sharing=locked \
+    apt-get update \
     && apt-get install -y --no-install-recommends \
     xvfb \
     x11vnc \
@@ -79,9 +82,7 @@ RUN apt-get update \
     ghostscript \
     bc zip unzip \
     ffmpeg \
-    openjdk-17-jre-headless \
-    && apt-get install -y --fix-missing zip \
-    && rm -rf /var/lib/apt/lists/*
+    openjdk-17-jre-headless
 
 # Copy Firefox and GeckoDriver from builder stage
 COPY --from=builder /downloads/firefox /opt/firefox/
@@ -135,10 +136,11 @@ RUN if [ "$BUILD_PJEOFFICE" = "1" ]; then \
     chmod -R 755 /app/.pjeoffice-pro; \
 fi
 
-# Install Python dependencies
+# Install Python dependencies (optimized with pip cache mount)
 COPY requirements.txt .
-RUN python -m pip install --upgrade --trusted-host pypi.org --trusted-host files.pythonhosted.org pip \
-    && pip install --no-cache-dir --trusted-host pypi.org --trusted-host files.pythonhosted.org -r requirements.txt \
+RUN --mount=type=cache,target=/root/.cache/pip \
+    python -m pip install --upgrade --trusted-host pypi.org --trusted-host files.pythonhosted.org pip \
+    && pip install --trusted-host pypi.org --trusted-host files.pythonhosted.org -r requirements.txt \
     && chmod -R 777 /usr/local/lib/python3.11/site-packages/seleniumbase/drivers || true
 
 # Copy application files
