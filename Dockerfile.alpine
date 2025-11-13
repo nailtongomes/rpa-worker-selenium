@@ -4,6 +4,38 @@
 # NO PJeOffice or GUI features - optimized for headless operation only
 # NOTE: Named "alpine" for simplicity but uses Debian slim for better compatibility and smaller size
 
+# ============================
+# 1. Build stage (Firefox)
+# ============================
+FROM python:3.11-slim-bookworm AS builder
+
+ARG FIREFOX_VERSION=145.0
+ARG GECKODRIVER_VERSION=0.36.0
+ENV DEBIAN_FRONTEND=noninteractive
+
+# Install build dependencies
+RUN --mount=type=cache,target=/var/cache/apt,sharing=locked \
+    --mount=type=cache,target=/var/lib/apt,sharing=locked \
+    apt-get update && apt-get install -y --no-install-recommends \
+    curl \
+    wget \
+    bzip2 \
+    xz-utils \
+    ca-certificates
+
+WORKDIR /downloads
+
+# Download Firefox and GeckoDriver
+RUN curl --retry 5 --retry-delay 10 -Lo "firefox.tar.xz" \
+    "https://ftp.mozilla.org/pub/firefox/releases/${FIREFOX_VERSION}/linux-x86_64/en-US/firefox-${FIREFOX_VERSION}.tar.xz" \
+    && tar -xf firefox.tar.xz
+RUN curl --retry 5 --retry-delay 10 -Lo "geckodriver.tar.gz" \
+    "https://github.com/mozilla/geckodriver/releases/download/v${GECKODRIVER_VERSION}/geckodriver-v${GECKODRIVER_VERSION}-linux64.tar.gz" \
+    && tar -zxf geckodriver.tar.gz
+
+# ============================
+# 2. Final stage
+# ============================
 FROM python:3.11-slim-bookworm
 
 LABEL maintainer="nailtongsilva@gmail.com" \
@@ -29,8 +61,6 @@ RUN --mount=type=cache,target=/var/cache/apt,sharing=locked \
     # Chromium browser and driver (from Debian repos - lightweight)
     chromium \
     chromium-driver \
-    # Firefox ESR browser and GeckoDriver
-    firefox-esr \
     # X11 minimal
     xvfb \
     # Essential libraries for Selenium
@@ -60,10 +90,17 @@ RUN --mount=type=cache,target=/var/cache/apt,sharing=locked \
     # Archive tools
     unzip
 
+# Copy Firefox and GeckoDriver from builder stage
+COPY --from=builder /downloads/firefox /opt/firefox/
+COPY --from=builder /downloads/geckodriver /usr/local/bin/
+
+# Install Firefox and GeckoDriver
+RUN ln -s /opt/firefox/firefox /usr/local/bin/firefox \
+    && chmod +x /usr/local/bin/geckodriver
+
 # Create symbolic links for compatibility
 RUN ln -sf /usr/bin/chromium /usr/bin/google-chrome \
-    && ln -sf /usr/bin/chromium /usr/bin/chrome \
-    && ln -sf /usr/bin/firefox-esr /usr/bin/firefox
+    && ln -sf /usr/bin/chromium /usr/bin/chrome
 
 # Create working directory structure
 WORKDIR /app

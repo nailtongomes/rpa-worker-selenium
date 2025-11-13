@@ -3,7 +3,7 @@
 # Use this version to run Selenium automation with Firefox browser
 FROM python:3.11-slim-bookworm AS builder
 
-ARG FIREFOX_VERSION=136.0
+ARG FIREFOX_VERSION=145.0
 ARG GECKODRIVER_VERSION=0.36.0
 ARG BUILD_PJEOFFICE=0
 ENV DEBIAN_FRONTEND=noninteractive
