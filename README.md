@@ -2,14 +2,15 @@
 
 # rpa-worker-selenium
 
-A production-ready Docker image for running dynamic Python scripts with Selenium automation. This image uses a multi-stage build and comes pre-configured with Chrome, ChromeDriver, and comprehensive dependencies for web automation and RPA tasks.
+A production-ready Docker image for running dynamic Python scripts with Selenium automation. This image uses optimized builds with cache mounts and comes pre-configured with Chrome, ChromeDriver, and comprehensive dependencies for web automation and RPA tasks.
 
-> **Note**: This repository provides five Dockerfile versions:
+> **Note**: This repository provides six Dockerfile versions:
 > - `Dockerfile` (default) - Uses Chromium from Debian repos, easier to build
 > - `Dockerfile.chrome` - Uses Google Chrome with matched ChromeDriver for production
 > - `Dockerfile.brave` - Uses Brave browser for privacy-focused automation
 > - `Dockerfile.firefox` - Uses Firefox browser with GeckoDriver for Mozilla automation
 > - `Dockerfile.ubuntu` - Ubuntu-based with comprehensive GUI/window management for PJeOffice
+> - `Dockerfile.alpine` - **NEW** Lightweight for serverless (Lambda, Cloud Run) - Chromium & Firefox ESR
 > 
 > See [DOCKERFILE_VERSIONS.md](DOCKERFILE_VERSIONS.md) for details on which to use.
 
@@ -25,8 +26,10 @@ A production-ready Docker image for running dynamic Python scripts with Selenium
 - 🔧 Pre-configured for RPA and automation tasks
 - 📊 Comprehensive packages: requests, beautifulsoup4, pandas, openpyxl, PyAutoGUI, and more
 - 🔒 Runs as root by default for maximum compatibility (non-root user available if needed)
-- 🎯 Multi-stage build for optimized image size
+- 🎯 Multi-stage builds for optimized image size
+- ⚡ Build cache optimizations with BuildKit for faster rebuilds
 - 💡 Lightweight by default - optional services disabled for minimal resource usage
+- ☁️ Serverless-optimized Alpine variant for Lambda, Cloud Run, and Fargate
 
 ## Quick Start
 
@@ -36,28 +39,35 @@ A production-ready Docker image for running dynamic Python scripts with Selenium
 ```bash
 git clone https://github.com/nailtongomes/rpa-worker-selenium.git
 cd rpa-worker-selenium
-docker build -t rpa-worker-selenium .
+DOCKER_BUILDKIT=1 docker build -t rpa-worker-selenium .
 ```
 
 **With Google Chrome:**
 ```bash
-docker build -f Dockerfile.chrome -t rpa-worker-selenium .
+DOCKER_BUILDKIT=1 docker build -f Dockerfile.chrome -t rpa-worker-selenium .
 ```
 
 **With Brave Browser:**
 ```bash
-docker build -f Dockerfile.brave -t rpa-worker-selenium-brave .
+DOCKER_BUILDKIT=1 docker build -f Dockerfile.brave -t rpa-worker-selenium-brave .
 ```
 
 **With Firefox:**
 ```bash
-docker build -f Dockerfile.firefox -t rpa-worker-selenium-firefox .
+DOCKER_BUILDKIT=1 docker build -f Dockerfile.firefox -t rpa-worker-selenium-firefox .
 ```
 
 **With Ubuntu (Enhanced GUI support for PJeOffice):**
 ```bash
-docker build -f Dockerfile.ubuntu -t rpa-worker-selenium-ubuntu .
+DOCKER_BUILDKIT=1 docker build -f Dockerfile.ubuntu -t rpa-worker-selenium-ubuntu .
 ```
+
+**Alpine (Lightweight for Serverless) ⭐:**
+```bash
+DOCKER_BUILDKIT=1 docker build -f Dockerfile.alpine -t rpa-worker-selenium-alpine .
+```
+
+> **Note:** `DOCKER_BUILDKIT=1` enables build cache optimizations for faster rebuilds.
 
 > **Note:** Building `Dockerfile.chrome`, `Dockerfile.brave`, `Dockerfile.firefox`, and `Dockerfile.ubuntu` requires internet access to specific domains during build:
 > - Chrome: `dl.google.com`, `storage.googleapis.com`
@@ -65,7 +75,7 @@ docker build -f Dockerfile.ubuntu -t rpa-worker-selenium-ubuntu .
 > - Firefox: `ftp.mozilla.org`, `github.com`
 > - Ubuntu: `dl.google.com`, `storage.googleapis.com`
 > 
-> If you're behind a corporate firewall or in a restricted network, use the default `Dockerfile` (Chromium) instead.
+> If you're behind a corporate firewall or in a restricted network, use the default `Dockerfile` (Chromium) or `Dockerfile.alpine`.
 
 ### Running the Example Script
 

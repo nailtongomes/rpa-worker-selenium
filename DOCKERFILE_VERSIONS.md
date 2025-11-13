@@ -1,6 +1,6 @@
 # Dockerfile Versions
 
-This repository provides five Dockerfile versions:
+This repository provides six Dockerfile versions:
 
 ## 1. Dockerfile (Default - Chromium from Debian repos)
 
@@ -82,32 +82,6 @@ docker run --rm rpa-worker-selenium-firefox example_script_firefox.py
 - `ftp.mozilla.org` (for Firefox download)
 - `github.com` (for GeckoDriver download)
 
-## Which Should You Use?
-
-- **Use `Dockerfile`** if:
-  - You're just getting started
-  - You're behind a corporate firewall
-  - You don't need the absolute latest Chrome version
-  - You want faster, simpler builds
-
-- **Use `Dockerfile.chrome`** if:
-  - You're deploying to production
-  - You need a specific Chrome version
-  - You need maximum compatibility
-  - You have unrestricted internet access during builds
-
-- **Use `Dockerfile.brave`** if:
-  - You need privacy-focused browsing automation
-  - You want built-in ad-blocking capabilities
-  - You're testing websites with Brave browser specifically
-  - You prefer Brave's Chromium-based features
-
-- **Use `Dockerfile.firefox`** if:
-  - You need to test with Firefox/Gecko engine specifically
-  - You need Mozilla-specific WebDriver features
-  - You're validating cross-browser compatibility
-  - You prefer Firefox's rendering and standards compliance
-
 ## 5. Dockerfile.ubuntu (Ubuntu Desktop - Enhanced GUI/Window Management)
 
 **Recommended for: PJeOffice certificate dialogs, complex window interactions, GUI automation, maximum Ubuntu compatibility**
@@ -160,5 +134,123 @@ docker run --rm \
   - You need full desktop environment support for complex GUI interactions
   - You're working with GTK-based authentication dialogs
   - Image size is less important than compatibility
+
+## 6. Dockerfile.alpine (Lightweight Serverless - Chromium & Firefox)
+
+**Recommended for: Serverless environments (AWS Lambda, Google Cloud Run), minimal footprint, cost optimization**
+
+- Lightweight Debian-slim based image (named "alpine" for consistency)
+- Minimal dependencies for reduced image size
+- Includes Chromium browser and ChromeDriver from Debian repos
+- Includes Firefox ESR browser
+- NO PJeOffice, VNC, or GUI features (headless only)
+- Optimized for serverless and containerized environments
+- Perfect for Lambda functions, Cloud Run, Fargate, etc.
+- Smaller image size than full-featured versions
+
+**Build command:**
+```bash
+docker build -f Dockerfile.alpine -t rpa-worker-selenium-alpine .
+```
+
+**Example usage:**
+```bash
+# Basic headless automation
+docker run --rm rpa-worker-selenium-alpine python /app/alpine_smoke_test.py
+
+# Custom script
+docker run --rm -v $(pwd)/data:/data rpa-worker-selenium-alpine python your_script.py
+```
+
+**Key Features:**
+- **Browsers**: Chromium 142.x, Firefox ESR 140.x
+- **Drivers**: ChromeDriver (included), GeckoDriver (auto-installed by SeleniumBase)
+- **Size**: Significantly smaller than full images
+- **Use Cases**: Lambda functions, Cloud Run, ECS Fargate, Kubernetes jobs
+- **Limitations**: No GUI tools, no VNC, no PJeOffice support
+
+**Testing:**
+```bash
+# Run the Alpine smoke test
+docker run --rm -v $(pwd)/data:/data rpa-worker-selenium-alpine python /app/alpine_smoke_test.py
+```
+
+- **Use `Dockerfile.alpine`** if:
+  - You're deploying to serverless environments (Lambda, Cloud Run, Fargate)
+  - You need minimal image size for cost optimization
+  - You only need headless browser automation
+  - You don't need GUI features, VNC, or PJeOffice
+  - You're running in containerized environments with resource constraints
+  - You want faster container startup times
+
+## Which Should You Use?
+
+### Quick Decision Guide
+
+| Dockerfile | Best For | Image Size | Browser(s) | GUI Support | Build Time |
+|------------|----------|------------|------------|-------------|------------|
+| `Dockerfile` | Testing, Firewalls | Medium | Chromium | Yes | Fast |
+| `Dockerfile.chrome` | Production | Medium | Chrome (Latest) | Yes | Medium |
+| `Dockerfile.firefox` | Firefox Testing | Medium | Firefox | Yes | Medium |
+| `Dockerfile.brave` | Privacy, Ad-blocking | Medium | Brave | Yes | Medium |
+| `Dockerfile.ubuntu` | PJeOffice, Complex GUI | Large | Chrome | Full | Slow |
+| `Dockerfile.alpine` | Serverless, Lambda | **Small** | Chromium & Firefox | No | Fast |
+
+### Detailed Decision Guide
+
+- **Use `Dockerfile`** if:
+  - You're just getting started
+  - You're behind a corporate firewall
+  - You don't need the absolute latest Chrome version
+  - You want faster, simpler builds
+
+- **Use `Dockerfile.chrome`** if:
+  - You're deploying to production
+  - You need a specific Chrome version
+  - You need maximum compatibility
+  - You have unrestricted internet access during builds
+
+- **Use `Dockerfile.brave`** if:
+  - You need privacy-focused browsing automation
+  - You want built-in ad-blocking capabilities
+  - You're testing websites with Brave browser specifically
+  - You prefer Brave's Chromium-based features
+
+- **Use `Dockerfile.firefox`** if:
+  - You need to test with Firefox/Gecko engine specifically
+  - You need Mozilla-specific WebDriver features
+  - You're validating cross-browser compatibility
+  - You prefer Firefox's rendering and standards compliance
+
+- **Use `Dockerfile.ubuntu`** if:
+  - You need to handle PJeOffice certificate password dialogs
+  - You're experiencing window management issues with other images
+  - You need maximum Ubuntu environment compatibility
+  - Your Python code runs perfectly on Ubuntu but has issues in slim containers
+  - You need full desktop environment support for complex GUI interactions
+  - You're working with GTK-based authentication dialogs
+  - Image size is less important than compatibility
+
+- **Use `Dockerfile.alpine`** (⭐ Recommended for Serverless):
+  - You're deploying to AWS Lambda, Google Cloud Run, Azure Container Instances
+  - You need minimal image size for cost optimization (storage, bandwidth, cold starts)
+  - You only need headless browser automation
+  - You don't need GUI features, VNC, or PJeOffice
+  - You're running in containerized environments with resource constraints
+  - You want faster container startup times
+
+## Build Cache Optimizations
+
+All Dockerfiles now include build cache optimizations:
+
+- **APT Cache Mounts**: `--mount=type=cache,target=/var/cache/apt` speeds up rebuilds by caching package downloads
+- **Pip Cache Mounts**: `--mount=type=cache,target=/root/.cache/pip` speeds up Python package installations
+- **Layer Separation**: Downloads and installations are separated into different layers for better caching
+- **Multi-stage Builds**: Used where appropriate to keep final images small
+
+To build with BuildKit (required for cache mounts):
+```bash
+DOCKER_BUILDKIT=1 docker build -f Dockerfile.chrome -t rpa-worker-selenium .
+```
 
 All versions include all the same Python packages and provide the same functionality for Selenium automation.
