@@ -8,16 +8,15 @@ ARG GECKODRIVER_VERSION=0.36.0
 ARG BUILD_PJEOFFICE=0
 ENV DEBIAN_FRONTEND=noninteractive
 
-# Install build dependencies (optimized with cache mount)
-RUN --mount=type=cache,target=/var/cache/apt,sharing=locked \
-    --mount=type=cache,target=/var/lib/apt,sharing=locked \
-    apt-get update && apt-get install -y --no-install-recommends \
+# Install build dependencies
+RUN apt-get update && apt-get install -y --no-install-recommends \
     curl \
     wget \
     unzip \
     bzip2 \
     xz-utils \
-    ca-certificates
+    ca-certificates \
+    && rm -rf /var/lib/apt/lists/*
 
 WORKDIR /downloads
 
@@ -50,10 +49,8 @@ ENV DEBIAN_FRONTEND=noninteractive \
     HOME=/root \
     XDG_RUNTIME_DIR=/tmp/runtime-root
 
-# Install runtime dependencies for browsers and automation (optimized for build cache)
-RUN --mount=type=cache,target=/var/cache/apt,sharing=locked \
-    --mount=type=cache,target=/var/lib/apt,sharing=locked \
-    apt-get update \
+# Install runtime dependencies for browsers and automation
+RUN apt-get update \
     && apt-get install -y --no-install-recommends \
     xvfb \
     x11vnc \
@@ -116,7 +113,8 @@ RUN --mount=type=cache,target=/var/cache/apt,sharing=locked \
     ghostscript \
     bc zip unzip \
     ffmpeg \
-    openjdk-17-jre-headless
+    openjdk-17-jre-headless \
+    && rm -rf /var/lib/apt/lists/*
 
 # Ensure runtime directory exists for Firefox sandbox when running as root
 RUN mkdir -p /tmp/runtime-root \
@@ -174,10 +172,9 @@ RUN if [ "$BUILD_PJEOFFICE" = "1" ]; then \
     chmod -R 755 /app/.pjeoffice-pro; \
 fi
 
-# Install Python dependencies (optimized with pip cache mount)
+# Install Python dependencies
 COPY requirements.txt .
-RUN --mount=type=cache,target=/root/.cache/pip \
-    python -m pip install --upgrade --trusted-host pypi.org --trusted-host files.pythonhosted.org pip \
+RUN python -m pip install --upgrade --trusted-host pypi.org --trusted-host files.pythonhosted.org pip \
     && pip install --trusted-host pypi.org --trusted-host files.pythonhosted.org -r requirements.txt \
     && chmod -R 777 /usr/local/lib/python3.11/site-packages/seleniumbase/drivers || true
 

@@ -15,42 +15,41 @@ ENV DEBIAN_FRONTEND=noninteractive \
     HOME=/app \
     MOZ_ALLOW_ROOT=1
 
-# Install runtime dependencies for browsers and automation (optimized for build cache)
-RUN --mount=type=cache,target=/var/cache/apt,sharing=locked \
-    --mount=type=cache,target=/var/lib/apt,sharing=locked \
-    apt-get update \
+# Install runtime dependencies for browsers and automation
+RUN apt-get update \
     && apt-get install -y --no-install-recommends \
-    chromium \
-    chromium-driver \
-    xvfb \
-    x11vnc \
-    x11-utils \
-    libgtk-3-0 \
-    libdbus-glib-1-2 \
-    libx11-xcb1 \
-    libxt6 \
-    libxdamage1 \
-    libnss3 \
-    libcups2 \
-    libxss1 \
-    libasound2 \
-    procps \
-    libpangocairo-1.0-0 \
-    libu2f-udev \
-    libvulkan1 \
-    curl \
-    fonts-liberation \
-    libnss3-tools \
-    openssl \
-    sudo \
-    openbox \
-    xdotool \
-    imagemagick \
-    x11-apps \
-    ghostscript \
-    bc zip unzip \
-    openjdk-17-jre-headless \
-    ffmpeg
+        chromium \
+        chromium-driver \
+        xvfb \
+        x11vnc \
+        x11-utils \
+        libgtk-3-0 \
+        libdbus-glib-1-2 \
+        libx11-xcb1 \
+        libxt6 \
+        libxdamage1 \
+        libnss3 \
+        libcups2 \
+        libxss1 \
+        libasound2 \
+        procps \
+        libpangocairo-1.0-0 \
+        libu2f-udev \
+        libvulkan1 \
+        curl \
+        fonts-liberation \
+        libnss3-tools \
+        openssl \
+        sudo \
+        openbox \
+        xdotool \
+        imagemagick \
+        x11-apps \
+        ghostscript \
+        bc zip unzip \
+        openjdk-17-jre-headless \
+        ffmpeg \
+    && rm -rf /var/lib/apt/lists/*
 
 # Create symbolic links for compatibility with scripts expecting google-chrome
 RUN ln -sf /usr/bin/chromium /usr/bin/google-chrome \
@@ -100,10 +99,9 @@ RUN if [ "$BUILD_PJEOFFICE" = "1" ]; then \
     chmod -R 755 /app/.pjeoffice-pro; \
 fi
 
-# Install Python dependencies (optimized with pip cache mount)
+# Install Python dependencies
 COPY requirements.txt .
-RUN --mount=type=cache,target=/root/.cache/pip \
-    python -m pip install --upgrade --trusted-host pypi.org --trusted-host files.pythonhosted.org pip \
+RUN python -m pip install --upgrade --trusted-host pypi.org --trusted-host files.pythonhosted.org pip \
  && pip install --trusted-host pypi.org --trusted-host files.pythonhosted.org -r requirements.txt \
  && chmod -R 777 /usr/local/lib/python3.11/site-packages/seleniumbase/drivers || true
 
