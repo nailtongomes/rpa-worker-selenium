@@ -5,7 +5,7 @@
 A production-ready Docker image for running dynamic Python scripts with Selenium automation. This image uses optimized builds with cache mounts and comes pre-configured with Chrome, ChromeDriver, and comprehensive dependencies for web automation and RPA tasks.
 
 > **Note**: This repository provides six Dockerfile versions:
-> - `Dockerfile` (default) - Uses Chromium from Debian repos, easier to build
+> - `Dockerfile` (default) - Uses Google Chrome from Chrome for Testing for optimal PJeOffice compatibility
 > - `Dockerfile.chrome` - Uses Google Chrome with matched ChromeDriver for production
 > - `Dockerfile.brave` - Uses Brave browser for privacy-focused automation
 > - `Dockerfile.firefox` - Uses Firefox browser with GeckoDriver for Mozilla automation
@@ -18,7 +18,7 @@ A production-ready Docker image for running dynamic Python scripts with Selenium
 
 - 🐍 Python 3.11 on Debian Bookworm
 - 🌐 Selenium WebDriver & SeleniumBase
-- 🚀 Google Chrome (specific version: 142.0.7444.59)
+- 🚀 Google Chrome (specific version: 142.0.7444.162) from Chrome for Testing
 - 📦 ChromeDriver (matched to Chrome version from Chrome for Testing)
 - 🖥️ Optional Xvfb (virtual display), OpenBox window manager, and VNC support
 - 🎥 Optional screen recording with FFmpeg for debugging
@@ -717,7 +717,7 @@ docker build -t rpa-worker-selenium .
 Edit the `CHROME_VERSION` ARG in the Dockerfile:
 
 ```dockerfile
-ARG CHROME_VERSION=142.0.7444.59  # Change to your desired version
+ARG CHROME_VERSION=142.0.7444.162  # Change to your desired version
 ```
 
 ### Using a Different Python Version
@@ -810,7 +810,7 @@ The full smoke test generates detailed JSON reports with test results, timestamp
 The Dockerfile uses a specific Chrome version matched with its corresponding ChromeDriver from Chrome for Testing. If you need a different version, update the `CHROME_VERSION` ARG and rebuild:
 
 ```bash
-docker build --build-arg CHROME_VERSION=142.0.7444.59 -t rpa-worker-selenium .
+docker build --build-arg CHROME_VERSION=142.0.7444.162 -t rpa-worker-selenium .
 ```
 
 ### Memory Issues

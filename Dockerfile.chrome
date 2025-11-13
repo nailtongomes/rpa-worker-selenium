@@ -2,7 +2,7 @@
 # Multi-stage build for optimized image size
 FROM python:3.11-slim-bookworm AS builder
 
-ARG CHROME_VERSION=142.0.7444.59
+ARG CHROME_VERSION=142.0.7444.162
 ARG BUILD_PJEOFFICE=0
 ENV DEBIAN_FRONTEND=noninteractive
 
@@ -11,10 +11,11 @@ RUN apt-get update && apt-get install -y --no-install-recommends curl unzip ca-c
     && rm -rf /var/lib/apt/lists/*
 
 WORKDIR /downloads
-# Download Chrome and ChromeDriver (optimized with separate layers for better caching)
-RUN curl --retry 5 --retry-delay 10 -Lo "chrome.deb" "https://dl.google.com/linux/direct/google-chrome-stable_current_amd64.deb"
-RUN curl -fsSL "https://storage.googleapis.com/chrome-for-testing-public/${CHROME_VERSION}/linux64/chromedriver-linux64.zip" -o chromedriver.zip \
- && unzip chromedriver.zip
+# Download Chrome and ChromeDriver from Chrome for Testing
+RUN curl -Lo "chromedriver-linux64.zip" "https://storage.googleapis.com/chrome-for-testing-public/${CHROME_VERSION}/linux64/chromedriver-linux64.zip" \
+ && curl -Lo "chrome-linux64.zip" "https://storage.googleapis.com/chrome-for-testing-public/${CHROME_VERSION}/linux64/chrome-linux64.zip" \
+ && unzip chromedriver-linux64.zip \
+ && unzip chrome-linux64.zip
 
 # ---------- STAGE 2: runtime
 FROM python:3.11-slim-bookworm
@@ -64,18 +65,24 @@ RUN apt-get update \
         bc zip unzip \
         ffmpeg \
         openjdk-17-jre-headless \
+        atk \
+        libatk-bridge2.0-0 \
+        libxcomposite1 \
+        libxrandr2 \
+        libgbm1 \
+        libxkbcommon0 \
+        libxfixes3 \
     && rm -rf /var/lib/apt/lists/*
 
 # Copy Chrome and ChromeDriver from builder stage
-COPY --from=builder /downloads/chrome.deb /tmp/
-COPY --from=builder /downloads/chromedriver-linux64/chromedriver /usr/local/bin
+COPY --from=builder /downloads/chrome-linux64 /opt/chrome
+COPY --from=builder /downloads/chromedriver-linux64/chromedriver /usr/local/bin/chromedriver
 
-# Install Chrome
-RUN apt-get update \
-    && apt-get install -y --no-install-recommends /tmp/chrome.deb \
-    && rm -rf /tmp/chrome.deb \
+# Create symbolic links and set permissions
+RUN ln -s /opt/chrome/chrome /usr/local/bin/chrome \
+    && ln -s /opt/chrome/chrome /usr/local/bin/google-chrome \
     && chmod +x /usr/local/bin/chromedriver \
-    && rm -rf /var/lib/apt/lists/*
+    && chmod +x /opt/chrome/chrome
 
 # Create non-root user
 RUN useradd -m -d /app -u 1000 rpauser \

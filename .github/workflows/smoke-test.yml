@@ -119,8 +119,8 @@ jobs:
       matrix:
         include:
           - dockerfile: Dockerfile
-            name: chromium
-            tag: rpa-worker-selenium:chromium
+            name: chrome-default
+            tag: rpa-worker-selenium:chrome-default
           - dockerfile: Dockerfile.chrome
             name: chrome
             tag: rpa-worker-selenium:chrome

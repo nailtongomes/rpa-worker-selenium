@@ -2,15 +2,16 @@
 
 This repository provides six Dockerfile versions:
 
-## 1. Dockerfile (Default - Chromium from Debian repos)
+## 1. Dockerfile (Default - Google Chrome from Chrome for Testing)
 
-**Recommended for: Testing, restricted networks, simple use cases**
+**Recommended for: Production, PJeOffice compatibility, standard use cases**
 
-- Uses Chromium from Debian repositories
-- No external downloads required during build
-- Easier to build in restricted environments
-- Slightly older Chrome version
-- Fully functional for most automation tasks
+- Uses Google Chrome from Chrome for Testing (official binaries)
+- Multi-stage build for optimization
+- Downloads specific Chrome version (142.0.7444.162)
+- Downloads matched ChromeDriver from Chrome for Testing
+- Optimized for PJeOffice digital signature compatibility
+- Requires internet access to storage.googleapis.com during build
 
 **Build command:**
 ```bash
@@ -22,10 +23,11 @@ docker build -t rpa-worker-selenium .
 **Recommended for: Production use, latest Chrome features, maximum compatibility**
 
 - Uses multi-stage build for optimization
-- Downloads specific Chrome version (142.0.7444.59)
+- Downloads specific Chrome version (142.0.7444.162)
 - Downloads matched ChromeDriver from Chrome for Testing
 - Latest Chrome features and updates
-- Requires internet access to dl.google.com and storage.googleapis.com during build
+- Identical to default Dockerfile (both use Google Chrome for Testing)
+- Requires internet access to storage.googleapis.com during build
 
 **Build command:**
 ```bash
@@ -87,6 +89,7 @@ docker run --rm rpa-worker-selenium-firefox example_script_firefox.py
 **Recommended for: PJeOffice certificate dialogs, complex window interactions, GUI automation, maximum Ubuntu compatibility**
 
 - Uses Ubuntu 22.04 LTS as base image (instead of Debian slim)
+- Uses Google Chrome from Chrome for Testing (version 142.0.7444.162)
 - Comprehensive desktop environment and GUI libraries
 - Enhanced window management tools (wmctrl, xdotool, xautomation)
 - Full GTK2/GTK3 support for certificate and authentication dialogs
@@ -95,7 +98,7 @@ docker run --rm rpa-worker-selenium-firefox example_script_firefox.py
 - Audio support (PulseAudio) for multimedia dialogs
 - More closely matches native Ubuntu development environment
 - Larger image size but maximum compatibility
-- **Requires internet access to dl.google.com and storage.googleapis.com during build**
+- **Requires internet access to storage.googleapis.com during build**
 
 **Build command:**
 ```bash
@@ -189,7 +192,7 @@ docker run --rm -v $(pwd)/data:/data rpa-worker-selenium-alpine python /app/alpi
 
 | Dockerfile | Best For | Image Size | Browser(s) | GUI Support | Build Time |
 |------------|----------|------------|------------|-------------|------------|
-| `Dockerfile` | Testing, Firewalls | Medium | Chromium | Yes | Fast |
+| `Dockerfile` | Production, PJeOffice | Medium | Chrome (Latest) | Yes | Medium |
 | `Dockerfile.chrome` | Production | Medium | Chrome (Latest) | Yes | Medium |
 | `Dockerfile.firefox` | Firefox Testing | Medium | Firefox | Yes | Medium |
 | `Dockerfile.brave` | Privacy, Ad-blocking | Medium | Brave | Yes | Medium |
@@ -199,16 +202,18 @@ docker run --rm -v $(pwd)/data:/data rpa-worker-selenium-alpine python /app/alpi
 ### Detailed Decision Guide
 
 - **Use `Dockerfile`** if:
-  - You're just getting started
-  - You're behind a corporate firewall
-  - You don't need the absolute latest Chrome version
-  - You want faster, simpler builds
+  - You're deploying to production
+  - You need PJeOffice digital signature compatibility
+  - You need the official Google Chrome browser
+  - You need maximum compatibility
+  - You have internet access during builds
 
 - **Use `Dockerfile.chrome`** if:
   - You're deploying to production
   - You need a specific Chrome version
   - You need maximum compatibility
-  - You have unrestricted internet access during builds
+  - You need PJeOffice digital signature compatibility
+  - Same as default Dockerfile (both use Google Chrome for Testing)
 
 - **Use `Dockerfile.brave`** if:
   - You need privacy-focused browsing automation

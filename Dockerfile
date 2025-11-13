@@ -1,8 +1,26 @@
-# rpa-worker-selenium Dockerfile (Chromium fallback version)
-# Use this version if you cannot access Google Chrome downloads
+# rpa-worker-selenium Dockerfile
+# Multi-stage build for optimized image size
+FROM python:3.11-slim-bookworm AS builder
+
+ARG CHROME_VERSION=142.0.7444.162
+ARG BUILD_PJEOFFICE=0
+ENV DEBIAN_FRONTEND=noninteractive
+
+# Install build dependencies
+RUN apt-get update && apt-get install -y --no-install-recommends curl unzip ca-certificates \
+    && rm -rf /var/lib/apt/lists/*
+
+WORKDIR /downloads
+# Download Chrome and ChromeDriver from Chrome for Testing
+RUN curl -Lo "chromedriver-linux64.zip" "https://storage.googleapis.com/chrome-for-testing-public/${CHROME_VERSION}/linux64/chromedriver-linux64.zip" \
+ && curl -Lo "chrome-linux64.zip" "https://storage.googleapis.com/chrome-for-testing-public/${CHROME_VERSION}/linux64/chrome-linux64.zip" \
+ && unzip chromedriver-linux64.zip \
+ && unzip chrome-linux64.zip
+
+# ---------- STAGE 2: runtime
 FROM python:3.11-slim-bookworm
 
-# Build argument to control PJeOffice installation (default: not installed)
+# Pass build argument to runtime stage
 ARG BUILD_PJEOFFICE=0
 
 ENV DEBIAN_FRONTEND=noninteractive \
@@ -18,8 +36,6 @@ ENV DEBIAN_FRONTEND=noninteractive \
 # Install runtime dependencies for browsers and automation
 RUN apt-get update \
     && apt-get install -y --no-install-recommends \
-        chromium \
-        chromium-driver \
         xvfb \
         x11vnc \
         x11-utils \
@@ -49,11 +65,24 @@ RUN apt-get update \
         bc zip unzip \
         openjdk-17-jre-headless \
         ffmpeg \
+        atk \
+        libatk-bridge2.0-0 \
+        libxcomposite1 \
+        libxrandr2 \
+        libgbm1 \
+        libxkbcommon0 \
+        libxfixes3 \
     && rm -rf /var/lib/apt/lists/*
 
-# Create symbolic links for compatibility with scripts expecting google-chrome
-RUN ln -sf /usr/bin/chromium /usr/bin/google-chrome \
-    && ln -sf /usr/bin/chromedriver /usr/local/bin/chromedriver
+# Copy Chrome and ChromeDriver from builder stage
+COPY --from=builder /downloads/chrome-linux64 /opt/chrome
+COPY --from=builder /downloads/chromedriver-linux64/chromedriver /usr/local/bin/chromedriver
+
+# Create symbolic links and set permissions
+RUN ln -s /opt/chrome/chrome /usr/local/bin/chrome \
+    && ln -s /opt/chrome/chrome /usr/local/bin/google-chrome \
+    && chmod +x /usr/local/bin/chromedriver \
+    && chmod +x /opt/chrome/chrome
 
 # Create non-root user
 RUN useradd -m -d /app -u 1000 rpauser \
