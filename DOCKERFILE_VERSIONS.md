@@ -62,7 +62,7 @@ docker run --rm rpa-worker-selenium-brave example_script_brave.py
 **Recommended for: Firefox-specific testing, Gecko engine compatibility, Mozilla standards**
 
 - Uses multi-stage build for optimization
-- Downloads specific Firefox version (136.0)
+- Downloads specific Firefox version (145.0)
 - Downloads matched GeckoDriver (v0.36.0) from GitHub releases
 - Mozilla's Gecko rendering engine
 - Full support for Firefox WebDriver capabilities
@@ -163,8 +163,8 @@ docker run --rm -v $(pwd)/data:/data rpa-worker-selenium-alpine python your_scri
 ```
 
 **Key Features:**
-- **Browsers**: Chromium 142.x, Firefox ESR 140.x
-- **Drivers**: ChromeDriver (included), GeckoDriver (auto-installed by SeleniumBase)
+- **Browsers**: Chromium 142.x, Firefox 145.0
+- **Drivers**: ChromeDriver (included), GeckoDriver (v0.36.0)
 - **Size**: Significantly smaller than full images
 - **Use Cases**: Lambda functions, Cloud Run, ECS Fargate, Kubernetes jobs
 - **Limitations**: No GUI tools, no VNC, no PJeOffice support
