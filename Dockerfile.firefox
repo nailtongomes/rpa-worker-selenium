@@ -57,34 +57,54 @@ RUN --mount=type=cache,target=/var/cache/apt,sharing=locked \
     xvfb \
     x11vnc \
     x11-utils \
+    # Core GTK/DBus dependencies required by recent Firefox builds
     libgtk-3-0 \
     libdbus-glib-1-2 \
     libdbus-1-3 \
     libglib2.0-0 \
+    libgdk-pixbuf2.0-0 \
+    # X11 compatibility libraries to prevent "Process unexpectedly closed" crashes
     libx11-6 \
     libx11-xcb1 \
     libxcb1 \
     libxcomposite1 \
+    libxcursor1 \
+    libxi6 \
+    libxinerama1 \
+    libxrender1 \
     libxext6 \
     libxfixes3 \
     libxrandr2 \
     libxt6 \
+    libxtst6 \
     libxdamage1 \
     libxkbcommon0 \
+    # NSS / audio stack
     libnss3 \
+    libnspr4 \
     libcups2 \
     libxss1 \
     libasound2 \
+    # OpenGL/GBM stack used by Firefox sandbox in headless mode
+    libgl1 \
+    libglx0 \
+    libglu1-mesa \
     libgbm1 \
+    libdrm2 \
+    libxshmfence1 \
+    # Pango/AT-SPI accessibility libraries needed at runtime
     libpango-1.0-0 \
     libpangocairo-1.0-0 \
     libatk1.0-0 \
     libatk-bridge2.0-0 \
+    at-spi2-core \
     procps \
     libu2f-udev \
     libvulkan1 \
     curl \
     fonts-liberation \
+    dbus \
+    dbus-x11 \
     libnss3-tools \
     openssl \
     sudo \
