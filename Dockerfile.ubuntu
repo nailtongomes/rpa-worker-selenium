@@ -6,6 +6,8 @@
 FROM ubuntu:22.04 AS builder
 
 ARG CHROME_VERSION=142.0.7444.162
+ARG FIREFOX_VERSION=145.0
+ARG GECKODRIVER_VERSION=0.36.0
 ARG BUILD_PJEOFFICE=0
 
 ENV DEBIAN_FRONTEND=noninteractive
@@ -15,6 +17,8 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     curl \
     wget \
     unzip \
+    bzip2 \
+    xz-utils \
     ca-certificates \
     && rm -rf /var/lib/apt/lists/*
 
@@ -25,6 +29,14 @@ RUN curl -Lo "chromedriver-linux64.zip" "https://storage.googleapis.com/chrome-f
  && curl -Lo "chrome-linux64.zip" "https://storage.googleapis.com/chrome-for-testing-public/${CHROME_VERSION}/linux64/chrome-linux64.zip" \
  && unzip chromedriver-linux64.zip \
  && unzip chrome-linux64.zip
+
+# Download Firefox and GeckoDriver
+RUN curl --retry 5 --retry-delay 10 -Lo "firefox.tar.xz" \
+    "https://ftp.mozilla.org/pub/firefox/releases/${FIREFOX_VERSION}/linux-x86_64/en-US/firefox-${FIREFOX_VERSION}.tar.xz" \
+    && tar -xf firefox.tar.xz \
+ && curl --retry 5 --retry-delay 10 -Lo "geckodriver.tar.gz" \
+    "https://github.com/mozilla/geckodriver/releases/download/v${GECKODRIVER_VERSION}/geckodriver-v${GECKODRIVER_VERSION}-linux64.tar.gz" \
+    && tar -zxf geckodriver.tar.gz
 
 # ---------- STAGE 2: runtime
 FROM ubuntu:22.04
@@ -45,7 +57,8 @@ ENV DEBIAN_FRONTEND=noninteractive \
     SCREEN_HEIGHT=768 \
     HOME=/app \
     TZ=America/Sao_Paulo \
-    MOZ_ALLOW_ROOT=1
+    MOZ_ALLOW_ROOT=1 \
+    XDG_RUNTIME_DIR=/tmp/runtime-root
 
 # Install core system dependencies and desktop environment components
 RUN apt-get update && apt-get install -y --no-install-recommends \
@@ -104,6 +117,9 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     libxss1 \
     libxt6 \
     libxtst6 \
+    libxinerama1 \
+    libxkbcommon0 \
+    libxshmfence1 \
     # Graphics and rendering
     libgl1 \
     libglx0 \
@@ -172,11 +188,19 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 COPY --from=builder /downloads/chrome-linux64 /opt/chrome
 COPY --from=builder /downloads/chromedriver-linux64/chromedriver /usr/local/bin/chromedriver
 
-# Create symbolic links and set permissions
+# Copy Firefox and GeckoDriver from builder stage
+COPY --from=builder /downloads/firefox /opt/firefox/
+COPY --from=builder /downloads/geckodriver /usr/local/bin/geckodriver
+
+# Create symbolic links and set permissions for Chrome
 RUN ln -s /opt/chrome/chrome /usr/local/bin/chrome \
     && ln -s /opt/chrome/chrome /usr/local/bin/google-chrome \
     && chmod +x /usr/local/bin/chromedriver \
     && chmod +x /opt/chrome/chrome
+
+# Create symbolic links and set permissions for Firefox
+RUN ln -s /opt/firefox/firefox /usr/local/bin/firefox \
+    && chmod +x /usr/local/bin/geckodriver
 
 # Create symlinks for Python
 RUN ln -sf /usr/bin/python3.11 /usr/bin/python3 \
@@ -244,6 +268,10 @@ RUN chmod +x /app/entrypoint.sh /app/script_downloader.py /app/smoke_test.py
 # Set up D-Bus for GUI applications
 RUN mkdir -p /var/run/dbus \
     && chown rpauser:rpauser /var/run/dbus
+
+# Ensure runtime directory exists for Firefox sandbox when running as root
+RUN mkdir -p /tmp/runtime-root \
+    && chmod 700 /tmp/runtime-root
 
 # Environment variables for control (all optional; defaults to lightweight/headless)
 ENV USE_XVFB=0 \

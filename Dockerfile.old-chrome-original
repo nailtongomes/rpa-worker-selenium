@@ -1,17 +1,11 @@
-# rpa-worker-selenium Dockerfile (Unified)
-# Multi-browser support with build arg to choose webdriver
-# Supports: chrome (default), brave
+# rpa-worker-selenium Dockerfile
 # Multi-stage build for optimized image size
-
-# ============================
-# STAGE 1: Builder (Chrome downloads)
-# ============================
 FROM python:3.11-slim-bookworm AS builder
 
-ARG BROWSER_TYPE=chrome
+ARG BUILD_PJEOFFICE=0
 ENV DEBIAN_FRONTEND=noninteractive
 
-# Install build dependencies
+# Install build dependencies including wget for downloading .deb package
 RUN apt-get update && apt-get install -y --no-install-recommends \
     curl \
     wget \
@@ -21,23 +15,19 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 
 WORKDIR /downloads
 
-# Download Chrome and ChromeDriver only if BROWSER_TYPE is chrome
-RUN if [ "$BROWSER_TYPE" = "chrome" ]; then \
-        echo "Downloading Google Chrome..."; \
-        wget -q https://dl.google.com/linux/direct/google-chrome-stable_current_amd64.deb; \
-        CHROMEDRIVER_VERSION=$(curl -sS https://googlechromelabs.github.io/chrome-for-testing/LATEST_RELEASE_STABLE) && \
-        curl -Lo "chromedriver-linux64.zip" "https://storage.googleapis.com/chrome-for-testing-public/${CHROMEDRIVER_VERSION}/linux64/chromedriver-linux64.zip" && \
-        unzip chromedriver-linux64.zip; \
-    fi
+# Download stable Google Chrome .deb package
+RUN wget -q https://dl.google.com/linux/direct/google-chrome-stable_current_amd64.deb
 
-# ============================
-# STAGE 2: Runtime
-# ============================
+# Download latest stable ChromeDriver
+RUN CHROMEDRIVER_VERSION=$(curl -sS https://googlechromelabs.github.io/chrome-for-testing/LATEST_RELEASE_STABLE) && \
+    curl -Lo "chromedriver-linux64.zip" "https://storage.googleapis.com/chrome-for-testing-public/${CHROMEDRIVER_VERSION}/linux64/chromedriver-linux64.zip" && \
+    unzip chromedriver-linux64.zip
+
+# ---------- STAGE 2: runtime
 FROM python:3.11-slim-bookworm
 
-# Build arguments
+# Pass build argument to runtime stage
 ARG BUILD_PJEOFFICE=0
-ARG BROWSER_TYPE=chrome
 
 ENV DEBIAN_FRONTEND=noninteractive \
     PYTHONUNBUFFERED=1 \
@@ -47,8 +37,7 @@ ENV DEBIAN_FRONTEND=noninteractive \
     SCREEN_WIDTH=1366 \
     SCREEN_HEIGHT=768 \
     HOME=/app \
-    MOZ_ALLOW_ROOT=1 \
-    BROWSER_TYPE=${BROWSER_TYPE}
+    MOZ_ALLOW_ROOT=1
 
 # Install runtime dependencies for browsers and automation
 RUN apt-get update \
@@ -80,68 +69,27 @@ RUN apt-get update \
         x11-apps \
         ghostscript \
         bc zip unzip \
-        ffmpeg \
         openjdk-17-jre-headless \
+        ffmpeg \
         libxcomposite1 \
         libxrandr2 \
         libgbm1 \
         libxkbcommon0 \
         libxfixes3 \
-        gnupg \
-        apt-transport-https \
-        ca-certificates \
     && rm -rf /var/lib/apt/lists/*
 
-# Install browser and driver based on BROWSER_TYPE
-RUN if [ "$BROWSER_TYPE" = "chrome" ]; then \
-        echo "Setting up Google Chrome..."; \
-    elif [ "$BROWSER_TYPE" = "brave" ]; then \
-        echo "Installing Brave Browser..."; \
-        curl -fsSL https://brave-browser-apt-release.s3.brave.com/brave-browser-archive-keyring.gpg | gpg --dearmor -o /usr/share/keyrings/brave-browser-archive-keyring.gpg && \
-        echo "deb [signed-by=/usr/share/keyrings/brave-browser-archive-keyring.gpg arch=amd64] https://brave-browser-apt-release.s3.brave.com/ stable main" | tee /etc/apt/sources.list.d/brave-browser-release.list && \
-        apt-get update && \
-        apt-get install -y brave-browser && \
-        rm -rf /var/lib/apt/lists/* && \
-        ln -sf /usr/bin/brave-browser /usr/bin/google-chrome && \
-        ln -sf /usr/bin/brave-browser /usr/bin/chromium; \
-    else \
-        echo "Error: Invalid BROWSER_TYPE='$BROWSER_TYPE'. Must be 'chrome' or 'brave'." && exit 1; \
-    fi
+# Copy ChromeDriver from builder stage
+COPY --from=builder /downloads/chromedriver-linux64/chromedriver /usr/local/bin/chromedriver
 
-# Copy and install Chrome/ChromeDriver depending on browser type
-# For Chrome: use artifacts from builder stage
-# For Brave: download ChromeDriver at runtime since Brave was installed from apt
-RUN if [ "$BROWSER_TYPE" = "chrome" ]; then \
-        echo "Installing Chrome from builder artifacts..."; \
-    elif [ "$BROWSER_TYPE" = "brave" ]; then \
-        echo "Installing ChromeDriver for Brave..."; \
-        CHROMEDRIVER_VERSION=$(curl -s "https://googlechromelabs.github.io/chrome-for-testing/LATEST_RELEASE_STABLE") && \
-        curl -fsSL "https://storage.googleapis.com/chrome-for-testing-public/${CHROMEDRIVER_VERSION}/linux64/chromedriver-linux64.zip" -o /tmp/chromedriver.zip && \
-        unzip -q /tmp/chromedriver.zip -d /tmp && \
-        mv /tmp/chromedriver-linux64/chromedriver /usr/local/bin/chromedriver && \
-        chmod +x /usr/local/bin/chromedriver && \
-        rm -rf /tmp/chromedriver*; \
-    fi
+# Copy and install Chrome .deb package from builder stage
+COPY --from=builder /downloads/google-chrome-stable_current_amd64.deb /tmp/
+RUN apt-get update \
+    && apt-get install -y --no-install-recommends /tmp/google-chrome-stable_current_amd64.deb \
+    && rm /tmp/google-chrome-stable_current_amd64.deb \
+    && rm -rf /var/lib/apt/lists/*
 
-# For Chrome: Copy ChromeDriver from builder
-COPY --from=builder /downloads/chromedriver-linux64/chromedriver /tmp/chromedriver-from-builder 2>/dev/null || touch /tmp/chromedriver-from-builder
-RUN if [ "$BROWSER_TYPE" = "chrome" ] && [ -s /tmp/chromedriver-from-builder ]; then \
-        mv /tmp/chromedriver-from-builder /usr/local/bin/chromedriver && \
-        chmod +x /usr/local/bin/chromedriver; \
-    else \
-        rm -f /tmp/chromedriver-from-builder; \
-    fi
-
-# For Chrome: Copy and install Chrome .deb from builder
-COPY --from=builder /downloads/google-chrome-stable_current_amd64.deb /tmp/chrome.deb 2>/dev/null || touch /tmp/chrome.deb
-RUN if [ "$BROWSER_TYPE" = "chrome" ] && [ -s /tmp/chrome.deb ]; then \
-        apt-get update && \
-        apt-get install -y --no-install-recommends /tmp/chrome.deb && \
-        rm -f /tmp/chrome.deb && \
-        rm -rf /var/lib/apt/lists/*; \
-    else \
-        rm -f /tmp/chrome.deb; \
-    fi
+# Set ChromeDriver permissions
+RUN chmod +x /usr/local/bin/chromedriver
 
 # Create non-root rpa user with sudo access for Chrome policy management
 # The rpauser can write to /etc/opt/chrome/policies/managed/ via sudo (needed for certificate policies)
