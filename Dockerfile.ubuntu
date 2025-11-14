@@ -96,6 +96,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     fonts-freefont-ttf \
     fonts-noto \
     fonts-noto-color-emoji \
+    libfreetype6 \
     # GUI libraries (comprehensive set for window handling)
     libgtk-3-0 \
     libgtk2.0-0 \
@@ -124,10 +125,16 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     libgl1 \
     libglx0 \
     libglu1-mesa \
+    libegl1 \
+    libopengl0 \
+    libwayland-client0 \
+    libwayland-server0 \
     mesa-utils \
+    mesa-vulkan-drivers \
     libvulkan1 \
     # Audio support (required by some certificate dialog boxes)
     libasound2 \
+    libpulse0 \
     pulseaudio \
     # NSS and certificate handling
     libnss3 \
@@ -164,6 +171,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     libpangoft2-1.0-0 \
     # Additional dependencies
     libu2f-udev \
+    libpci3 \
     libappindicator3-1 \
     libgbm1 \
     libdrm2 \
