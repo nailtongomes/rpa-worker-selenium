@@ -45,10 +45,18 @@ setup_directories() {
         chmod 755 "${PJEOFFICE_CONFIG_DIR}" 2>/dev/null || true
     fi
     
-    # Setup PKI directory for certificates
-    if [ ! -d "/app/.pki/nssdb" ]; then
-        mkdir -p /app/.pki/nssdb 2>/dev/null || true
-        chmod 700 /app/.pki/nssdb 2>/dev/null || true
+    # Setup PKI directory for runtime certificate management
+    # Note: .pki/nssdb subdirectory is NOT created here - Python manages it at runtime
+    # This ensures full control over the NSS database lifecycle (create/reset/import/delete)
+    if [ ! -d "/app/.pki" ]; then
+        mkdir -p /app/.pki 2>/dev/null || true
+        chmod 700 /app/.pki 2>/dev/null || true
+    fi
+    
+    # Same for root user's PKI directory (when running as root)
+    if [ ! -d "/root/.pki" ]; then
+        mkdir -p /root/.pki 2>/dev/null || true
+        chmod 700 /root/.pki 2>/dev/null || true
     fi
     
     return 0
