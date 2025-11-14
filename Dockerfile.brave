@@ -1,148 +1,16 @@
-# rpa-worker-selenium Dockerfile (Brave Browser)
-# Use this version to run Selenium automation with Brave browser
-FROM python:3.11-slim-bookworm
+# DEPRECATED: Dockerfile.brave has been merged into the main Dockerfile
+# 
+# ⚠️  This file is deprecated and will be removed in a future version.
+#
+# Please use the unified Dockerfile instead:
+#   docker build --build-arg BROWSER_TYPE=brave -t rpa-worker-selenium-brave .
+#
+# The unified Dockerfile now supports multiple browsers via the BROWSER_TYPE build argument:
+#   - chrome (default): Google Chrome from Chrome for Testing
+#   - brave: Brave browser with privacy features
+#
+# See DOCKERFILE_VERSIONS.md for complete documentation.
 
-# Build argument to control PJeOffice installation (default: not installed)
-ARG BUILD_PJEOFFICE=0
-
-ENV DEBIAN_FRONTEND=noninteractive \
-    PYTHONUNBUFFERED=1 \
-    PYTHONDONTWRITEBYTECODE=1 \
-    LANG=C.UTF-8 LC_ALL=C.UTF-8 \
-    DISPLAY=:99 \
-    SCREEN_WIDTH=1366 \
-    SCREEN_HEIGHT=768 \
-    HOME=/app \
-    MOZ_ALLOW_ROOT=1
-
-# Install runtime dependencies for browsers and automation
-RUN apt-get update \
-    && apt-get install -y --no-install-recommends \
-        xvfb \
-        x11vnc \
-        x11-utils \
-        libgtk-3-0 \
-        libdbus-glib-1-2 \
-        libx11-xcb1 \
-        libxt6 \
-        libxdamage1 \
-        libnss3 \
-        libcups2 \
-        libxss1 \
-        libasound2 \
-        procps \
-        libpangocairo-1.0-0 \
-        libu2f-udev \
-        libvulkan1 \
-        curl \
-        fonts-liberation \
-        libnss3-tools \
-        openssl \
-        sudo \
-        openbox \
-        xdotool \
-        imagemagick \
-        x11-apps \
-        ghostscript \
-        bc zip unzip \
-        gnupg \
-        apt-transport-https \
-        ca-certificates \
-        ffmpeg \
-    && rm -rf /var/lib/apt/lists/*
-
-# Install Brave browser from official repository
-# Note: This requires access to brave-browser-apt-release.s3.brave.com during build
-RUN curl -fsSL https://brave-browser-apt-release.s3.brave.com/brave-browser-archive-keyring.gpg | gpg --dearmor -o /usr/share/keyrings/brave-browser-archive-keyring.gpg \
-    && echo "deb [signed-by=/usr/share/keyrings/brave-browser-archive-keyring.gpg arch=amd64] https://brave-browser-apt-release.s3.brave.com/ stable main" | tee /etc/apt/sources.list.d/brave-browser-release.list
-RUN apt-get update \
-    && apt-get install -y brave-browser \
-    && rm -rf /var/lib/apt/lists/*
-
-# Install ChromeDriver (Brave uses Chromium, so ChromeDriver works with it)
-# We'll use the latest stable ChromeDriver that's compatible with Brave
-RUN CHROMEDRIVER_VERSION=$(curl -s "https://googlechromelabs.github.io/chrome-for-testing/LATEST_RELEASE_STABLE") \
-    && curl -fsSL "https://storage.googleapis.com/chrome-for-testing-public/${CHROMEDRIVER_VERSION}/linux64/chromedriver-linux64.zip" -o /tmp/chromedriver.zip \
-    && unzip /tmp/chromedriver.zip -d /tmp \
-    && mv /tmp/chromedriver-linux64/chromedriver /usr/local/bin/chromedriver \
-    && chmod +x /usr/local/bin/chromedriver \
-    && rm -rf /tmp/chromedriver*
-
-# Create symbolic links for compatibility with scripts expecting google-chrome
-RUN ln -sf /usr/bin/brave-browser /usr/bin/google-chrome \
-    && ln -sf /usr/bin/brave-browser /usr/bin/chromium
-
-# Create non-root user
-RUN useradd -m -d /app -u 1000 rpauser \
- && echo "rpauser ALL=(ALL) NOPASSWD: ALL" >> /etc/sudoers
-
-# Set up working directory structure
-WORKDIR /app
-RUN mkdir -p /app/src /app/logs /app/tmp /app/recordings \
-    /app/.pki/nssdb \
-    /app/.cache \
-    /data \
-    && chmod 1777 /app/tmp \
-    && chmod 700 /app/.pki/nssdb \
-    && chmod 777 /data \
-    && chmod 777 /app/recordings \
-    && chown -R rpauser:rpauser /app
-
-# Set up OpenBox configuration to prevent menu warnings
-RUN mkdir -p /var/lib/openbox && \
-    echo '<?xml version="1.0" encoding="UTF-8"?>' > /var/lib/openbox/debian-menu.xml && \
-    echo '<openbox_menu xmlns="http://openbox.org/3.4/menu">' >> /var/lib/openbox/debian-menu.xml && \
-    echo '    <menu id="root-menu" label="Openbox 3">' >> /var/lib/openbox/debian-menu.xml && \
-    echo '        <item label="Terminal">' >> /var/lib/openbox/debian-menu.xml && \
-    echo '            <action name="Execute"><command>xterm</command></action>' >> /var/lib/openbox/debian-menu.xml && \
-    echo '        </item>' >> /var/lib/openbox/debian-menu.xml && \
-    echo '    </menu>' >> /var/lib/openbox/debian-menu.xml && \
-    echo '</openbox_menu>' >> /var/lib/openbox/debian-menu.xml && \
-    chmod 644 /var/lib/openbox/debian-menu.xml
-
-# Optional: Install PJeOffice (controlled by BUILD_PJEOFFICE build argument)
-RUN if [ "$BUILD_PJEOFFICE" = "1" ]; then \
-    mkdir -p /opt/pjeoffice && \
-    cd /tmp && \
-    curl -Lo "pjeoffice.zip" "https://pje-office.pje.jus.br/pro/pjeoffice-pro-v2.5.16u-linux_x64.zip" && \
-    unzip pjeoffice.zip && \
-    cp -r pjeoffice-pro/* /opt/pjeoffice/ && \
-    rm -rf pjeoffice.zip pjeoffice-pro && \
-    chown -R rpauser:rpauser /opt/pjeoffice && \
-    chmod -R 755 /opt/pjeoffice && \
-    chmod +x /opt/pjeoffice/pjeoffice-pro.sh && \
-    mkdir -p /app/.pjeoffice-pro && \
-    chown -R rpauser:rpauser /app/.pjeoffice-pro && \
-    chmod -R 755 /app/.pjeoffice-pro; \
-fi
-
-# Install Python dependencies
-COPY requirements.txt .
-RUN python -m pip install --upgrade --trusted-host pypi.org --trusted-host files.pythonhosted.org pip \
- && pip install --trusted-host pypi.org --trusted-host files.pythonhosted.org -r requirements.txt \
- && chmod -R 777 /usr/local/lib/python3.11/site-packages/seleniumbase/drivers || true
-
-# Copy application files
-COPY . .
-
-# Make entrypoint script executable
-RUN chmod +x /app/entrypoint.sh /app/script_downloader.py /app/smoke_test.py
-
-# Environment variables for control (all optional; defaults to lightweight/headless)
-ENV USE_XVFB=0 \
-    USE_OPENBOX=0 \
-    USE_VNC=0 \
-    USE_PJEOFFICE=0 \
-    USE_SCREEN_RECORDING=0 \
-    VNC_PORT=5900 \
-    RECORDING_DIR=/app/recordings \
-    XDG_CACHE_HOME=/app/.cache
-
-# Run as root user (rpauser kept for compatibility but not used)
-# USER rpauser
-
-# Set up entrypoint for dynamic script execution with download support
-ENTRYPOINT ["/app/entrypoint.sh"]
-
-# Default command (can be overridden)
-CMD ["python", "--version"]
+# This file is intentionally minimal to encourage migration to the unified Dockerfile
+FROM scratch
+RUN echo "ERROR: This Dockerfile is deprecated. Use: docker build --build-arg BROWSER_TYPE=brave -t rpa-worker-selenium-brave ." && exit 1
