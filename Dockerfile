@@ -91,29 +91,51 @@ RUN apt-get update \
 # Set ChromeDriver permissions
 RUN chmod +x /usr/local/bin/chromedriver
 
-# Create non-root user
+# Create non-root rpa user with sudo access for Chrome policy management
+# The rpauser can write to /etc/opt/chrome/policies/managed/ via sudo (needed for certificate policies)
 RUN useradd -m -d /app -u 1000 rpauser \
  && echo "rpauser ALL=(ALL) NOPASSWD: ALL" >> /etc/sudoers
 
 # Set up working directory structure
 WORKDIR /app
 RUN mkdir -p /app/src /app/logs /app/tmp /app/recordings \
-    /app/.pki/nssdb \
     /app/.cache \
     /data \
     && chmod 1777 /app/tmp \
-    && chmod 700 /app/.pki/nssdb \
     && chmod 777 /data \
     && chmod 777 /app/recordings \
     && chown -R rpauser:rpauser /app
 
-# Initialize NSS database for certificate support (Chrome will use this for .pfx certificates)
-RUN certutil -N -d sql:/app/.pki/nssdb --empty-password || true
+# =============================================================================
+# A1 PERSONAL CERTIFICATE SUPPORT (RUNTIME MANAGEMENT)
+# =============================================================================
+# The NSS database for Chrome client certificates (.pfx/.p12) is managed at
+# runtime by Python code, not pre-initialized here. This ensures:
+#   1. Only ONE personal certificate exists at any time (single-cert policy)
+#   2. Python can fully control the certificate lifecycle (import/rotate/remove)
+#   3. Certificates are never baked into the image (security best practice)
+#
+# Runtime Python Flow:
+#   - Receives .pfx file via API (never in image)
+#   - Creates/resets ~/.pki/nssdb using: certutil -N -d sql:$HOME/.pki/nssdb --empty-password
+#   - Imports certificate using: pk12util -i /tmp/cert.pfx -d sql:$HOME/.pki/nssdb -W <password> -n <nickname>
+#   - Writes Chrome policy to /etc/opt/chrome/policies/managed/auto_select_certificate.json
+#   - Starts Chrome via Selenium (--headless=new supported)
+#   - Removes certificate after task: certutil -D -d sql:$HOME/.pki/nssdb -n <nickname>
+#
+# The directories are created with proper permissions but remain empty until runtime.
+# =============================================================================
 
-# Set up root user certificate database as well (since container runs as root by default)
-RUN mkdir -p /root/.pki/nssdb \
-    && chmod 700 /root/.pki/nssdb \
-    && certutil -N -d sql:/root/.pki/nssdb --empty-password || true
+# Create .pki directory structure for NSS database (managed at runtime)
+# Both /app/.pki (rpauser home) and /root/.pki are created to support running as either user
+RUN mkdir -p /app/.pki /root/.pki \
+    && chmod 700 /app/.pki /root/.pki \
+    && chown rpauser:rpauser /app/.pki
+
+# Create Chrome policy directory for AutoSelectCertificateForUrls
+# Python will write JSON policy files here at runtime using sudo
+RUN mkdir -p /etc/opt/chrome/policies/managed \
+    && chmod 755 /etc/opt/chrome/policies/managed
 
 # Set up OpenBox configuration to prevent menu warnings
 RUN mkdir -p /var/lib/openbox && \
