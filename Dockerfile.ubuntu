@@ -172,7 +172,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     # Additional dependencies
     libu2f-udev \
     libpci3 \
-    libappindicator3-1 \
+    libayatana-appindicator3-1 \
     libgbm1 \
     libdrm2 \
     # Image processing
