@@ -58,6 +58,7 @@ ENV DEBIAN_FRONTEND=noninteractive \
     HOME=/app \
     TZ=America/Sao_Paulo \
     MOZ_ALLOW_ROOT=1 \
+    MOZ_HEADLESS=1 \
     XDG_RUNTIME_DIR=/tmp/runtime-root
 
 # Install core system dependencies and desktop environment components
@@ -129,9 +130,22 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     libopengl0 \
     libwayland-client0 \
     libwayland-server0 \
+    libxcb-dri3-0 \
+    libxcb-dri2-0 \
+    libxcb-glx0 \
+    libxcb-present0 \
+    libxcb-shm0 \
+    libxcb-render0 \
+    libxcb-shape0 \
+    libxcb-xfixes0 \
+    libxxf86vm1 \
+    libxmu6 \
     mesa-utils \
     mesa-vulkan-drivers \
     libvulkan1 \
+    libpipewire-0.3-0 \
+    libevent-2.1-7 \
+    libstartup-notification0 \
     # Audio support (required by some certificate dialog boxes)
     libasound2 \
     libpulse0 \
