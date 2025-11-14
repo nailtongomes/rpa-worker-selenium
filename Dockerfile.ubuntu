@@ -283,8 +283,7 @@ ENV USE_XVFB=0 \
     RECORDING_DIR=/app/recordings \
     XDG_CACHE_HOME=/app/.cache \
     XDG_CONFIG_HOME=/app/.config \
-    XDG_DATA_HOME=/app/.local/share \
-    DBUS_SESSION_BUS_ADDRESS=unix:path=/var/run/dbus/system_bus_socket
+    XDG_DATA_HOME=/app/.local/share
 
 # Run as root user (rpauser kept for compatibility but not used)
 # USER rpauser
