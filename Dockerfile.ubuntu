@@ -124,7 +124,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     libglu1-mesa \
     libvulkan1 \
     # Audio support (required by some certificate dialog boxes)
-    libasound2 \
+    libasound2t64 \
     pulseaudio \
     # NSS and certificate handling
     libnss3 \
