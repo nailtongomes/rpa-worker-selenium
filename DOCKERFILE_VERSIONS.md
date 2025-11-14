@@ -1,65 +1,40 @@
 # Dockerfile Versions
 
-This repository provides six Dockerfile versions:
+This repository provides four Dockerfile versions with multi-browser support:
 
-## 1. Dockerfile (Default - Google Chrome from Chrome for Testing)
+## 1. Dockerfile (Unified - Chrome or Brave)
 
-**Recommended for: Production, PJeOffice compatibility, standard use cases**
+**Recommended for: Production, PJeOffice compatibility, privacy-focused automation**
 
-- Uses Google Chrome from Chrome for Testing (official binaries)
-- Multi-stage build for optimization
-- Downloads specific Chrome version (142.0.7444.162)
-- Downloads matched ChromeDriver from Chrome for Testing
-- Optimized for PJeOffice digital signature compatibility
-- Requires internet access to storage.googleapis.com during build
+**NEW**: The unified Dockerfile now supports multiple browsers via build argument:
+- **Chrome (default)**: Production-ready Google Chrome from Chrome for Testing
+- **Brave**: Privacy-focused Brave browser with built-in ad-blocking
 
-**Build command:**
+### Build with Chrome (default):
 ```bash
 docker build -t rpa-worker-selenium .
+# or explicitly
+docker build --build-arg BROWSER_TYPE=chrome -t rpa-worker-selenium .
 ```
 
-## 2. Dockerfile.chrome (Production - Google Chrome with matched ChromeDriver)
+### Build with Brave:
+```bash
+docker build --build-arg BROWSER_TYPE=brave -t rpa-worker-selenium-brave .
+```
 
-**Recommended for: Production use, latest Chrome features, maximum compatibility**
-
-- Uses multi-stage build for optimization
-- Downloads specific Chrome version (142.0.7444.162)
+**Features:**
+- Multi-stage build for optimization
+- Downloads specific Chrome version or installs Brave from official repository
 - Downloads matched ChromeDriver from Chrome for Testing
-- Latest Chrome features and updates
-- Identical to default Dockerfile (both use Google Chrome for Testing)
-- Requires internet access to storage.googleapis.com during build
+- Optimized for PJeOffice digital signature compatibility (Chrome)
+- Enhanced privacy features and built-in ad-blocking (Brave)
+- Single Dockerfile for both browsers - reduces maintenance overhead
 
-**Build command:**
-```bash
-docker build -f Dockerfile.chrome -t rpa-worker-selenium .
-```
+**Build Requirements:**
+- Chrome: Requires internet access to `dl.google.com`, `storage.googleapis.com`, `googlechromelabs.github.io`
+- Brave: Requires internet access to `brave-browser-apt-release.s3.brave.com`, `storage.googleapis.com`, `googlechromelabs.github.io`
 
-## 3. Dockerfile.brave (Brave Browser)
-
-**Recommended for: Privacy-focused automation, ad-blocking, Brave-specific features**
-
-- Uses Brave browser from official Brave repository
-- Built on Chromium, fully compatible with Selenium/ChromeDriver
-- Enhanced privacy features and built-in ad-blocking
-- Latest stable Brave browser version
-- **Requires internet access to brave-browser-apt-release.s3.brave.com and storage.googleapis.com during build**
-
-**Build command:**
-```bash
-docker build -f Dockerfile.brave -t rpa-worker-selenium-brave .
-```
-
-**Example usage:**
-```bash
-docker run --rm rpa-worker-selenium-brave example_script_brave.py
-```
-
-**Note:** If building behind a corporate firewall or in a restricted network environment, ensure that the following domains are accessible during build:
-- `brave-browser-apt-release.s3.brave.com` (for Brave browser installation)
-- `storage.googleapis.com` (for ChromeDriver download)
-- `googlechromelabs.github.io` (for ChromeDriver version lookup)
-
-## 4. Dockerfile.firefox (Firefox Browser)
+## 2. Dockerfile.firefox (Firefox Browser)
 
 **Recommended for: Firefox-specific testing, Gecko engine compatibility, Mozilla standards**
 
@@ -84,12 +59,15 @@ docker run --rm rpa-worker-selenium-firefox example_script_firefox.py
 - `ftp.mozilla.org` (for Firefox download)
 - `github.com` (for GeckoDriver download)
 
-## 5. Dockerfile.ubuntu (Ubuntu Desktop - Enhanced GUI/Window Management)
+## 3. Dockerfile.ubuntu (Ubuntu Desktop - Enhanced GUI/Window Management + Multi-Browser)
 
 **Recommended for: PJeOffice certificate dialogs, complex window interactions, GUI automation, maximum Ubuntu compatibility**
 
+**ENHANCED**: Now supports both Chrome and Firefox in a single image!
+
 - Uses Ubuntu 22.04 LTS as base image (instead of Debian slim)
-- Uses Google Chrome from Chrome for Testing (version 142.0.7444.162)
+- **NEW**: Includes both Chrome and Firefox browsers
+- **NEW**: Includes both ChromeDriver and GeckoDriver
 - Comprehensive desktop environment and GUI libraries
 - Enhanced window management tools (wmctrl, xdotool, xautomation)
 - Full GTK2/GTK3 support for certificate and authentication dialogs
@@ -98,7 +76,7 @@ docker run --rm rpa-worker-selenium-firefox example_script_firefox.py
 - Audio support (PulseAudio) for multimedia dialogs
 - More closely matches native Ubuntu development environment
 - Larger image size but maximum compatibility
-- **Requires internet access to storage.googleapis.com during build**
+- **Requires internet access to `storage.googleapis.com`, `ftp.mozilla.org`, `github.com` during build**
 
 **Build command:**
 ```bash
@@ -110,7 +88,7 @@ docker build -f Dockerfile.ubuntu -t rpa-worker-selenium-ubuntu .
 docker build -f Dockerfile.ubuntu --build-arg BUILD_PJEOFFICE=1 -t rpa-worker-selenium-ubuntu-pje .
 ```
 
-**Example usage:**
+**Example usage with Chrome:**
 ```bash
 # Basic usage
 docker run --rm rpa-worker-selenium-ubuntu example_script.py
@@ -123,11 +101,24 @@ docker run --rm \
   rpa-worker-selenium-ubuntu-pje my_pjeoffice_script.py
 ```
 
+**Example usage with Firefox:**
+```bash
+# Basic Firefox usage
+docker run --rm rpa-worker-selenium-ubuntu example_script_firefox.py
+
+# With GUI services
+docker run --rm \
+  -e USE_XVFB=1 \
+  -e USE_OPENBOX=1 \
+  rpa-worker-selenium-ubuntu example_script_firefox.py
+```
+
 **Note:** This image is specifically designed to handle:
 - PJeOffice certificate password dialogs
 - Complex window interactions requiring full desktop environment
 - GTK-based authentication prompts
 - Applications requiring complete Ubuntu environment compatibility
+- Multi-browser testing (Chrome + Firefox) in same environment
 
 - **Use `Dockerfile.ubuntu`** if:
   - You need to handle PJeOffice certificate password dialogs
@@ -136,9 +127,10 @@ docker run --rm \
   - Your Python code runs perfectly on Ubuntu but has issues in slim containers
   - You need full desktop environment support for complex GUI interactions
   - You're working with GTK-based authentication dialogs
+  - You need both Chrome and Firefox in the same image
   - Image size is less important than compatibility
 
-## 6. Dockerfile.alpine (Lightweight Serverless - Chromium & Firefox)
+## 4. Dockerfile.alpine (Lightweight Serverless - Chromium & Firefox)
 
 **Recommended for: Serverless environments (AWS Lambda, Google Cloud Run), minimal footprint, cost optimization**
 
@@ -192,40 +184,35 @@ docker run --rm -v $(pwd)/data:/data rpa-worker-selenium-alpine python /app/alpi
 
 | Dockerfile | Best For | Image Size | Browser(s) | GUI Support | Build Time |
 |------------|----------|------------|------------|-------------|------------|
-| `Dockerfile` | Production, PJeOffice | Medium | Chrome (Latest) | Yes | Medium |
-| `Dockerfile.chrome` | Production | Medium | Chrome (Latest) | Yes | Medium |
+| `Dockerfile` (Chrome) | Production, PJeOffice | Medium | Chrome (Latest) | Yes | Medium |
+| `Dockerfile` (Brave) | Privacy, Ad-blocking | Medium | Brave | Yes | Medium |
 | `Dockerfile.firefox` | Firefox Testing | Medium | Firefox | Yes | Medium |
-| `Dockerfile.brave` | Privacy, Ad-blocking | Medium | Brave | Yes | Medium |
-| `Dockerfile.ubuntu` | PJeOffice, Complex GUI | Large | Chrome | Full | Slow |
+| `Dockerfile.ubuntu` | PJeOffice, Complex GUI | Large | **Chrome + Firefox** | Full | Slow |
 | `Dockerfile.alpine` | Serverless, Lambda | **Small** | Chromium & Firefox | No | Fast |
 
 ### Detailed Decision Guide
 
-- **Use `Dockerfile`** if:
+- **Use `Dockerfile` (Chrome)** if:
   - You're deploying to production
   - You need PJeOffice digital signature compatibility
   - You need the official Google Chrome browser
   - You need maximum compatibility
   - You have internet access during builds
+  - This is the default and most common choice
 
-- **Use `Dockerfile.chrome`** if:
-  - You're deploying to production
-  - You need a specific Chrome version
-  - You need maximum compatibility
-  - You need PJeOffice digital signature compatibility
-  - Same as default Dockerfile (both use Google Chrome for Testing)
-
-- **Use `Dockerfile.brave`** if:
+- **Use `Dockerfile` (Brave)** if:
   - You need privacy-focused browsing automation
   - You want built-in ad-blocking capabilities
   - You're testing websites with Brave browser specifically
   - You prefer Brave's Chromium-based features
+  - Same features as Chrome version but with Brave browser
 
 - **Use `Dockerfile.firefox`** if:
   - You need to test with Firefox/Gecko engine specifically
   - You need Mozilla-specific WebDriver features
   - You're validating cross-browser compatibility
   - You prefer Firefox's rendering and standards compliance
+  - You need Firefox-specific features or extensions
 
 - **Use `Dockerfile.ubuntu`** if:
   - You need to handle PJeOffice certificate password dialogs
@@ -234,6 +221,7 @@ docker run --rm -v $(pwd)/data:/data rpa-worker-selenium-alpine python /app/alpi
   - Your Python code runs perfectly on Ubuntu but has issues in slim containers
   - You need full desktop environment support for complex GUI interactions
   - You're working with GTK-based authentication dialogs
+  - **You need both Chrome AND Firefox in the same image**
   - Image size is less important than compatibility
 
 - **Use `Dockerfile.alpine`** (⭐ Recommended for Serverless):

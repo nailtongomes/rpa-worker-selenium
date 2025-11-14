@@ -4,13 +4,11 @@
 
 A production-ready Docker image for running dynamic Python scripts with Selenium automation. This image uses optimized builds with cache mounts and comes pre-configured with Chrome, ChromeDriver, and comprehensive dependencies for web automation and RPA tasks.
 
-> **Note**: This repository provides six Dockerfile versions:
-> - `Dockerfile` (default) - Uses Google Chrome from Chrome for Testing for optimal PJeOffice compatibility
-> - `Dockerfile.chrome` - Uses Google Chrome with matched ChromeDriver for production
-> - `Dockerfile.brave` - Uses Brave browser for privacy-focused automation
+> **Note**: This repository provides four Dockerfile versions:
+> - `Dockerfile` (unified) - **NEW** Multi-browser support with build arg (Chrome or Brave)
 > - `Dockerfile.firefox` - Uses Firefox browser with GeckoDriver for Mozilla automation
-> - `Dockerfile.ubuntu` - Ubuntu-based with comprehensive GUI/window management for PJeOffice
-> - `Dockerfile.alpine` - **NEW** Lightweight for serverless (Lambda, Cloud Run) - Chromium & Firefox ESR
+> - `Dockerfile.ubuntu` - **ENHANCED** Ubuntu-based with Chrome + Firefox + comprehensive GUI/window management
+> - `Dockerfile.alpine` - Lightweight for serverless (Lambda, Cloud Run) - Chromium & Firefox ESR
 > 
 > See [DOCKERFILE_VERSIONS.md](DOCKERFILE_VERSIONS.md) for details on which to use.
 
@@ -18,9 +16,11 @@ A production-ready Docker image for running dynamic Python scripts with Selenium
 
 - 🐍 Python 3.11 on Debian Bookworm
 - 🌐 Selenium WebDriver & SeleniumBase
-- 🚀 Google Chrome (stable version) installed via official .deb package
+- 🚀 **NEW**: Unified Dockerfile with multi-browser support (Chrome, Brave)
 - 📦 ChromeDriver (automatically matched to stable Chrome version)
+- 🦊 **NEW**: Firefox support in Ubuntu image
 - 🔐 Certificate support for .pfx files (CA/A1 tokens) with initialized NSS database
+- 🔒 **NEW**: Runtime CA certificate management (install, list, remove)
 - 🖥️ Optional Xvfb (virtual display), OpenBox window manager, and VNC support
 - 🎥 Optional screen recording with FFmpeg for debugging
 - ⚖️ Optional PJeOffice support (for Brazilian legal system automations)
@@ -36,21 +36,16 @@ A production-ready Docker image for running dynamic Python scripts with Selenium
 
 ### Building the Docker Image
 
-**Default (Chromium):**
+**Default (Chrome):**
 ```bash
 git clone https://github.com/nailtongomes/rpa-worker-selenium.git
 cd rpa-worker-selenium
 DOCKER_BUILDKIT=1 docker build -t rpa-worker-selenium .
 ```
 
-**With Google Chrome:**
-```bash
-DOCKER_BUILDKIT=1 docker build -f Dockerfile.chrome -t rpa-worker-selenium .
-```
-
 **With Brave Browser:**
 ```bash
-DOCKER_BUILDKIT=1 docker build -f Dockerfile.brave -t rpa-worker-selenium-brave .
+DOCKER_BUILDKIT=1 docker build --build-arg BROWSER_TYPE=brave -t rpa-worker-selenium-brave .
 ```
 
 **With Firefox:**
@@ -58,7 +53,7 @@ DOCKER_BUILDKIT=1 docker build -f Dockerfile.brave -t rpa-worker-selenium-brave 
 DOCKER_BUILDKIT=1 docker build -f Dockerfile.firefox -t rpa-worker-selenium-firefox .
 ```
 
-**With Ubuntu (Enhanced GUI support for PJeOffice):**
+**With Ubuntu (Enhanced GUI support + Chrome + Firefox):**
 ```bash
 DOCKER_BUILDKIT=1 docker build -f Dockerfile.ubuntu -t rpa-worker-selenium-ubuntu .
 ```
@@ -70,13 +65,13 @@ DOCKER_BUILDKIT=1 docker build -f Dockerfile.alpine -t rpa-worker-selenium-alpin
 
 > **Note:** `DOCKER_BUILDKIT=1` enables build cache optimizations for faster rebuilds.
 
-> **Note:** Building `Dockerfile.chrome`, `Dockerfile.brave`, `Dockerfile.firefox`, and `Dockerfile.ubuntu` requires internet access to specific domains during build:
-> - Chrome: `dl.google.com`, `storage.googleapis.com`
+> **Note:** Building requires internet access to specific domains during build:
+> - Chrome: `dl.google.com`, `storage.googleapis.com`, `googlechromelabs.github.io`
 > - Brave: `brave-browser-apt-release.s3.brave.com`, `storage.googleapis.com`, `googlechromelabs.github.io`
 > - Firefox: `ftp.mozilla.org`, `github.com`
-> - Ubuntu: `dl.google.com`, `storage.googleapis.com`
+> - Ubuntu: `dl.google.com`, `storage.googleapis.com`, `ftp.mozilla.org`, `github.com`
 > 
-> If you're behind a corporate firewall or in a restricted network, use the default `Dockerfile` (Chromium) or `Dockerfile.alpine`.
+> If you're behind a corporate firewall or in a restricted network, use `Dockerfile.alpine`.
 
 ### Running the Example Script
 
@@ -852,6 +847,56 @@ If you encounter SSL certificate issues, the image includes proper CA certificat
 docker run --rm rpa-worker-selenium apt-get update && apt-get install -y ca-certificates
 ```
 
+### Runtime CA Certificate Management
+
+All images include tools for managing CA certificates at runtime. This is essential for corporate environments with custom Certificate Authorities or systems requiring specific CA authentication.
+
+#### Installing CA Certificates at Runtime
+
+You can install custom CA certificates dynamically using the included tools:
+
+```bash
+# Using the example script
+docker run --rm \
+  -v /path/to/custom-ca.crt:/tmp/ca.crt:ro \
+  rpa-worker-selenium \
+  python /app/example_ca_runtime.py --install /tmp/ca.crt --name my-custom-ca
+
+# Or manually
+docker run --rm \
+  -v /path/to/custom-ca.crt:/tmp/ca.crt:ro \
+  rpa-worker-selenium \
+  bash -c "
+    cp /tmp/ca.crt /usr/local/share/ca-certificates/my-custom-ca.crt && \
+    update-ca-certificates && \
+    python your_script.py
+  "
+```
+
+#### Listing CA Certificates
+
+```bash
+# List installed custom CA certificates
+docker run --rm rpa-worker-selenium \
+  python /app/example_ca_runtime.py --list
+
+# List with detailed information
+docker run --rm rpa-worker-selenium \
+  python /app/example_ca_runtime.py --list --verbose
+```
+
+#### Removing CA Certificates
+
+```bash
+# Remove a CA certificate
+docker run --rm rpa-worker-selenium \
+  python /app/example_ca_runtime.py --remove my-custom-ca
+```
+
+For more details and Python API examples, see:
+- **[CA Runtime Management Guide](CA_RUNTIME_MANAGEMENT.md)** - Complete CA certificate management documentation
+- **[example_ca_runtime.py](example_ca_runtime.py)** - CA certificate management example script
+
 ### Client Certificate Authentication (.pfx/.p12 files)
 
 The image includes support for client certificate authentication using .pfx (PKCS#12) files, commonly used for CA certificates or A1 digital tokens in Brazil. The NSS certificate database is pre-initialized for both the default app user and root user.
@@ -888,6 +933,10 @@ certutil -L -d sql:/root/.pki/nssdb
 ```
 
 **Note**: The NSS database password is empty by default for simplified automation. Chrome will automatically use certificates from the NSS database when accessing websites that require client authentication.
+
+For personal certificate management (A1 tokens), see:
+- **[A1 Certificate Guide](A1_CERTIFICATE_GUIDE.md)** - Complete A1 personal certificate documentation
+- **[example_cert_management.py](example_cert_management.py)** - Personal certificate management example
 
 ## Security Features
 

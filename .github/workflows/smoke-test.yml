@@ -119,21 +119,23 @@ jobs:
       matrix:
         include:
           - dockerfile: Dockerfile
+            browser_type: chrome
             name: chrome-default
             tag: rpa-worker-selenium:chrome-default
-          - dockerfile: Dockerfile.chrome
-            name: chrome
-            tag: rpa-worker-selenium:chrome
-          - dockerfile: Dockerfile.firefox
-            name: firefox
-            tag: rpa-worker-selenium:firefox
-          - dockerfile: Dockerfile.brave
+          - dockerfile: Dockerfile
+            browser_type: brave
             name: brave
             tag: rpa-worker-selenium:brave
+          - dockerfile: Dockerfile.firefox
+            browser_type: ""
+            name: firefox
+            tag: rpa-worker-selenium:firefox
           - dockerfile: Dockerfile.ubuntu
+            browser_type: ""
             name: ubuntu
             tag: rpa-worker-selenium:ubuntu
           - dockerfile: Dockerfile.alpine
+            browser_type: ""
             name: alpine
             tag: rpa-worker-selenium:alpine
     
@@ -146,7 +148,11 @@ jobs:
     
     - name: Build Docker image
       run: |
-        docker build -f ${{ matrix.dockerfile }} -t ${{ matrix.tag }} .
+        if [ -n "${{ matrix.browser_type }}" ]; then
+          docker build -f ${{ matrix.dockerfile }} --build-arg BROWSER_TYPE=${{ matrix.browser_type }} -t ${{ matrix.tag }} .
+        else
+          docker build -f ${{ matrix.dockerfile }} -t ${{ matrix.tag }} .
+        fi
     
     - name: Create data directory
       run: mkdir -p data && chmod 777 data
@@ -195,10 +201,12 @@ jobs:
       fail-fast: false
       matrix:
         include:
-          - dockerfile: Dockerfile.chrome
+          - dockerfile: Dockerfile
+            browser_type: chrome
             name: chrome-pjeoffice
             tag: rpa-worker-selenium:chrome-pje
           - dockerfile: Dockerfile.ubuntu
+            browser_type: ""
             name: ubuntu-pjeoffice
             tag: rpa-worker-selenium:ubuntu-pje
     
@@ -211,7 +219,11 @@ jobs:
     
     - name: Build Docker image with PJeOffice
       run: |
-        docker build -f ${{ matrix.dockerfile }} --build-arg BUILD_PJEOFFICE=1 -t ${{ matrix.tag }} .
+        if [ -n "${{ matrix.browser_type }}" ]; then
+          docker build -f ${{ matrix.dockerfile }} --build-arg BUILD_PJEOFFICE=1 --build-arg BROWSER_TYPE=${{ matrix.browser_type }} -t ${{ matrix.tag }} .
+        else
+          docker build -f ${{ matrix.dockerfile }} --build-arg BUILD_PJEOFFICE=1 -t ${{ matrix.tag }} .
+        fi
     
     - name: Create data directory
       run: mkdir -p data && chmod 777 data
@@ -255,7 +267,8 @@ jobs:
       fail-fast: false
       matrix:
         include:
-          - dockerfile: Dockerfile.chrome
+          - dockerfile: Dockerfile
+            browser_type: chrome
             name: chrome-recording
             tag: rpa-worker-selenium:chrome-rec
     
@@ -268,7 +281,7 @@ jobs:
     
     - name: Build Docker image
       run: |
-        docker build -f ${{ matrix.dockerfile }} -t ${{ matrix.tag }} .
+        docker build -f ${{ matrix.dockerfile }} --build-arg BROWSER_TYPE=${{ matrix.browser_type }} -t ${{ matrix.tag }} .
     
     - name: Create directories
       run: |
