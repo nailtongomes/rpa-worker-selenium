@@ -147,7 +147,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     libevent-2.1-7 \
     libstartup-notification0 \
     # Audio support (required by some certificate dialog boxes)
-    libasound2 \
+    libasound2t64 \
     libpulse0 \
     pulseaudio \
     # NSS and certificate handling
