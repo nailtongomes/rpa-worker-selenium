@@ -852,6 +852,56 @@ If you encounter SSL certificate issues, the image includes proper CA certificat
 docker run --rm rpa-worker-selenium apt-get update && apt-get install -y ca-certificates
 ```
 
+### Runtime CA Certificate Management
+
+All images include tools for managing CA certificates at runtime. This is essential for corporate environments with custom Certificate Authorities or systems requiring specific CA authentication.
+
+#### Installing CA Certificates at Runtime
+
+You can install custom CA certificates dynamically using the included tools:
+
+```bash
+# Using the example script
+docker run --rm \
+  -v /path/to/custom-ca.crt:/tmp/ca.crt:ro \
+  rpa-worker-selenium \
+  python /app/example_ca_runtime.py --install /tmp/ca.crt --name my-custom-ca
+
+# Or manually
+docker run --rm \
+  -v /path/to/custom-ca.crt:/tmp/ca.crt:ro \
+  rpa-worker-selenium \
+  bash -c "
+    cp /tmp/ca.crt /usr/local/share/ca-certificates/my-custom-ca.crt && \
+    update-ca-certificates && \
+    python your_script.py
+  "
+```
+
+#### Listing CA Certificates
+
+```bash
+# List installed custom CA certificates
+docker run --rm rpa-worker-selenium \
+  python /app/example_ca_runtime.py --list
+
+# List with detailed information
+docker run --rm rpa-worker-selenium \
+  python /app/example_ca_runtime.py --list --verbose
+```
+
+#### Removing CA Certificates
+
+```bash
+# Remove a CA certificate
+docker run --rm rpa-worker-selenium \
+  python /app/example_ca_runtime.py --remove my-custom-ca
+```
+
+For more details and Python API examples, see:
+- **[CA Runtime Management Guide](CA_RUNTIME_MANAGEMENT.md)** - Complete CA certificate management documentation
+- **[example_ca_runtime.py](example_ca_runtime.py)** - CA certificate management example script
+
 ### Client Certificate Authentication (.pfx/.p12 files)
 
 The image includes support for client certificate authentication using .pfx (PKCS#12) files, commonly used for CA certificates or A1 digital tokens in Brazil. The NSS certificate database is pre-initialized for both the default app user and root user.
@@ -888,6 +938,10 @@ certutil -L -d sql:/root/.pki/nssdb
 ```
 
 **Note**: The NSS database password is empty by default for simplified automation. Chrome will automatically use certificates from the NSS database when accessing websites that require client authentication.
+
+For personal certificate management (A1 tokens), see:
+- **[A1 Certificate Guide](A1_CERTIFICATE_GUIDE.md)** - Complete A1 personal certificate documentation
+- **[example_cert_management.py](example_cert_management.py)** - Personal certificate management example
 
 ## Security Features
 
