@@ -44,6 +44,9 @@ FROM ubuntu:24.04
 # Pass build argument to runtime stage
 ARG BUILD_PJEOFFICE=0
 
+# Create and activate virtual environment (for PEP 668 compliance in Ubuntu 24.04)
+# This must be done after installing python3-venv below
+
 LABEL maintainer="nailtongsilva@gmail.com" \
       version="2.0" \
       description="Ubuntu 24.04 LTS Selenium with comprehensive GUI/window management for PJeOffice and RPA"
@@ -176,6 +179,11 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     openjdk-21-jre-headless \
     && rm -rf /var/lib/apt/lists/*
 
+# Create and activate virtual environment for PEP 668 compliance
+# Ubuntu 24.04 enforces externally-managed Python environment
+RUN python3 -m venv /opt/venv
+ENV PATH="/opt/venv/bin:$PATH"
+
 # Copy Chrome and ChromeDriver from builder stage
 COPY --from=builder /downloads/chrome-linux64 /opt/chrome
 COPY --from=builder /downloads/chromedriver-linux64/chromedriver /usr/local/bin/chromedriver
@@ -246,13 +254,13 @@ RUN if [ "$BUILD_PJEOFFICE" = "1" ]; then \
     chmod -R 755 /app/.pjeoffice-pro; \
 fi
 
-# Install Python dependencies
+# Install Python dependencies (using virtual environment)
 COPY requirements.txt .
-RUN python3 -m pip install --upgrade --no-cache-dir --trusted-host pypi.org --trusted-host files.pythonhosted.org pip \
-    && pip install --no-cache-dir --trusted-host pypi.org --trusted-host files.pythonhosted.org -r requirements.txt \
-    && chmod -R 777 /usr/local/lib/python*/dist-packages/seleniumbase/drivers || true
+RUN pip install --upgrade --no-cache-dir pip \
+    && pip install --no-cache-dir -r requirements.txt \
+    && chmod -R 777 /opt/venv/lib/python*/site-packages/seleniumbase/drivers || true
 
-# Install noVNC and websockify for browser-based VNC access (optional feature)
+# Install noVNC and websockify for browser-based VNC access (using virtual environment)
 RUN mkdir -p /opt/novnc \
     && git clone --depth 1 https://github.com/novnc/noVNC.git /opt/novnc \
     && ln -s /opt/novnc/vnc.html /opt/novnc/index.html \
@@ -267,6 +275,9 @@ RUN chmod +x /app/entrypoint.sh /app/script_downloader.py /app/smoke_test.py
 # Set up D-Bus for GUI applications
 RUN mkdir -p /var/run/dbus \
     && chown rpauser:rpauser /var/run/dbus
+
+# Set ownership of virtual environment for rpauser
+RUN chown -R rpauser:rpauser /opt/venv
 
 # Ensure runtime directory exists for Firefox sandbox when running as root
 RUN mkdir -p /tmp/runtime-root \
