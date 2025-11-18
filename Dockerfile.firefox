@@ -181,12 +181,10 @@ RUN python -m pip install --upgrade --trusted-host pypi.org --trusted-host files
     && chmod -R 777 /usr/local/lib/python3.11/site-packages/seleniumbase/drivers || true
 
 # Install noVNC and websockify for browser-based VNC access (optional feature)
-RUN mkdir -p /opt/novnc /opt/websockify \
+RUN mkdir -p /opt/novnc \
     && git clone --depth 1 https://github.com/novnc/noVNC.git /opt/novnc \
-    && git clone --depth 1 https://github.com/novnc/websockify.git /opt/websockify \
     && ln -s /opt/novnc/vnc.html /opt/novnc/index.html \
-    && pip install --no-cache-dir numpy \
-    && cd /opt/websockify && python setup.py install
+    && pip install --no-cache-dir websockify
 
 # Copy application files
 COPY . .
