@@ -338,3 +338,69 @@ jobs:
           data/
           recordings/
         retention-days: 7
+
+  docker-novnc-test:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - dockerfile: Dockerfile
+            browser_type: chrome
+            name: chrome-novnc
+            tag: rpa-worker-selenium:chrome-novnc
+          - dockerfile: Dockerfile.ubuntu
+            browser_type: ""
+            name: ubuntu-novnc
+            tag: rpa-worker-selenium:ubuntu-novnc
+    
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+    
+    - name: Set up Docker Buildx
+      uses: docker/setup-buildx-action@v3
+    
+    - name: Build Docker image
+      run: |
+        if [ -n "${{ matrix.browser_type }}" ]; then
+          docker build -f ${{ matrix.dockerfile }} --build-arg BROWSER_TYPE=${{ matrix.browser_type }} -t ${{ matrix.tag }} .
+        else
+          docker build -f ${{ matrix.dockerfile }} -t ${{ matrix.tag }} .
+        fi
+    
+    - name: Create data directory
+      run: mkdir -p data && chmod 777 data
+    
+    - name: Run smoke test with noVNC enabled
+      run: |
+        docker run --rm \
+          -e USE_XVFB=1 \
+          -e USE_VNC=1 \
+          -e USE_NOVNC=1 \
+          -e CHECK_PROCESSES=1 \
+          -e TARGET_URL=https://example.com \
+          -e CACHE_DIR=/data \
+          -v $(pwd)/data:/data \
+          ${{ matrix.tag }} \
+          bash -c "sleep 5 && python /app/smoke_test.py"
+    
+    - name: Verify noVNC processes in container
+      run: |
+        # Run a container and check if noVNC-related processes are running
+        docker run --rm \
+          -e USE_XVFB=1 \
+          -e USE_VNC=1 \
+          -e USE_NOVNC=1 \
+          ${{ matrix.tag }} \
+          bash -c "sleep 5 && pgrep -f Xvfb && pgrep -f x11vnc && pgrep -f websockify && echo 'All noVNC processes running'"
+    
+    - name: Upload Docker noVNC test artifacts
+      if: always()
+      uses: actions/upload-artifact@v4
+      with:
+        name: docker-novnc-test-${{ matrix.name }}-results
+        path: data/
+        retention-days: 7
