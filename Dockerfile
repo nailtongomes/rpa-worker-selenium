@@ -95,6 +95,8 @@ RUN apt-get update \
         gnupg \
         apt-transport-https \
         ca-certificates \
+        git \
+        net-tools \
     && rm -rf /var/lib/apt/lists/*
 
 # Install browser and driver based on BROWSER_TYPE
@@ -228,6 +230,14 @@ RUN python -m pip install --upgrade --trusted-host pypi.org --trusted-host files
  && pip install --trusted-host pypi.org --trusted-host files.pythonhosted.org -r requirements.txt \
  && chmod -R 777 /usr/local/lib/python3.11/site-packages/seleniumbase/drivers || true
 
+# Install noVNC and websockify for browser-based VNC access (optional feature)
+RUN mkdir -p /opt/novnc /opt/websockify \
+    && git clone --depth 1 https://github.com/novnc/noVNC.git /opt/novnc \
+    && git clone --depth 1 https://github.com/novnc/websockify.git /opt/websockify \
+    && ln -s /opt/novnc/vnc.html /opt/novnc/index.html \
+    && pip install --no-cache-dir numpy \
+    && cd /opt/websockify && python setup.py install
+
 # Copy application files
 COPY . .
 
@@ -238,9 +248,11 @@ RUN chmod +x /app/entrypoint.sh /app/script_downloader.py /app/smoke_test.py
 ENV USE_XVFB=0 \
     USE_OPENBOX=0 \
     USE_VNC=0 \
+    USE_NOVNC=0 \
     USE_PJEOFFICE=0 \
     USE_SCREEN_RECORDING=0 \
     VNC_PORT=5900 \
+    NOVNC_PORT=6080 \
     RECORDING_DIR=/app/recordings \
     XDG_CACHE_HOME=/app/.cache
 

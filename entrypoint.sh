@@ -27,6 +27,7 @@ OPENBOX_PID=""
 PJEOFFICE_PID=""
 FFMPEG_PID=""
 VNC_PID=""
+NOVNC_PID=""
 
 # Setup directories with proper permissions
 setup_directories() {
@@ -65,6 +66,7 @@ setup_directories() {
 # Signal handling for graceful shutdown
 handle_sigterm() {
     echo "[entrypoint] Received shutdown signal, cleaning up..."
+    [ -n "$NOVNC_PID" ] && kill -TERM "$NOVNC_PID" 2>/dev/null || true
     [ -n "$VNC_PID" ] && kill -TERM "$VNC_PID" 2>/dev/null || true
     [ -n "$FFMPEG_PID" ] && kill -TERM "$FFMPEG_PID" 2>/dev/null || true
     [ -n "$XVFB_PID" ] && kill -TERM "$XVFB_PID" 2>/dev/null || true
@@ -302,6 +304,56 @@ start_vnc() {
     fi
 }
 
+# Start noVNC with websockify for browser-based VNC access
+start_novnc() {
+    if [ "${USE_NOVNC}" != "1" ]; then
+        echo "[entrypoint] noVNC disabled (USE_NOVNC=${USE_NOVNC})"
+        return 0
+    fi
+    
+    # noVNC requires VNC to be running
+    if [ "${USE_VNC}" != "1" ]; then
+        echo "[entrypoint] WARNING: noVNC requires VNC server (USE_VNC=1), skipping noVNC"
+        return 0
+    fi
+    
+    # Check if noVNC is installed
+    if [ ! -d "/opt/novnc" ] || [ ! -d "/opt/websockify" ]; then
+        echo "[entrypoint] WARNING: noVNC or websockify not installed, skipping noVNC"
+        return 0
+    fi
+    
+    echo "[entrypoint] Starting noVNC with websockify..."
+    
+    # Get configuration
+    local vnc_port=${VNC_PORT:-5900}
+    local novnc_port=${NOVNC_PORT:-6080}
+    
+    # Start websockify to proxy VNC through WebSocket for noVNC
+    # Options:
+    #   --web: path to noVNC web files
+    #   localhost:5900: VNC server to connect to
+    #   0.0.0.0:6080: WebSocket server to listen on (accessible from outside container)
+    /usr/local/bin/websockify --web /opt/novnc 0.0.0.0:${novnc_port} localhost:${vnc_port} > /app/logs/novnc.log 2>&1 &
+    
+    NOVNC_PID=$!
+    
+    # Wait a moment for websockify to start
+    sleep 2
+    
+    if [ -n "$NOVNC_PID" ] && ps -p "$NOVNC_PID" > /dev/null 2>&1; then
+        echo "[entrypoint] noVNC started successfully (PID: ${NOVNC_PID})"
+        echo "[entrypoint] noVNC listening on port: ${novnc_port}"
+        echo "[entrypoint] Access via browser: http://<container-ip>:${novnc_port}/vnc.html"
+        echo "[entrypoint] Or with port mapping: docker run -p ${novnc_port}:${novnc_port} ..."
+        return 0
+    else
+        echo "[entrypoint] WARNING: Failed to start noVNC"
+        NOVNC_PID=""
+        return 1
+    fi
+}
+
 # Function to download and execute a script
 download_and_execute() {
     echo "[entrypoint] Checking for SCRIPT_URL environment variable..."
@@ -350,6 +402,7 @@ main() {
     start_openbox
     start_pjeoffice
     start_vnc
+    start_novnc
     start_screen_recording
     
     # Check if SCRIPT_URL is set
