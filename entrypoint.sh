@@ -318,7 +318,7 @@ start_novnc() {
     fi
     
     # Check if noVNC is installed
-    if [ ! -d "/opt/novnc" ] || [ ! -d "/opt/websockify" ]; then
+    if [ ! -d "/opt/novnc" ] || ! command -v websockify &> /dev/null; then
         echo "[entrypoint] WARNING: noVNC or websockify not installed, skipping noVNC"
         return 0
     fi

@@ -65,7 +65,7 @@ def test_novnc_entrypoint_integration():
     print("  ✓ noVNC checks for VNC dependency")
     
     # Test 9: Check for noVNC installation check
-    assert '/opt/novnc' in entrypoint_content and '/opt/websockify' in entrypoint_content, \
+    assert '/opt/novnc' in entrypoint_content and 'websockify' in entrypoint_content, \
         "noVNC installation paths not checked"
     print("  ✓ noVNC installation paths checked")
     

@@ -19,9 +19,9 @@ This document summarizes the implementation of noVNC + websockify for browser-ba
 - **Dockerfile.ubuntu**
 
 Changes made:
-- Added `git` and `net-tools` packages
-- Cloned noVNC and websockify from GitHub
-- Installed websockify Python package
+- Added `git` package
+- Cloned noVNC from GitHub (static files)
+- Installed websockify via pip (modern approach)
 - Added `USE_NOVNC=0` environment variable
 - Added `NOVNC_PORT=6080` environment variable
 
@@ -108,9 +108,8 @@ docker run --rm \
 4. **websockify installed**: Checked automatically by entrypoint.sh
 
 ### Installation Dependencies (in Dockerfiles)
-- git (to clone repositories)
-- net-tools (networking utilities)
-- Python packages: numpy (required by websockify)
+- git (to clone noVNC repository)
+- Python packages: websockify (installed via pip, includes numpy dependency automatically)
 
 ## Architecture
 
@@ -212,8 +211,8 @@ All tests pass ✓
 
 ### Image Size Increase
 - noVNC repository: ~5-10 MB
-- websockify repository: ~1-2 MB
-- numpy dependency: ~15-20 MB
+- websockify package (via pip): ~2-3 MB
+- numpy dependency (auto-installed): ~15-20 MB
 - **Total**: ~20-30 MB increase per image
 
 ### Runtime Overhead
