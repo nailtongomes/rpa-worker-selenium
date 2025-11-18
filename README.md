@@ -419,14 +419,49 @@ vncviewer localhost:5900
 # Connect to: localhost:5900
 ```
 
-#### VNC with Custom Port
+#### Browser-Based VNC with noVNC (New!)
+
+For easier access without installing a VNC client, you can use the built-in noVNC support to access VNC directly from your web browser:
 
 ```bash
 docker run --rm \
   -e USE_XVFB=1 \
   -e USE_VNC=1 \
+  -e USE_NOVNC=1 \
+  -p 6080:6080 \
+  rpa-worker-selenium example_novnc_debug.py
+```
+
+Then open your browser and navigate to:
+```
+http://localhost:6080/vnc.html
+```
+
+Click "Connect" to view the automation in real-time. No VNC client installation required!
+
+**Example with Firefox:**
+```bash
+docker run --rm \
+  -e USE_XVFB=1 \
+  -e USE_VNC=1 \
+  -e USE_NOVNC=1 \
+  -p 6080:6080 \
+  rpa-worker-selenium-firefox example_script_firefox.py
+```
+
+**Note:** The noVNC feature is available in all Dockerfiles except `Dockerfile.alpine`.
+
+#### VNC with Custom Ports
+
+```bash
+docker run --rm \
+  -e USE_XVFB=1 \
+  -e USE_VNC=1 \
+  -e USE_NOVNC=1 \
   -e VNC_PORT=5901 \
+  -e NOVNC_PORT=6081 \
   -p 5901:5901 \
+  -p 6081:6081 \
   rpa-worker-selenium my_script.py
 ```
 
@@ -440,9 +475,12 @@ docker run --rm \
   -e USE_OPENBOX=1 \
   -e USE_PJEOFFICE=1 \
   -e USE_VNC=1 \
-  -p 5900:5900 \
+  -e USE_NOVNC=1 \
+  -p 6080:6080 \
   rpa-worker-selenium-pje my_script.py
 ```
+
+Access via browser at `http://localhost:6080/vnc.html`
 
 #### VNC with Docker Compose
 
@@ -453,10 +491,12 @@ services:
   rpa-worker:
     image: rpa-worker-selenium:latest
     ports:
-      - "5900:5900"
+      - "6080:6080"  # noVNC browser access
+      - "5900:5900"  # Traditional VNC (optional)
     environment:
       - USE_XVFB=1
       - USE_VNC=1
+      - USE_NOVNC=1
       - SCREEN_WIDTH=1920
       - SCREEN_HEIGHT=1080
     volumes:
@@ -470,6 +510,8 @@ Then run:
 docker-compose up
 ```
 
+Access via browser at `http://localhost:6080/vnc.html`
+
 #### VNC Security Considerations
 
 **Important:** The default VNC configuration uses no password (`-nopw` flag) for simplicity in local development. This is suitable for:
@@ -479,10 +521,11 @@ docker-compose up
 
 For production or untrusted networks, consider:
 - Using SSH tunneling to connect to VNC
-- Setting up a reverse proxy with authentication
+- Setting up a reverse proxy with authentication (see [VNC_CADDY_PROXY.md](VNC_CADDY_PROXY.md))
 - Running the container in a private network
+- Using the noVNC browser interface behind a firewall
 
-**Note:** VNC requires Xvfb to be running (`USE_XVFB=1`). If Xvfb is not enabled, VNC will be skipped with a warning message.
+**Note:** Both VNC and noVNC require Xvfb to be running (`USE_XVFB=1`). If Xvfb is not enabled, they will be skipped with a warning message.
 
 #### VNC with Reverse Proxy (Production)
 
@@ -649,8 +692,10 @@ The `CHECK_PROCESSES=1` flag enables verification that:
 | `USE_OPENBOX` | 0 | Enable OpenBox window manager (set to 1 to enable) |
 | `USE_PJEOFFICE` | 0 | Enable PJeOffice (set to 1 to enable, requires BUILD_PJEOFFICE=1 at build time) |
 | `USE_VNC` | 0 | Enable VNC server (set to 1 to enable) |
+| `USE_NOVNC` | 0 | Enable noVNC browser-based VNC (set to 1 to enable, requires USE_VNC=1) |
 | `USE_SCREEN_RECORDING` | 0 | Enable screen recording (set to 1 to enable, requires USE_XVFB=1) |
 | `VNC_PORT` | 5900 | VNC server port |
+| `NOVNC_PORT` | 6080 | noVNC WebSocket port for browser access |
 | `DISPLAY` | :99 | X11 display number |
 | `RECORDING_DIR` | /app/recordings | Directory to save screen recordings |
 | `RECORDING_FILENAME` | recording_YYYYMMDD_HHMMSS.mp4 | Filename for screen recording (auto-generated with timestamp if not specified) |
