@@ -150,8 +150,8 @@ jobs:
             tag: rpa-worker-selenium:firefox
           - dockerfile: Dockerfile.ubuntu
             browser_type: ""
-            name: ubuntu
-            tag: rpa-worker-selenium:ubuntu
+            name: debian
+            tag: rpa-worker-selenium:debian
           - dockerfile: Dockerfile.alpine
             browser_type: ""
             name: alpine
@@ -225,8 +225,8 @@ jobs:
             tag: rpa-worker-selenium:chrome-pje
           - dockerfile: Dockerfile.ubuntu
             browser_type: ""
-            name: ubuntu-pjeoffice
-            tag: rpa-worker-selenium:ubuntu-pje
+            name: debian-pjeoffice
+            tag: rpa-worker-selenium:debian-pje
     
     steps:
     - name: Checkout code
@@ -353,8 +353,8 @@ jobs:
             tag: rpa-worker-selenium:chrome-novnc
           - dockerfile: Dockerfile.ubuntu
             browser_type: ""
-            name: ubuntu-novnc
-            tag: rpa-worker-selenium:ubuntu-novnc
+            name: debian-novnc
+            tag: rpa-worker-selenium:debian-novnc
     
     steps:
     - name: Checkout code

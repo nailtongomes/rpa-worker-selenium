@@ -305,7 +305,7 @@ You should see:
 **Important:** The noVNC feature is **not available** in `Dockerfile.alpine`. This is intentional to keep the Alpine image lightweight for serverless deployments. If you need noVNC, use one of the other Dockerfiles:
 - `Dockerfile` (main unified - Chrome/Brave)
 - `Dockerfile.firefox`
-- `Dockerfile.ubuntu`
+- `Dockerfile.ubuntu` (Debian Trixie-based with enhanced GUI support)
 
 ## Additional Resources
 

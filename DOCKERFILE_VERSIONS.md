@@ -83,37 +83,37 @@ docker run --rm rpa-worker-selenium-firefox example_script_firefox.py
 
 **Build command:**
 ```bash
-docker build -f Dockerfile.ubuntu -t rpa-worker-selenium-ubuntu .
+docker build -f Dockerfile.ubuntu -t rpa-worker-selenium-debian .
 ```
 
 **Build with PJeOffice support:**
 ```bash
-docker build -f Dockerfile.ubuntu --build-arg BUILD_PJEOFFICE=1 -t rpa-worker-selenium-ubuntu-pje .
+docker build -f Dockerfile.ubuntu --build-arg BUILD_PJEOFFICE=1 -t rpa-worker-selenium-debian-pje .
 ```
 
 **Example usage with Chrome:**
 ```bash
 # Basic usage
-docker run --rm rpa-worker-selenium-ubuntu example_script.py
+docker run --rm rpa-worker-selenium-debian example_script.py
 
 # With GUI services enabled for PJeOffice
 docker run --rm \
   -e USE_XVFB=1 \
   -e USE_OPENBOX=1 \
   -e USE_PJEOFFICE=1 \
-  rpa-worker-selenium-ubuntu-pje my_pjeoffice_script.py
+  rpa-worker-selenium-debian-pje my_pjeoffice_script.py
 ```
 
 **Example usage with Firefox:**
 ```bash
 # Basic Firefox usage
-docker run --rm rpa-worker-selenium-ubuntu example_script_firefox.py
+docker run --rm rpa-worker-selenium-debian example_script_firefox.py
 
 # With GUI services
 docker run --rm \
   -e USE_XVFB=1 \
   -e USE_OPENBOX=1 \
-  rpa-worker-selenium-ubuntu example_script_firefox.py
+  rpa-worker-selenium-debian example_script_firefox.py
 ```
 
 **Note:** This image is specifically designed to handle:

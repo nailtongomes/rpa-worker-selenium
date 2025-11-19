@@ -16,7 +16,7 @@ This document summarizes the implementation of noVNC + websockify for browser-ba
 #### Dockerfiles (3 files updated)
 - **Dockerfile** (main unified - Chrome/Brave)
 - **Dockerfile.firefox**
-- **Dockerfile.ubuntu**
+- **Dockerfile.ubuntu** (Debian Trixie-based)
 
 Changes made:
 - Added `git` package

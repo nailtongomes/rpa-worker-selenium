@@ -55,7 +55,7 @@ DOCKER_BUILDKIT=1 docker build -f Dockerfile.firefox -t rpa-worker-selenium-fire
 
 **With Debian Trixie (Enhanced GUI support + Chrome + Firefox + noVNC + Java signers):**
 ```bash
-DOCKER_BUILDKIT=1 docker build -f Dockerfile.ubuntu -t rpa-worker-selenium-ubuntu .
+DOCKER_BUILDKIT=1 docker build -f Dockerfile.ubuntu -t rpa-worker-selenium-debian .
 ```
 
 **Alpine (Lightweight for Serverless) ⭐:**
@@ -227,14 +227,14 @@ The Debian Trixie-based Dockerfile is specifically designed for handling complex
 
 ```bash
 # Build with PJeOffice support
-docker build -f Dockerfile.ubuntu --build-arg BUILD_PJEOFFICE=1 -t rpa-worker-selenium-ubuntu-pje .
+docker build -f Dockerfile.ubuntu --build-arg BUILD_PJEOFFICE=1 -t rpa-worker-selenium-debian-pje .
 
 # Run with full GUI support
 docker run --rm \
   -e USE_XVFB=1 \
   -e USE_OPENBOX=1 \
   -e USE_PJEOFFICE=1 \
-  rpa-worker-selenium-ubuntu-pje my_script.py
+  rpa-worker-selenium-debian-pje my_script.py
 ```
 
 This version includes:
@@ -318,13 +318,13 @@ docker build -f Dockerfile.firefox --build-arg BUILD_PJEOFFICE=1 -t rpa-worker-s
 # Brave variant
 docker build -f Dockerfile.brave --build-arg BUILD_PJEOFFICE=1 -t rpa-worker-selenium-pje .
 
-# Ubuntu variant (recommended for PJeOffice certificate dialogs)
-docker build -f Dockerfile.ubuntu --build-arg BUILD_PJEOFFICE=1 -t rpa-worker-selenium-ubuntu-pje .
+# Debian Trixie variant (recommended for PJeOffice certificate dialogs)
+docker build -f Dockerfile.ubuntu --build-arg BUILD_PJEOFFICE=1 -t rpa-worker-selenium-debian-pje .
 ```
 
 **Note:** PJeOffice download requires access to `pje-office.pje.jus.br` during build.
 
-**Recommendation for PJeOffice:** If you're experiencing issues with certificate password dialogs, use the Ubuntu variant (`Dockerfile.ubuntu`). It includes comprehensive GUI libraries and window management tools specifically designed to handle these types of interactions.
+**Recommendation for PJeOffice:** If you're experiencing issues with certificate password dialogs, use the Debian Trixie variant (`Dockerfile.ubuntu`). It includes comprehensive GUI libraries and window management tools specifically designed to handle these types of interactions.
 
 ### Running with Optional Services
 
