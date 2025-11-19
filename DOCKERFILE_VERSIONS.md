@@ -66,7 +66,7 @@ docker run --rm rpa-worker-selenium-firefox example_script_firefox.py
 **ENHANCED**: Now uses Debian Trixie (13) - more complete and updated than Bookworm (12)!
 
 - Uses Debian Trixie (13) as base image - latest testing version with up-to-date packages
-- **NEW**: Includes both Chrome and Firefox browsers
+- **NEW**: Includes both Chrome and Firefox ESR browsers
 - **NEW**: Includes both ChromeDriver and GeckoDriver
 - Comprehensive desktop environment and GUI libraries
 - Enhanced window management tools (wmctrl, xdotool, xautomation)
@@ -193,7 +193,7 @@ docker run --rm -v $(pwd)/data:/data rpa-worker-selenium-alpine python /app/alpi
 | `Dockerfile` (Chrome) | Production, PJeOffice | Medium | Chrome (Latest) | Yes | Medium |
 | `Dockerfile` (Brave) | Privacy, Ad-blocking | Medium | Brave | Yes | Medium |
 | `Dockerfile.firefox` | Firefox Testing | Medium | Firefox | Yes | Medium |
-| `Dockerfile.trixie` | PJeOffice, Java Signers, noVNC | Large | **Chrome + Firefox** | **Full (Debian Trixie)** | Slow |
+| `Dockerfile.trixie` | PJeOffice, Java Signers, noVNC | Large | **Chrome + Firefox ESR** | **Full (Debian Trixie)** | Slow |
 | `Dockerfile.alpine` | Serverless, Lambda | **Small** | Chromium & Firefox | No | Fast |
 
 ### Detailed Decision Guide
@@ -228,7 +228,7 @@ docker run --rm -v $(pwd)/data:/data rpa-worker-selenium-alpine python /app/alpi
   - You need robust graphical worker environment with noVNC support
   - You need full desktop environment support for complex GUI interactions
   - You're working with GTK-based authentication dialogs
-  - **You need both Chrome AND Firefox in the same image**
+  - **You need both Chrome AND Firefox ESR in the same image**
   - Image size is less important than compatibility and feature completeness
 
 - **Use `Dockerfile.alpine`** (⭐ Recommended for Serverless):
