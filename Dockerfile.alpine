@@ -100,6 +100,12 @@ RUN ln -s /opt/firefox/firefox /usr/local/bin/firefox \
 RUN ln -sf /usr/bin/chromium /usr/bin/google-chrome \
     && ln -sf /usr/bin/chromium /usr/bin/chrome
 
+# Create Chrome/Chromium policy directory for AutoSelectCertificateForUrls
+# Python will write JSON policy files here at runtime
+# Set permissions to allow writing without sudo
+RUN mkdir -p /etc/opt/chrome/policies/managed \
+    && chmod 777 /etc/opt/chrome/policies/managed
+
 # Create working directory structure
 WORKDIR /app
 RUN mkdir -p /app/src /app/logs /app/tmp /data \
