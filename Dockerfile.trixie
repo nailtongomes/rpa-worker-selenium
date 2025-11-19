@@ -102,7 +102,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     # GUI libraries (comprehensive set for window handling)
     libgtk-3-0 \
     libgtk2.0-0 \
-    libgdk-pixbuf2.0-0 \
+    libgdk-pixbuf-2.0-0 \
     libglib2.0-0 \
     libdbus-1-3 \
     libdbus-glib-1-2 \
@@ -175,7 +175,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     dbus \
     dbus-x11 \
     # PolicyKit for authentication dialogs
-    policykit-1 \
+    polkitd \
     # Java runtime for applets
     openjdk-21-jre-headless \
     && rm -rf /var/lib/apt/lists/*

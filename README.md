@@ -7,7 +7,7 @@ A production-ready Docker image for running dynamic Python scripts with Selenium
 > **Note**: This repository provides four Dockerfile versions:
 > - `Dockerfile` (unified) - **NEW** Multi-browser support with build arg (Chrome or Brave)
 > - `Dockerfile.firefox` - Uses Firefox browser with GeckoDriver for Mozilla automation
-> - `Dockerfile.ubuntu` - **UPDATED** Debian Trixie-based with Chrome + Firefox + comprehensive GUI/window management + noVNC
+> - `Dockerfile.trixie` - **UPDATED** Debian Trixie-based with Chrome + Firefox + comprehensive GUI/window management + noVNC
 > - `Dockerfile.alpine` - Lightweight for serverless (Lambda, Cloud Run) - Chromium & Firefox ESR
 > 
 > See [DOCKERFILE_VERSIONS.md](DOCKERFILE_VERSIONS.md) for details on which to use.
@@ -18,7 +18,7 @@ A production-ready Docker image for running dynamic Python scripts with Selenium
 - 🌐 Selenium WebDriver & SeleniumBase
 - 🚀 **NEW**: Unified Dockerfile with multi-browser support (Chrome, Brave)
 - 📦 ChromeDriver (automatically matched to stable Chrome version)
-- 🦊 **NEW**: Firefox support in Ubuntu image
+- 🦊 **NEW**: Firefox support in Debian Trixie image
 - 🔐 Certificate support for .pfx files (CA/A1 tokens) with initialized NSS database
 - 🔒 **NEW**: Runtime CA certificate management (install, list, remove)
 - 🖥️ Optional Xvfb (virtual display), OpenBox window manager, and VNC support
@@ -55,7 +55,7 @@ DOCKER_BUILDKIT=1 docker build -f Dockerfile.firefox -t rpa-worker-selenium-fire
 
 **With Debian Trixie (Enhanced GUI support + Chrome + Firefox + noVNC + Java signers):**
 ```bash
-DOCKER_BUILDKIT=1 docker build -f Dockerfile.ubuntu -t rpa-worker-selenium-debian .
+DOCKER_BUILDKIT=1 docker build -f Dockerfile.trixie -t rpa-worker-selenium-debian .
 ```
 
 **Alpine (Lightweight for Serverless) ⭐:**
@@ -69,7 +69,7 @@ DOCKER_BUILDKIT=1 docker build -f Dockerfile.alpine -t rpa-worker-selenium-alpin
 > - Chrome: `dl.google.com`, `storage.googleapis.com`, `googlechromelabs.github.io`
 > - Brave: `brave-browser-apt-release.s3.brave.com`, `storage.googleapis.com`, `googlechromelabs.github.io`
 > - Firefox: `ftp.mozilla.org`, `github.com`
-> - Ubuntu: `dl.google.com`, `storage.googleapis.com`, `ftp.mozilla.org`, `github.com`
+> - Debian Trixie: `dl.google.com`, `storage.googleapis.com`, `ftp.mozilla.org`, `github.com`
 > 
 > If you're behind a corporate firewall or in a restricted network, use `Dockerfile.alpine`.
 
@@ -227,7 +227,7 @@ The Debian Trixie-based Dockerfile is specifically designed for handling complex
 
 ```bash
 # Build with PJeOffice support
-docker build -f Dockerfile.ubuntu --build-arg BUILD_PJEOFFICE=1 -t rpa-worker-selenium-debian-pje .
+docker build -f Dockerfile.trixie --build-arg BUILD_PJEOFFICE=1 -t rpa-worker-selenium-debian-pje .
 
 # Run with full GUI support
 docker run --rm \
@@ -319,12 +319,12 @@ docker build -f Dockerfile.firefox --build-arg BUILD_PJEOFFICE=1 -t rpa-worker-s
 docker build -f Dockerfile.brave --build-arg BUILD_PJEOFFICE=1 -t rpa-worker-selenium-pje .
 
 # Debian Trixie variant (recommended for PJeOffice certificate dialogs)
-docker build -f Dockerfile.ubuntu --build-arg BUILD_PJEOFFICE=1 -t rpa-worker-selenium-debian-pje .
+docker build -f Dockerfile.trixie --build-arg BUILD_PJEOFFICE=1 -t rpa-worker-selenium-debian-pje .
 ```
 
 **Note:** PJeOffice download requires access to `pje-office.pje.jus.br` during build.
 
-**Recommendation for PJeOffice:** If you're experiencing issues with certificate password dialogs, use the Debian Trixie variant (`Dockerfile.ubuntu`). It includes comprehensive GUI libraries and window management tools specifically designed to handle these types of interactions.
+**Recommendation for PJeOffice:** If you're experiencing issues with certificate password dialogs, use the Debian Trixie variant (`Dockerfile.trixie`). It includes comprehensive GUI libraries and window management tools specifically designed to handle these types of interactions.
 
 ### Running with Optional Services
 

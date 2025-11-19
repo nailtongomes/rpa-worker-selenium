@@ -118,7 +118,7 @@ def test_dockerfiles_have_novnc():
     dockerfiles_to_check = [
         'Dockerfile',
         'Dockerfile.firefox',
-        'Dockerfile.ubuntu'
+        'Dockerfile.trixie'
     ]
     
     for dockerfile in dockerfiles_to_check:

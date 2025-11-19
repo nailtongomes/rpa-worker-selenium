@@ -59,7 +59,7 @@ docker run --rm rpa-worker-selenium-firefox example_script_firefox.py
 - `ftp.mozilla.org` (for Firefox download)
 - `github.com` (for GeckoDriver download)
 
-## 3. Dockerfile.ubuntu (Debian Trixie Desktop - Enhanced GUI/Window Management + Multi-Browser)
+## 3. Dockerfile.trixie (Debian Trixie Desktop - Enhanced GUI/Window Management + Multi-Browser)
 
 **Recommended for: PJeOffice certificate dialogs, complex window interactions, GUI automation, robust graphical worker with noVNC**
 
@@ -83,12 +83,12 @@ docker run --rm rpa-worker-selenium-firefox example_script_firefox.py
 
 **Build command:**
 ```bash
-docker build -f Dockerfile.ubuntu -t rpa-worker-selenium-debian .
+docker build -f Dockerfile.trixie -t rpa-worker-selenium-debian .
 ```
 
 **Build with PJeOffice support:**
 ```bash
-docker build -f Dockerfile.ubuntu --build-arg BUILD_PJEOFFICE=1 -t rpa-worker-selenium-debian-pje .
+docker build -f Dockerfile.trixie --build-arg BUILD_PJEOFFICE=1 -t rpa-worker-selenium-debian-pje .
 ```
 
 **Example usage with Chrome:**
@@ -124,7 +124,7 @@ docker run --rm \
 - Applications requiring complete Debian Trixie environment compatibility
 - Multi-browser testing (Chrome + Firefox) in same environment
 
-- **Use `Dockerfile.ubuntu`** if:
+- **Use `Dockerfile.trixie`** if:
   - You need to handle PJeOffice certificate password dialogs
   - You need support for Java-based digital signers and applets
   - You're experiencing window management issues with other images
@@ -193,7 +193,7 @@ docker run --rm -v $(pwd)/data:/data rpa-worker-selenium-alpine python /app/alpi
 | `Dockerfile` (Chrome) | Production, PJeOffice | Medium | Chrome (Latest) | Yes | Medium |
 | `Dockerfile` (Brave) | Privacy, Ad-blocking | Medium | Brave | Yes | Medium |
 | `Dockerfile.firefox` | Firefox Testing | Medium | Firefox | Yes | Medium |
-| `Dockerfile.ubuntu` | PJeOffice, Java Signers, noVNC | Large | **Chrome + Firefox** | **Full (Debian Trixie)** | Slow |
+| `Dockerfile.trixie` | PJeOffice, Java Signers, noVNC | Large | **Chrome + Firefox** | **Full (Debian Trixie)** | Slow |
 | `Dockerfile.alpine` | Serverless, Lambda | **Small** | Chromium & Firefox | No | Fast |
 
 ### Detailed Decision Guide
@@ -220,7 +220,7 @@ docker run --rm -v $(pwd)/data:/data rpa-worker-selenium-alpine python /app/alpi
   - You prefer Firefox's rendering and standards compliance
   - You need Firefox-specific features or extensions
 
-- **Use `Dockerfile.ubuntu`** if:
+- **Use `Dockerfile.trixie`** if:
   - You need to handle PJeOffice certificate password dialogs
   - You need support for Java-based digital signers (PJeOffice and others)
   - You're experiencing window management issues with other images

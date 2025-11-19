@@ -89,7 +89,7 @@ def test_vnc_environment_variables():
         'Dockerfile.chrome',
         'Dockerfile.firefox',
         'Dockerfile.brave',
-        'Dockerfile.ubuntu'
+        'Dockerfile.trixie'
     ]
     
     for dockerfile in dockerfile_paths:

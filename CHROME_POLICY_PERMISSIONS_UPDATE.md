@@ -19,7 +19,7 @@ Changed the ownership of the Chrome policy directory to `rpauser` instead of usi
   ```
 - **Line 153-154**: Updated comment to reflect new permissions model
 
-#### 2. Dockerfile.ubuntu (Debian Trixie-based)
+#### 2. Dockerfile.trixie (Debian Trixie-based)
 - **Line 229-233**: Added Chrome policy directory creation with rpauser ownership
   ```dockerfile
   RUN mkdir -p /etc/opt/chrome/policies/managed \
@@ -100,7 +100,7 @@ The test verifies:
 ## Related Files
 
 - `Dockerfile` - Main Chrome-based image
-- `Dockerfile.ubuntu` - Debian Trixie-based image with Chrome support
+- `Dockerfile.trixie` - Debian Trixie-based image with Chrome support
 - `Dockerfile.alpine` - Alpine-based image with Chromium
 - `A1_CERTIFICATE_GUIDE.md` - Certificate management guide
 - `example_cert_management.py` - Certificate management example

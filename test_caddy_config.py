@@ -158,26 +158,26 @@ def test_readme_caddy_reference():
     print("✓ All README Caddy reference tests passed!\n")
 
 
-def test_dockerfile_ubuntu_tkinter():
-    """Test that Dockerfile.ubuntu includes python3-tk."""
-    print("Testing Dockerfile.ubuntu tkinter fix...")
-    
-    dockerfile_path = os.path.join(os.path.dirname(__file__), 'Dockerfile.ubuntu')
-    
-    assert os.path.exists(dockerfile_path), "Dockerfile.ubuntu not found"
-    
+def test_dockerfile_trixie_tkinter():
+    """Test that Dockerfile.trixie includes python3-tk."""
+    print("Testing Dockerfile.trixie tkinter fix...")
+
+    dockerfile_path = os.path.join(os.path.dirname(__file__), 'Dockerfile.trixie')
+
+    assert os.path.exists(dockerfile_path), "Dockerfile.trixie not found"
+
     with open(dockerfile_path, 'r') as f:
         content = f.read()
-    
+
     # Check for python3-tk
-    assert 'python3-tk' in content, "python3-tk not found in Dockerfile.ubuntu"
+    assert 'python3-tk' in content, "python3-tk not found in Dockerfile.trixie"
     print("  ✓ python3-tk package included")
-    
+
     # Check it's in the Python section
     lines = content.split('\n')
     found_python_section = False
     found_tk = False
-    
+
     for i, line in enumerate(lines):
         if 'Python and build tools' in line or 'python3-dev' in line:
             found_python_section = True
@@ -186,15 +186,15 @@ def test_dockerfile_ubuntu_tkinter():
             break
         if found_python_section and line.strip() and line.strip().startswith('#') and 'Python' not in line:
             break  # Moved to next section
-    
+
     assert found_tk, "python3-tk not in Python tools section"
     print("  ✓ python3-tk in correct section (Python build tools)")
-    
+
     # Verify python3-dev is still there
     assert 'python3-dev' in content, "python3-dev missing (should still be present)"
     print("  ✓ python3-dev still present")
-    
-    print("✓ All Dockerfile.ubuntu tkinter tests passed!\n")
+
+    print("✓ All Dockerfile.trixie tkinter tests passed!\n")
 
 
 def main():
@@ -209,7 +209,7 @@ def main():
         test_caddyfile_exists()
         test_caddy_documentation()
         test_readme_caddy_reference()
-        test_dockerfile_ubuntu_tkinter()
+        test_dockerfile_trixie_tkinter()
         
         print("=" * 70)
         print("✓ All Caddy configuration tests passed successfully!")

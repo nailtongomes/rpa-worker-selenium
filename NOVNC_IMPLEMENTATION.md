@@ -16,7 +16,7 @@ This document summarizes the implementation of noVNC + websockify for browser-ba
 #### Dockerfiles (3 files updated)
 - **Dockerfile** (main unified - Chrome/Brave)
 - **Dockerfile.firefox**
-- **Dockerfile.ubuntu** (Debian Trixie-based)
+- **Dockerfile.trixie** (Debian Trixie-based)
 
 Changes made:
 - Added `git` package
@@ -205,7 +205,7 @@ All tests pass ✓
 **The Alpine image intentionally does NOT include noVNC** to maintain its lightweight design for serverless environments. If you need noVNC, use one of:
 - `Dockerfile` (main unified)
 - `Dockerfile.firefox`
-- `Dockerfile.ubuntu`
+- `Dockerfile.trixie`
 
 ## Performance Impact
 
