@@ -7,7 +7,7 @@ A production-ready Docker image for running dynamic Python scripts with Selenium
 > **Note**: This repository provides four Dockerfile versions:
 > - `Dockerfile` (unified) - **NEW** Multi-browser support with build arg (Chrome or Brave)
 > - `Dockerfile.firefox` - Uses Firefox browser with GeckoDriver for Mozilla automation
-> - `Dockerfile.trixie` - **UPDATED** Debian Trixie-based with Chrome + Firefox + comprehensive GUI/window management + noVNC
+> - `Dockerfile.trixie` - **UPDATED** Debian Trixie-based with Chrome + Firefox ESR + comprehensive GUI/window management + noVNC
 > - `Dockerfile.alpine` - Lightweight for serverless (Lambda, Cloud Run) - Chromium & Firefox ESR
 > 
 > See [DOCKERFILE_VERSIONS.md](DOCKERFILE_VERSIONS.md) for details on which to use.
@@ -18,7 +18,7 @@ A production-ready Docker image for running dynamic Python scripts with Selenium
 - 🌐 Selenium WebDriver & SeleniumBase
 - 🚀 **NEW**: Unified Dockerfile with multi-browser support (Chrome, Brave)
 - 📦 ChromeDriver (automatically matched to stable Chrome version)
-- 🦊 **NEW**: Firefox support in Debian Trixie image
+- 🦊 **NEW**: Firefox ESR support in Debian Trixie image
 - 🔐 Certificate support for .pfx files (CA/A1 tokens) with initialized NSS database
 - 🔒 **NEW**: Runtime CA certificate management (install, list, remove)
 - 🖥️ Optional Xvfb (virtual display), OpenBox window manager, and VNC support
