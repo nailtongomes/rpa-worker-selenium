@@ -150,8 +150,8 @@ RUN if [ "$BROWSER_TYPE" = "chrome" ] && [ -s /tmp/chrome.deb ]; then \
         rm -f /tmp/chrome.deb; \
     fi
 
-# Create non-root rpa user with sudo access for Chrome policy management
-# The rpauser can write to /etc/opt/chrome/policies/managed/ via sudo (needed for certificate policies)
+# Create non-root rpa user with sudo access
+# The rpauser owns /etc/opt/chrome/policies/managed/ for direct write access (certificate policies)
 RUN useradd -m -d /app -u 1000 rpauser \
  && echo "rpauser ALL=(ALL) NOPASSWD: ALL" >> /etc/sudoers
 
@@ -192,8 +192,10 @@ RUN mkdir -p /app/.pki /root/.pki \
     && chown rpauser:rpauser /app/.pki
 
 # Create Chrome policy directory for AutoSelectCertificateForUrls
-# Python will write JSON policy files here at runtime using sudo
+# Python will write JSON policy files here at runtime
+# Set ownership to rpauser to allow direct write access without sudo
 RUN mkdir -p /etc/opt/chrome/policies/managed \
+    && chown -R rpauser:rpauser /etc/opt/chrome/policies/managed \
     && chmod 755 /etc/opt/chrome/policies/managed
 
 # Set up OpenBox configuration to prevent menu warnings

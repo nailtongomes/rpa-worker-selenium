@@ -150,23 +150,21 @@ def write_chrome_policy(pattern="*", issuer_cn=None, subject_cn=None):
         ]
     }
     
-    # Write policy file using sudo (since it's in /etc/opt/chrome/)
+    # Write policy file directly (no sudo needed when running as rpauser)
+    # The /etc/opt/chrome/policies/managed directory is owned by rpauser
     policy_json = json.dumps(policy, indent=2)
     
-    # Create temporary file with policy content
-    with tempfile.NamedTemporaryFile(mode='w', delete=False, suffix='.json') as tmp:
-        tmp.write(policy_json)
-        tmp_path = tmp.name
-    
     try:
-        # Move file to policy directory using sudo
-        run_command(["sudo", "mv", tmp_path, CHROME_POLICY_FILE])
-        run_command(["sudo", "chmod", "644", CHROME_POLICY_FILE])
+        with open(CHROME_POLICY_FILE, 'w') as f:
+            f.write(policy_json)
+        
+        os.chmod(CHROME_POLICY_FILE, 0o644)
         print(f"  ✅ Chrome policy written to {CHROME_POLICY_FILE}")
         print(f"  Policy: {policy}")
-    finally:
-        # Clean up temp file if it still exists
-        Path(tmp_path).unlink(missing_ok=True)
+    except PermissionError as e:
+        print(f"  ❌ Permission denied writing policy file: {e}")
+        print(f"  Note: Running as root? Directory ownership may need adjustment.")
+        raise
 
 
 def remove_certificate(nickname="client_cert"):
@@ -193,8 +191,13 @@ def cleanup_chrome_policy():
     """Remove Chrome policy file."""
     print("\n[6] Cleaning up Chrome policy...")
     
-    run_command(["sudo", "rm", "-f", CHROME_POLICY_FILE], check=False)
-    print("  ✅ Chrome policy cleaned up")
+    try:
+        os.remove(CHROME_POLICY_FILE)
+        print("  ✅ Chrome policy cleaned up")
+    except FileNotFoundError:
+        print("  ℹ️  Policy file not found (already cleaned up)")
+    except PermissionError as e:
+        print(f"  ⚠️  Permission denied removing policy file: {e}")
 
 
 def check_prerequisites():

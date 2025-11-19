@@ -38,7 +38,7 @@ The Docker image is configured to support **runtime management** of personal cer
 
 - **NSS Database**: Chrome's certificate store at `~/.pki/nssdb`
 - **Chrome Policy**: Auto-selection policy at `/etc/opt/chrome/policies/managed/auto_select_certificate.json`
-- **Tools Installed**: `certutil`, `pk12util`, `openssl`, `sudo`
+- **Tools Installed**: `certutil`, `pk12util`, `openssl`
 - **Users**: Both `root` and `rpauser` (UID 1000) can manage certificates
 
 ## Prerequisites
@@ -49,7 +49,8 @@ The following packages are pre-installed in the Docker image:
 - `libnss3-tools` - Certificate management tools (certutil, pk12util)
 - `ca-certificates` - Root CA certificates
 - `openssl` - SSL/TLS toolkit
-- `sudo` - For writing Chrome policies as non-root user
+
+The Chrome policy directory (`/etc/opt/chrome/policies/managed`) is owned by `rpauser`, allowing direct write access without sudo.
 
 ## Quick Start
 
@@ -112,12 +113,11 @@ def write_chrome_policy(pattern="*"):
         ]
     }
     
-    with tempfile.NamedTemporaryFile(mode='w', delete=False, suffix='.json') as tmp:
-        json.dump(policy, tmp, indent=2)
-        tmp_path = tmp.name
+    # Write policy directly (no sudo needed when running as rpauser)
+    with open(CHROME_POLICY_FILE, 'w') as f:
+        json.dump(policy, f, indent=2)
     
-    subprocess.run(["sudo", "mv", tmp_path, CHROME_POLICY_FILE], check=True)
-    subprocess.run(["sudo", "chmod", "644", CHROME_POLICY_FILE], check=True)
+    os.chmod(CHROME_POLICY_FILE, 0o644)
 
 # Step 4: Use with Selenium
 from selenium import webdriver
@@ -137,7 +137,11 @@ def remove_certificate(nickname="client_cert"):
     subprocess.run([
         "certutil", "-D", "-d", NSS_DB_PATH, "-n", nickname
     ], check=True)
-    subprocess.run(["sudo", "rm", "-f", CHROME_POLICY_FILE], check=True)
+    # Remove policy file directly (no sudo needed when running as rpauser)
+    try:
+        os.remove(CHROME_POLICY_FILE)
+    except FileNotFoundError:
+        pass
 
 # Always cleanup!
 remove_certificate()
@@ -318,19 +322,17 @@ def setup_certificate(pfx_path, pfx_password, nickname="client_cert"):
         "-n", nickname
     ], check=True)
     
-    # 3. Write Chrome policy
+    # 3. Write Chrome policy (direct write, no sudo needed when running as rpauser)
     policy = {
         "AutoSelectCertificateForUrls": [
             json.dumps({"pattern": "*", "filter": {}})
         ]
     }
     
-    with tempfile.NamedTemporaryFile(mode='w', delete=False, suffix='.json') as tmp:
-        json.dump(policy, tmp, indent=2)
-        tmp_path = tmp.name
+    with open(CHROME_POLICY_FILE, 'w') as f:
+        json.dump(policy, f, indent=2)
     
-    subprocess.run(["sudo", "mv", tmp_path, CHROME_POLICY_FILE], check=True)
-    subprocess.run(["sudo", "chmod", "644", CHROME_POLICY_FILE], check=True)
+    os.chmod(CHROME_POLICY_FILE, 0o644)
     
     print("Certificate setup complete!")
 
@@ -339,7 +341,11 @@ def cleanup_certificate(nickname="client_cert"):
     subprocess.run([
         "certutil", "-D", "-d", NSS_DB_PATH, "-n", nickname
     ], check=False)
-    subprocess.run(["sudo", "rm", "-f", CHROME_POLICY_FILE], check=False)
+    # Remove policy file directly (no sudo needed when running as rpauser)
+    try:
+        os.remove(CHROME_POLICY_FILE)
+    except FileNotFoundError:
+        pass
     print("Certificate cleaned up!")
 
 def main():
