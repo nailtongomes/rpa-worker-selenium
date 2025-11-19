@@ -271,7 +271,8 @@ RUN pip install --upgrade --no-cache-dir pip \
 RUN mkdir -p /opt/novnc \
     && git clone --depth 1 https://github.com/novnc/noVNC.git /opt/novnc \
     && ln -s /opt/novnc/vnc.html /opt/novnc/index.html \
-    && pip install --no-cache-dir websockify
+    && pip install --no-cache-dir websockify \
+    && ln -s /opt/venv/bin/websockify /usr/local/bin/websockify
 
 # Copy application files
 COPY . .
