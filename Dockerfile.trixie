@@ -201,7 +201,8 @@ RUN ln -s /opt/chrome/chrome /usr/local/bin/chrome \
 
 # Create symbolic links and set permissions for Firefox
 RUN ln -s /opt/firefox/firefox /usr/local/bin/firefox \
-    && chmod +x /usr/local/bin/geckodriver
+    && chmod +x /usr/local/bin/geckodriver \
+    && chmod +x /opt/firefox/firefox
 
 # Create symlinks for Python (Debian Trixie uses Python 3.12 by default)
 RUN ln -sf /usr/bin/python3 /usr/bin/python
@@ -270,7 +271,8 @@ RUN pip install --upgrade --no-cache-dir pip \
 RUN mkdir -p /opt/novnc \
     && git clone --depth 1 https://github.com/novnc/noVNC.git /opt/novnc \
     && ln -s /opt/novnc/vnc.html /opt/novnc/index.html \
-    && pip install --no-cache-dir websockify
+    && pip install --no-cache-dir websockify \
+    && ln -s /opt/venv/bin/websockify /usr/local/bin/websockify
 
 # Copy application files
 COPY . .
