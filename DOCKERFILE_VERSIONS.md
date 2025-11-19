@@ -59,13 +59,13 @@ docker run --rm rpa-worker-selenium-firefox example_script_firefox.py
 - `ftp.mozilla.org` (for Firefox download)
 - `github.com` (for GeckoDriver download)
 
-## 3. Dockerfile.ubuntu (Ubuntu Desktop - Enhanced GUI/Window Management + Multi-Browser)
+## 3. Dockerfile.ubuntu (Debian Trixie Desktop - Enhanced GUI/Window Management + Multi-Browser)
 
-**Recommended for: PJeOffice certificate dialogs, complex window interactions, GUI automation, maximum Ubuntu compatibility**
+**Recommended for: PJeOffice certificate dialogs, complex window interactions, GUI automation, robust graphical worker with noVNC**
 
-**ENHANCED**: Now supports both Chrome and Firefox in a single image!
+**ENHANCED**: Now uses Debian Trixie (13) - more complete and updated than Bookworm (12)!
 
-- Uses Ubuntu 24.04 LTS as base image (instead of Debian slim)
+- Uses Debian Trixie (13) as base image - latest testing version with up-to-date packages
 - **NEW**: Includes both Chrome and Firefox browsers
 - **NEW**: Includes both ChromeDriver and GeckoDriver
 - Comprehensive desktop environment and GUI libraries
@@ -74,9 +74,10 @@ docker run --rm rpa-worker-selenium-firefox example_script_firefox.py
 - D-Bus and PolicyKit support for system dialogs
 - AT-SPI accessibility for complex GUI interactions
 - Audio support (PulseAudio) for multimedia dialogs
-- More closely matches native Ubuntu development environment
+- noVNC support for browser-based remote access
+- Robust for graphical environments with comprehensive package support
 - Larger image size but maximum compatibility
-- **Java 21 runtime for applets and signing**
+- **Java 21 runtime for applets and PJeOffice/other Java-based signers**
 - Health check to verify browser availability
 - **Requires internet access to `storage.googleapis.com`, `ftp.mozilla.org`, `github.com` during build**
 
@@ -116,21 +117,24 @@ docker run --rm \
 ```
 
 **Note:** This image is specifically designed to handle:
-- PJeOffice certificate password dialogs
+- PJeOffice certificate password dialogs and other Java-based digital signers
 - Complex window interactions requiring full desktop environment
 - GTK-based authentication prompts
-- Applications requiring complete Ubuntu environment compatibility
+- Robust graphical worker environments with noVNC support
+- Applications requiring complete Debian Trixie environment compatibility
 - Multi-browser testing (Chrome + Firefox) in same environment
 
 - **Use `Dockerfile.ubuntu`** if:
   - You need to handle PJeOffice certificate password dialogs
+  - You need support for Java-based digital signers and applets
   - You're experiencing window management issues with other images
-  - You need maximum Ubuntu environment compatibility
-  - Your Python code runs perfectly on Ubuntu but has issues in slim containers
+  - You need maximum Debian Trixie environment compatibility
+  - You want the latest testing packages (more updated than Bookworm)
   - You need full desktop environment support for complex GUI interactions
   - You're working with GTK-based authentication dialogs
+  - You need noVNC for browser-based remote access
   - You need both Chrome and Firefox in the same image
-  - Image size is less important than compatibility
+  - Image size is less important than compatibility and feature completeness
 
 ## 4. Dockerfile.alpine (Lightweight Serverless - Chromium & Firefox)
 
@@ -189,7 +193,7 @@ docker run --rm -v $(pwd)/data:/data rpa-worker-selenium-alpine python /app/alpi
 | `Dockerfile` (Chrome) | Production, PJeOffice | Medium | Chrome (Latest) | Yes | Medium |
 | `Dockerfile` (Brave) | Privacy, Ad-blocking | Medium | Brave | Yes | Medium |
 | `Dockerfile.firefox` | Firefox Testing | Medium | Firefox | Yes | Medium |
-| `Dockerfile.ubuntu` | PJeOffice, Complex GUI | Large | **Chrome + Firefox** | Full | Slow |
+| `Dockerfile.ubuntu` | PJeOffice, Java Signers, noVNC | Large | **Chrome + Firefox** | **Full (Debian Trixie)** | Slow |
 | `Dockerfile.alpine` | Serverless, Lambda | **Small** | Chromium & Firefox | No | Fast |
 
 ### Detailed Decision Guide
@@ -218,13 +222,14 @@ docker run --rm -v $(pwd)/data:/data rpa-worker-selenium-alpine python /app/alpi
 
 - **Use `Dockerfile.ubuntu`** if:
   - You need to handle PJeOffice certificate password dialogs
+  - You need support for Java-based digital signers (PJeOffice and others)
   - You're experiencing window management issues with other images
-  - You need maximum Ubuntu environment compatibility
-  - Your Python code runs perfectly on Ubuntu but has issues in slim containers
+  - You need Debian Trixie (13) - more updated packages than Bookworm (12)
+  - You need robust graphical worker environment with noVNC support
   - You need full desktop environment support for complex GUI interactions
   - You're working with GTK-based authentication dialogs
   - **You need both Chrome AND Firefox in the same image**
-  - Image size is less important than compatibility
+  - Image size is less important than compatibility and feature completeness
 
 - **Use `Dockerfile.alpine`** (⭐ Recommended for Serverless):
   - You're deploying to AWS Lambda, Google Cloud Run, Azure Container Instances

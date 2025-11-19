@@ -7,7 +7,7 @@ A production-ready Docker image for running dynamic Python scripts with Selenium
 > **Note**: This repository provides four Dockerfile versions:
 > - `Dockerfile` (unified) - **NEW** Multi-browser support with build arg (Chrome or Brave)
 > - `Dockerfile.firefox` - Uses Firefox browser with GeckoDriver for Mozilla automation
-> - `Dockerfile.ubuntu` - **ENHANCED** Ubuntu-based with Chrome + Firefox + comprehensive GUI/window management
+> - `Dockerfile.ubuntu` - **UPDATED** Debian Trixie-based with Chrome + Firefox + comprehensive GUI/window management + noVNC
 > - `Dockerfile.alpine` - Lightweight for serverless (Lambda, Cloud Run) - Chromium & Firefox ESR
 > 
 > See [DOCKERFILE_VERSIONS.md](DOCKERFILE_VERSIONS.md) for details on which to use.
@@ -53,7 +53,7 @@ DOCKER_BUILDKIT=1 docker build --build-arg BROWSER_TYPE=brave -t rpa-worker-sele
 DOCKER_BUILDKIT=1 docker build -f Dockerfile.firefox -t rpa-worker-selenium-firefox .
 ```
 
-**With Ubuntu (Enhanced GUI support + Chrome + Firefox):**
+**With Debian Trixie (Enhanced GUI support + Chrome + Firefox + noVNC + Java signers):**
 ```bash
 DOCKER_BUILDKIT=1 docker build -f Dockerfile.ubuntu -t rpa-worker-selenium-ubuntu .
 ```
@@ -221,9 +221,9 @@ Or use the included example script:
 docker run --rm rpa-worker-selenium-firefox example_script_firefox.py
 ```
 
-### Using Ubuntu Version for PJeOffice and Enhanced GUI Support
+### Using Debian Trixie Version for PJeOffice and Enhanced GUI Support
 
-The Ubuntu-based Dockerfile is specifically designed for handling complex GUI interactions, including PJeOffice certificate dialogs:
+The Debian Trixie-based Dockerfile is specifically designed for handling complex GUI interactions, including PJeOffice certificate dialogs and Java-based signers:
 
 ```bash
 # Build with PJeOffice support
@@ -238,19 +238,22 @@ docker run --rm \
 ```
 
 This version includes:
-- Full Ubuntu 24.04 LTS base (not Debian slim)
+- Full Debian Trixie (13) base - more updated than Bookworm (12)
 - Comprehensive desktop environment libraries
 - Enhanced window management tools (wmctrl, xdotool, xautomation)
 - D-Bus and PolicyKit for authentication dialogs
 - AT-SPI accessibility support
 - PulseAudio for multimedia dialogs
 - Complete GTK2/GTK3 support
-- Java 21 runtime for applets and signing
+- Java 21 runtime for PJeOffice and other Java-based signers
+- noVNC support for browser-based remote access
 
 Use this version when:
 - You need to handle PJeOffice certificate password dialogs
-- Your code works on Ubuntu but has issues in slim containers
+- You need support for Java-based digital signers
+- You need the latest Debian testing packages (Trixie)
 - You need maximum GUI compatibility for complex window interactions
+- You want noVNC for browser-based remote debugging
 
 ### Using SeleniumBase
 

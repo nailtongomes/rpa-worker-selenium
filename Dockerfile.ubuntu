@@ -1,9 +1,10 @@
-# rpa-worker-selenium Dockerfile (Ubuntu Desktop)
-# Full Ubuntu-based image with comprehensive GUI/window management support
+# rpa-worker-selenium Dockerfile (Debian Trixie Desktop)
+# Full Debian Trixie-based image with comprehensive GUI/window management support
 # Optimized for handling PJeOffice certificate dialogs and complex window interactions
+# Uses Debian Trixie (13) - more complete and updated than Bookworm (12)
 
 # ---------- STAGE 1: builder
-FROM ubuntu:24.04 AS builder
+FROM debian:trixie AS builder
 
 ARG CHROME_VERSION=142.0.7444.162
 ARG FIREFOX_VERSION=145.0
@@ -39,7 +40,7 @@ RUN curl --retry 5 --retry-delay 10 -Lo "firefox.tar.xz" \
     && tar -zxf geckodriver.tar.gz
 
 # ---------- STAGE 2: runtime
-FROM ubuntu:24.04
+FROM debian:trixie
 
 # Pass build argument to runtime stage
 ARG BUILD_PJEOFFICE=0
@@ -48,8 +49,8 @@ ARG BUILD_PJEOFFICE=0
 # This must be done after installing python3-venv below
 
 LABEL maintainer="nailtongsilva@gmail.com" \
-      version="2.0" \
-      description="Ubuntu 24.04 LTS Selenium with comprehensive GUI/window management for PJeOffice and RPA"
+      version="3.0" \
+      description="Debian Trixie (13) Selenium with comprehensive GUI/window management for PJeOffice and RPA"
 
 ENV DEBIAN_FRONTEND=noninteractive \
     PYTHONUNBUFFERED=1 \
@@ -128,7 +129,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     libglu1-mesa \
     libvulkan1 \
     # Audio support (required by some certificate dialog boxes)
-    libasound2t64 \
+    libasound2 \
     pulseaudio \
     # NSS and certificate handling
     libnss3 \
@@ -180,7 +181,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     && rm -rf /var/lib/apt/lists/*
 
 # Create and activate virtual environment for PEP 668 compliance
-# Ubuntu 24.04 enforces externally-managed Python environment
+# Debian Trixie enforces externally-managed Python environment
 RUN python3 -m venv /opt/venv
 ENV PATH="/opt/venv/bin:$PATH"
 
@@ -202,13 +203,11 @@ RUN ln -s /opt/chrome/chrome /usr/local/bin/chrome \
 RUN ln -s /opt/firefox/firefox /usr/local/bin/firefox \
     && chmod +x /usr/local/bin/geckodriver
 
-# Create symlinks for Python (Ubuntu 24.04 uses Python 3.12 by default)
+# Create symlinks for Python (Debian Trixie uses Python 3.12 by default)
 RUN ln -sf /usr/bin/python3 /usr/bin/python
 
 # Create non-root user with proper groups for GUI access
-# Remove existing ubuntu user to avoid UID conflict
-RUN userdel -r ubuntu 2>/dev/null || true \
-    && useradd -m -d /app -u 1000 -s /bin/bash rpauser \
+RUN useradd -m -d /app -u 1000 -s /bin/bash rpauser \
     && echo "rpauser ALL=(ALL) NOPASSWD: ALL" >> /etc/sudoers \
     && usermod -aG audio,video,render rpauser
 
