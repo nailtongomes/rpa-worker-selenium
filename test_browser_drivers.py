@@ -36,6 +36,22 @@ def check_driver_available(driver_name: str, command: str) -> bool:
         print(f"  ✗ Error checking {driver_name}: {e}")
         return False
 
+
+def get_binary_path(command: str) -> Optional[str]:
+    """Get the full path to a binary command."""
+    try:
+        result = subprocess.run(
+            ['which', command],
+            capture_output=True,
+            text=True,
+            timeout=5
+        )
+        if result.returncode == 0:
+            return result.stdout.strip()
+        return None
+    except Exception:
+        return None
+
 def has_x_server(display: str) -> bool:
     if not display:
         return False
@@ -78,155 +94,256 @@ def check_browser_available(browser_name: str, command: str) -> bool:
 
 
 def test_chrome_webdriver():
-    """Test Chrome with regular Selenium WebDriver (not SeleniumBase)."""
-    print("\nTesting Chrome with regular Selenium WebDriver...")
-    
-    # Check if ChromeDriver is available
+    """Test Chrome with regular Selenium WebDriver (not SeleniumBase) - DEPRECATED.
+    Use test_chrome_progressive() for comprehensive testing."""
+    print("\n⚠ test_chrome_webdriver() is deprecated. Use test_chrome_progressive() instead.")
+    return test_chrome_progressive()
+
+
+def test_chrome_progressive():
+    """
+    Progressive test for Chrome:
+      1) Chrome binary in headless mode via CLI
+      2) WebDriver Chrome in headless mode
+      3) WebDriver Chrome in headful mode (if DISPLAY available)
+    """
+    print("\n==============================")
+    print("Progressive Test: Chrome")
+    print("==============================")
+
+    results = {
+        "cli_headless": None,
+        "webdriver_headless": None,
+        "webdriver_headful": None,
+    }
+
+    # ---------------------------------------------------------
+    # 0. Check for Chrome and ChromeDriver binaries
+    # ---------------------------------------------------------
+    print("\n[Stage 0] Checking Chrome and ChromeDriver binaries...")
     if not check_driver_available("ChromeDriver", "chromedriver"):
-        print("  ⚠ Skipping Chrome test - ChromeDriver not available")
-        return None
-    
+        print("  ⚠ ChromeDriver not available. Aborting Chrome tests.")
+        return results
+
     # Check if Chrome/Chromium is available
-    chrome_found = False
+    chrome_binary = None
     if check_browser_available("Chrome", "google-chrome"):
-        chrome_found = True
+        chrome_binary = get_binary_path("google-chrome") or "google-chrome"
     elif check_browser_available("Chromium", "chromium"):
-        chrome_found = True
+        chrome_binary = get_binary_path("chromium") or "chromium"
     
-    if not chrome_found:
-        print("  ⚠ Skipping Chrome test - Chrome/Chromium not available")
-        return None
-    
+    if not chrome_binary:
+        print("  ⚠ Chrome/Chromium not available. Aborting Chrome tests.")
+        return results
+
+    # ---------------------------------------------------------
+    # 1. CLI Test: Chrome headless without Selenium
+    # ---------------------------------------------------------
+    print("\n[Stage 1] Testing Chrome headless via CLI (without Selenium)...")
+    try:
+        # Version check
+        cmd_version = [chrome_binary, "--headless=new", "--version"]
+        print(f"  → Running: {' '.join(cmd_version)}")
+        proc = subprocess.run(cmd_version, capture_output=True, text=True, timeout=15)
+        print("  → stdout:", proc.stdout.strip())
+        print("  → stderr:", proc.stderr.strip())
+        if proc.returncode != 0:
+            print(f"  ✗ Chrome headless failed (code={proc.returncode})")
+            results["cli_headless"] = False
+            # If binary already fails here, no point testing WebDriver
+            return results
+        else:
+            print("  ✓ Chrome headless (CLI) OK")
+            results["cli_headless"] = True
+
+        # Simple screenshot to validate rendering
+        test_png = "/tmp/chrome_cli_test.png"
+        cmd_ss = [chrome_binary, "--headless=new", "--screenshot=" + test_png, 
+                  "--window-size=1366,768", "--disable-gpu", "https://example.com"]
+        print(f"  → Running: {' '.join(cmd_ss)}")
+        proc2 = subprocess.run(cmd_ss, capture_output=True, text=True, timeout=30)
+        print("  → stdout:", proc2.stdout.strip())
+        print("  → stderr:", proc2.stderr.strip())
+        if proc2.returncode == 0 and os.path.exists(test_png):
+            print("  ✓ Headless screenshot generated successfully:", test_png)
+        else:
+            print("  ⚠ Screenshot not generated, but Chrome at least executed.")
+    except Exception as e:
+        print(f"  ✗ Error running Chrome via CLI: {e}")
+        results["cli_headless"] = False
+        return results
+
+    # ---------------------------------------------------------
+    # 2. WebDriver in headless mode
+    # ---------------------------------------------------------
+    print("\n[Stage 2] Testing Chrome WebDriver in headless mode...")
     try:
         from selenium import webdriver
         from selenium.webdriver.chrome.options import Options
         from selenium.webdriver.chrome.service import Service
-        
-        print("  → Initializing Chrome WebDriver...")
+
         chrome_options = Options()
-        chrome_options.add_argument('--headless=new')
-        chrome_options.add_argument('--no-sandbox')
-        chrome_options.add_argument('--disable-dev-shm-usage')
-        chrome_options.add_argument('--disable-gpu')
-        chrome_options.add_argument('--window-size=1366,768')
-        
-        # Try to find chromedriver in common locations
+        chrome_options.add_argument("--headless=new")
+        chrome_options.add_argument("--no-sandbox")
+        chrome_options.add_argument("--disable-dev-shm-usage")
+        chrome_options.add_argument("--disable-gpu")
+        chrome_options.add_argument("--window-size=1366,768")
+        chrome_options.binary_location = chrome_binary
+
+        # Find chromedriver path
         chromedriver_path = None
-        for path in ['/usr/local/bin/chromedriver', '/usr/bin/chromedriver']:
+        for path in ["/usr/local/bin/chromedriver", "/usr/bin/chromedriver"]:
             if os.path.exists(path):
                 chromedriver_path = path
                 break
-        
+
+        log_file = "/tmp/chromedriver_headless.log" if not os.path.exists("/app") else "/app/logs/chromedriver_headless.log"
+        os.makedirs(os.path.dirname(log_file), exist_ok=True)
+
         if chromedriver_path:
-            service = Service(chromedriver_path)
-            driver = webdriver.Chrome(service=service, options=chrome_options)
+            print(f"  → Using chromedriver at: {chromedriver_path}")
+            service = Service(
+                executable_path=chromedriver_path,
+                log_output=open(log_file, "w")
+            )
         else:
-            # Let Selenium auto-detect the driver
-            driver = webdriver.Chrome(options=chrome_options)
-        
+            print("  → Using chromedriver from PATH (without explicit path)")
+            service = Service(log_output=open(log_file, "w"))
+
+        print("  → Initializing Chrome WebDriver (headless)...")
+        driver = webdriver.Chrome(service=service, options=chrome_options)
+
         try:
-            # Create a simple test HTML file
-            test_html = tempfile.NamedTemporaryFile(mode='w', suffix='.html', delete=False)
-            test_html.write('<html><head><title>Chrome WebDriver Test</title></head><body><h1>Test Page</h1></body></html>')
+            test_html = tempfile.NamedTemporaryFile(mode="w", suffix=".html", delete=False)
+            test_html.write(
+                "<html><head><title>Chrome WebDriver Test</title></head>"
+                "<body><h1>Test Page</h1></body></html>"
+            )
             test_html.close()
-            
-            print("  → Loading test page...")
+
+            print("  → Loading test page (file://)...")
             driver.get(f"file://{test_html.name}")
             title = driver.title
-            
-            # Clean up temp file
             os.unlink(test_html.name)
-            
+
             print(f"  → Page title: {title}")
-            
+
             if "Chrome WebDriver Test" in title:
-                print("  ✓ Chrome WebDriver initialized and working correctly")
-                return True
+                print("  ✓ Chrome WebDriver (headless) OK")
+                results["webdriver_headless"] = True
             else:
-                print(f"  ✗ Unexpected page title: {title}")
-                return False
-                
+                print("  ✗ Unexpected title")
+                results["webdriver_headless"] = False
+
         finally:
             driver.quit()
-            print("  → Chrome WebDriver closed")
-            
+            print("  → Chrome WebDriver (headless) closed")
+
     except Exception as e:
-        print(f"  ✗ Chrome WebDriver test failed: {e}")
+        print(f"  ✗ Chrome WebDriver headless failed: {e}")
         import traceback
         traceback.print_exc()
-        return False
+        print("  ↳ Check the log:", "/app/logs/chromedriver_headless.log")
+        results["webdriver_headless"] = False
+
+    # ---------------------------------------------------------
+    # 3. WebDriver in headful mode (if DISPLAY available)
+    # ---------------------------------------------------------
+    display = os.environ.get("DISPLAY")
+    if not has_x_server(display):
+        print("\n[Stage 3] No X server detected. Skipping headful test.")
+        results["webdriver_headful"] = None
+        return results
+
+    print(f"\n[Stage 3] Testing Chrome WebDriver in headful mode (DISPLAY={display})...")
+    try:
+        from selenium import webdriver
+        from selenium.webdriver.chrome.options import Options
+        from selenium.webdriver.chrome.service import Service
+
+        chrome_options = Options()
+        # No --headless here
+        chrome_options.add_argument("--no-sandbox")
+        chrome_options.add_argument("--disable-dev-shm-usage")
+        chrome_options.add_argument("--disable-gpu")
+        chrome_options.add_argument("--window-size=1366,768")
+        chrome_options.binary_location = chrome_binary
+
+        chromedriver_path = None
+        for path in ["/usr/local/bin/chromedriver", "/usr/bin/chromedriver"]:
+            if os.path.exists(path):
+                chromedriver_path = path
+                break
+
+        log_file = "/tmp/chromedriver_headful.log" if not os.path.exists("/app") else "/app/logs/chromedriver_headful.log"
+        os.makedirs(os.path.dirname(log_file), exist_ok=True)
+
+        if chromedriver_path:
+            print(f"  → Using chromedriver at: {chromedriver_path}")
+            service = Service(
+                executable_path=chromedriver_path,
+                log_output=open(log_file, "w")
+            )
+        else:
+            service = Service(log_output=open(log_file, "w"))
+
+        print("  → Initializing Chrome WebDriver (headful)...")
+        driver = webdriver.Chrome(service=service, options=chrome_options)
+
+        try:
+            test_html = tempfile.NamedTemporaryFile(mode="w", suffix=".html", delete=False)
+            test_html.write(
+                "<html><head><title>Chrome WebDriver Headful Test</title></head>"
+                "<body><h1>Test Page</h1></body></html>"
+            )
+            test_html.close()
+
+            print("  → Loading test page (file://)...")
+            driver.get(f"file://{test_html.name}")
+            title = driver.title
+            os.unlink(test_html.name)
+
+            print(f"  → Page title: {title}")
+
+            if "Chrome WebDriver Headful Test" in title:
+                print("  ✓ Chrome WebDriver (headful) OK")
+                results["webdriver_headful"] = True
+            else:
+                print("  ✗ Unexpected title")
+                results["webdriver_headful"] = False
+
+        finally:
+            driver.quit()
+            print("  → Chrome WebDriver (headful) closed")
+
+    except Exception as e:
+        print(f"  ✗ Chrome WebDriver headful failed: {e}")
+        import traceback
+        traceback.print_exc()
+        print("  ↳ Check the log:", "/app/logs/chromedriver_headful.log")
+        results["webdriver_headful"] = False
+
+    # ---------------------------------------------------------
+    # Summary
+    # ---------------------------------------------------------
+    print("\nChrome Summary (progressive):")
+    for stage, result in results.items():
+        if result is True:
+            status = "✓ OK"
+        elif result is False:
+            status = "✗ FAILED"
+        else:
+            status = "⚠ SKIPPED"
+        print(f"  {stage}: {status}")
+
+    return results
 
 
 def test_firefox_webdriver():
-    """Test Firefox with regular Selenium WebDriver (not SeleniumBase)."""
-    print("\nTesting Firefox with regular Selenium WebDriver...")
-    
-    # Check if GeckoDriver is available
-    if not check_driver_available("GeckoDriver", "geckodriver"):
-        print("  ⚠ Skipping Firefox test - GeckoDriver not available")
-        return None
-    
-    # Check if Firefox is available
-    if not check_browser_available("Firefox", "firefox"):
-        print("  ⚠ Skipping Firefox test - Firefox not available")
-        return None
-    
-    try:
-        from selenium import webdriver
-        from selenium.webdriver.firefox.options import Options
-        from selenium.webdriver.firefox.service import Service
-        
-        print("  → Initializing Firefox WebDriver...")
-        firefox_options = Options()
-        firefox_options.add_argument('--headless')
-        firefox_options.add_argument('--no-sandbox')
-        firefox_options.add_argument('--disable-dev-shm-usage')
-        
-        # Try to find geckodriver in common locations
-        geckodriver_path = None
-        for path in ['/usr/local/bin/geckodriver', '/usr/bin/geckodriver']:
-            if os.path.exists(path):
-                geckodriver_path = path
-                break
-        
-        if geckodriver_path:
-            service = Service() # geckodriver_path
-            driver = webdriver.Firefox(service=service, options=firefox_options)
-        else:
-            # Let Selenium auto-detect the driver
-            driver = webdriver.Firefox(options=firefox_options)
-        
-        try:
-            # Create a simple test HTML file
-            test_html = tempfile.NamedTemporaryFile(mode='w', suffix='.html', delete=False)
-            test_html.write('<html><head><title>Firefox WebDriver Test</title></head><body><h1>Test Page</h1></body></html>')
-            test_html.close()
-            
-            print("  → Loading test page...")
-            driver.get(f"file://{test_html.name}")
-            title = driver.title
-            
-            # Clean up temp file
-            os.unlink(test_html.name)
-            
-            print(f"  → Page title: {title}")
-            
-            if "Firefox WebDriver Test" in title:
-                print("  ✓ Firefox WebDriver initialized and working correctly")
-                return True
-            else:
-                print(f"  ✗ Unexpected page title: {title}")
-                return False
-                
-        finally:
-            driver.quit()
-            print("  → Firefox WebDriver closed")
-            
-    except Exception as e:
-        print(f"  ✗ Firefox WebDriver test failed: {e}")
-        import traceback
-        traceback.print_exc()
-        return False
+    """Test Firefox with regular Selenium WebDriver (not SeleniumBase) - DEPRECATED.
+    Use test_firefox_progressive() for comprehensive testing."""
+    print("\n⚠ test_firefox_webdriver() is deprecated. Use test_firefox_progressive() instead.")
+    return test_firefox_progressive()
 
 def test_firefox_progressive():
     """
@@ -306,8 +423,10 @@ def test_firefox_progressive():
         firefox_options.add_argument("--headless")
         firefox_options.add_argument("--width=1366")
         firefox_options.add_argument("--height=768")
-        # Garante que está usando o binário que você instalou
-        firefox_options.binary_location = "/usr/local/bin/firefox"
+        # Use the full path to the binary if available
+        firefox_binary = get_binary_path("firefox") or "/usr/local/bin/firefox"
+        if os.path.exists(firefox_binary):
+            firefox_options.binary_location = firefox_binary
 
         # Descobrir caminho do geckodriver
         geckodriver_path = None
@@ -316,7 +435,7 @@ def test_firefox_progressive():
                 geckodriver_path = path
                 break
 
-        log_file = "/app/logs/geckodriver_headless.log"
+        log_file = "/tmp/geckodriver_headless.log" if not os.path.exists("/app") else "/app/logs/geckodriver_headless.log"
         os.makedirs(os.path.dirname(log_file), exist_ok=True)
 
         if geckodriver_path:
@@ -383,7 +502,10 @@ def test_firefox_progressive():
 
         firefox_options = Options()
         # Sem --headless aqui
-        firefox_options.binary_location = "/usr/local/bin/firefox"
+        # Use the full path to the binary if available
+        firefox_binary = get_binary_path("firefox") or "/usr/local/bin/firefox"
+        if os.path.exists(firefox_binary):
+            firefox_options.binary_location = firefox_binary
 
         geckodriver_path = None
         for path in ["/usr/local/bin/geckodriver", "/usr/bin/geckodriver"]:
@@ -391,7 +513,7 @@ def test_firefox_progressive():
                 geckodriver_path = path
                 break
 
-        log_file = "/app/logs/geckodriver_headful.log"
+        log_file = "/tmp/geckodriver_headful.log" if not os.path.exists("/app") else "/app/logs/geckodriver_headful.log"
         os.makedirs(os.path.dirname(log_file), exist_ok=True)
 
         if geckodriver_path:
@@ -456,83 +578,250 @@ def test_firefox_progressive():
 
 
 def test_brave_webdriver():
-    """Test Brave with regular Selenium WebDriver (not SeleniumBase)."""
-    print("\nTesting Brave with regular Selenium WebDriver...")
-    
-    # Check if ChromeDriver is available (Brave uses ChromeDriver)
+    """Test Brave with regular Selenium WebDriver (not SeleniumBase) - DEPRECATED.
+    Use test_brave_progressive() for comprehensive testing."""
+    print("\n⚠ test_brave_webdriver() is deprecated. Use test_brave_progressive() instead.")
+    return test_brave_progressive()
+
+
+def test_brave_progressive():
+    """
+    Progressive test for Brave:
+      1) Brave binary in headless mode via CLI
+      2) WebDriver Brave in headless mode
+      3) WebDriver Brave in headful mode (if DISPLAY available)
+    """
+    print("\n==============================")
+    print("Progressive Test: Brave")
+    print("==============================")
+
+    results = {
+        "cli_headless": None,
+        "webdriver_headless": None,
+        "webdriver_headful": None,
+    }
+
+    # ---------------------------------------------------------
+    # 0. Check for Brave and ChromeDriver binaries
+    # ---------------------------------------------------------
+    print("\n[Stage 0] Checking Brave and ChromeDriver binaries...")
     if not check_driver_available("ChromeDriver", "chromedriver"):
-        print("  ⚠ Skipping Brave test - ChromeDriver not available")
-        return None
-    
+        print("  ⚠ ChromeDriver not available. Aborting Brave tests.")
+        return results
+
     # Check if Brave is available
     brave_path = "/usr/bin/brave-browser"
     if not os.path.exists(brave_path):
         print(f"  ✗ Brave browser not found at {brave_path}")
-        print("  ⚠ Skipping Brave test - Brave not available")
-        return None
+        print("  ⚠ Brave not available. Aborting Brave tests.")
+        return results
     else:
         print(f"  ✓ Brave browser found at {brave_path}")
-    
+
+    # ---------------------------------------------------------
+    # 1. CLI Test: Brave headless without Selenium
+    # ---------------------------------------------------------
+    print("\n[Stage 1] Testing Brave headless via CLI (without Selenium)...")
+    try:
+        # Version check
+        cmd_version = [brave_path, "--headless=new", "--version"]
+        print(f"  → Running: {' '.join(cmd_version)}")
+        proc = subprocess.run(cmd_version, capture_output=True, text=True, timeout=15)
+        print("  → stdout:", proc.stdout.strip())
+        print("  → stderr:", proc.stderr.strip())
+        if proc.returncode != 0:
+            print(f"  ✗ Brave headless failed (code={proc.returncode})")
+            results["cli_headless"] = False
+            # If binary already fails here, no point testing WebDriver
+            return results
+        else:
+            print("  ✓ Brave headless (CLI) OK")
+            results["cli_headless"] = True
+
+        # Simple screenshot to validate rendering
+        test_png = "/tmp/brave_cli_test.png"
+        cmd_ss = [brave_path, "--headless=new", "--screenshot=" + test_png,
+                  "--window-size=1366,768", "--disable-gpu", "--disable-brave-update", 
+                  "https://example.com"]
+        print(f"  → Running: {' '.join(cmd_ss)}")
+        proc2 = subprocess.run(cmd_ss, capture_output=True, text=True, timeout=30)
+        print("  → stdout:", proc2.stdout.strip())
+        print("  → stderr:", proc2.stderr.strip())
+        if proc2.returncode == 0 and os.path.exists(test_png):
+            print("  ✓ Headless screenshot generated successfully:", test_png)
+        else:
+            print("  ⚠ Screenshot not generated, but Brave at least executed.")
+    except Exception as e:
+        print(f"  ✗ Error running Brave via CLI: {e}")
+        results["cli_headless"] = False
+        return results
+
+    # ---------------------------------------------------------
+    # 2. WebDriver in headless mode
+    # ---------------------------------------------------------
+    print("\n[Stage 2] Testing Brave WebDriver in headless mode...")
     try:
         from selenium import webdriver
         from selenium.webdriver.chrome.options import Options
         from selenium.webdriver.chrome.service import Service
-        
-        print("  → Initializing Brave WebDriver...")
+
         chrome_options = Options()
         chrome_options.binary_location = brave_path
-        chrome_options.add_argument('--headless=new')
-        chrome_options.add_argument('--no-sandbox')
-        chrome_options.add_argument('--disable-dev-shm-usage')
-        chrome_options.add_argument('--disable-gpu')
-        chrome_options.add_argument('--window-size=1366,768')
-        chrome_options.add_argument('--disable-brave-update')
-        
-        # Try to find chromedriver in common locations
+        chrome_options.add_argument("--headless=new")
+        chrome_options.add_argument("--no-sandbox")
+        chrome_options.add_argument("--disable-dev-shm-usage")
+        chrome_options.add_argument("--disable-gpu")
+        chrome_options.add_argument("--window-size=1366,768")
+        chrome_options.add_argument("--disable-brave-update")
+
+        # Find chromedriver path
         chromedriver_path = None
-        for path in ['/usr/local/bin/chromedriver', '/usr/bin/chromedriver']:
+        for path in ["/usr/local/bin/chromedriver", "/usr/bin/chromedriver"]:
             if os.path.exists(path):
                 chromedriver_path = path
                 break
-        
+
+        log_file = "/tmp/bravedriver_headless.log" if not os.path.exists("/app") else "/app/logs/bravedriver_headless.log"
+        os.makedirs(os.path.dirname(log_file), exist_ok=True)
+
         if chromedriver_path:
-            service = Service(chromedriver_path)
-            driver = webdriver.Chrome(service=service, options=chrome_options)
+            print(f"  → Using chromedriver at: {chromedriver_path}")
+            service = Service(
+                executable_path=chromedriver_path,
+                log_output=open(log_file, "w")
+            )
         else:
-            # Let Selenium auto-detect the driver
-            driver = webdriver.Chrome(options=chrome_options)
-        
+            print("  → Using chromedriver from PATH (without explicit path)")
+            service = Service(log_output=open(log_file, "w"))
+
+        print("  → Initializing Brave WebDriver (headless)...")
+        driver = webdriver.Chrome(service=service, options=chrome_options)
+
         try:
-            # Create a simple test HTML file
-            test_html = tempfile.NamedTemporaryFile(mode='w', suffix='.html', delete=False)
-            test_html.write('<html><head><title>Brave WebDriver Test</title></head><body><h1>Test Page</h1></body></html>')
+            test_html = tempfile.NamedTemporaryFile(mode="w", suffix=".html", delete=False)
+            test_html.write(
+                "<html><head><title>Brave WebDriver Test</title></head>"
+                "<body><h1>Test Page</h1></body></html>"
+            )
             test_html.close()
-            
-            print("  → Loading test page...")
+
+            print("  → Loading test page (file://)...")
             driver.get(f"file://{test_html.name}")
             title = driver.title
-            
-            # Clean up temp file
             os.unlink(test_html.name)
-            
+
             print(f"  → Page title: {title}")
-            
+
             if "Brave WebDriver Test" in title:
-                print("  ✓ Brave WebDriver initialized and working correctly")
-                return True
+                print("  ✓ Brave WebDriver (headless) OK")
+                results["webdriver_headless"] = True
             else:
-                print(f"  ✗ Unexpected page title: {title}")
-                return False
-                
+                print("  ✗ Unexpected title")
+                results["webdriver_headless"] = False
+
         finally:
             driver.quit()
-            print("  → Brave WebDriver closed")
-            
+            print("  → Brave WebDriver (headless) closed")
+
     except Exception as e:
-        print(f"  ✗ Brave WebDriver test failed: {e}")
+        print(f"  ✗ Brave WebDriver headless failed: {e}")
         import traceback
         traceback.print_exc()
-        return False
+        print("  ↳ Check the log:", "/app/logs/bravedriver_headless.log")
+        results["webdriver_headless"] = False
+
+    # ---------------------------------------------------------
+    # 3. WebDriver in headful mode (if DISPLAY available)
+    # ---------------------------------------------------------
+    display = os.environ.get("DISPLAY")
+    if not has_x_server(display):
+        print("\n[Stage 3] No X server detected. Skipping headful test.")
+        results["webdriver_headful"] = None
+        return results
+
+    print(f"\n[Stage 3] Testing Brave WebDriver in headful mode (DISPLAY={display})...")
+    try:
+        from selenium import webdriver
+        from selenium.webdriver.chrome.options import Options
+        from selenium.webdriver.chrome.service import Service
+
+        chrome_options = Options()
+        chrome_options.binary_location = brave_path
+        # No --headless here
+        chrome_options.add_argument("--no-sandbox")
+        chrome_options.add_argument("--disable-dev-shm-usage")
+        chrome_options.add_argument("--disable-gpu")
+        chrome_options.add_argument("--window-size=1366,768")
+        chrome_options.add_argument("--disable-brave-update")
+
+        chromedriver_path = None
+        for path in ["/usr/local/bin/chromedriver", "/usr/bin/chromedriver"]:
+            if os.path.exists(path):
+                chromedriver_path = path
+                break
+
+        log_file = "/tmp/bravedriver_headful.log" if not os.path.exists("/app") else "/app/logs/bravedriver_headful.log"
+        os.makedirs(os.path.dirname(log_file), exist_ok=True)
+
+        if chromedriver_path:
+            print(f"  → Using chromedriver at: {chromedriver_path}")
+            service = Service(
+                executable_path=chromedriver_path,
+                log_output=open(log_file, "w")
+            )
+        else:
+            service = Service(log_output=open(log_file, "w"))
+
+        print("  → Initializing Brave WebDriver (headful)...")
+        driver = webdriver.Chrome(service=service, options=chrome_options)
+
+        try:
+            test_html = tempfile.NamedTemporaryFile(mode="w", suffix=".html", delete=False)
+            test_html.write(
+                "<html><head><title>Brave WebDriver Headful Test</title></head>"
+                "<body><h1>Test Page</h1></body></html>"
+            )
+            test_html.close()
+
+            print("  → Loading test page (file://)...")
+            driver.get(f"file://{test_html.name}")
+            title = driver.title
+            os.unlink(test_html.name)
+
+            print(f"  → Page title: {title}")
+
+            if "Brave WebDriver Headful Test" in title:
+                print("  ✓ Brave WebDriver (headful) OK")
+                results["webdriver_headful"] = True
+            else:
+                print("  ✗ Unexpected title")
+                results["webdriver_headful"] = False
+
+        finally:
+            driver.quit()
+            print("  → Brave WebDriver (headful) closed")
+
+    except Exception as e:
+        print(f"  ✗ Brave WebDriver headful failed: {e}")
+        import traceback
+        traceback.print_exc()
+        print("  ↳ Check the log:", "/app/logs/bravedriver_headful.log")
+        results["webdriver_headful"] = False
+
+    # ---------------------------------------------------------
+    # Summary
+    # ---------------------------------------------------------
+    print("\nBrave Summary (progressive):")
+    for stage, result in results.items():
+        if result is True:
+            status = "✓ OK"
+        elif result is False:
+            status = "✗ FAILED"
+        else:
+            status = "⚠ SKIPPED"
+        print(f"  {stage}: {status}")
+
+    return results
 
 
 def test_seleniumbase_driver():
@@ -586,15 +875,15 @@ def main():
     print("=" * 70)
     print("Browser WebDriver Initialization Tests")
     print("=" * 70)
-    print("\nTesting regular Selenium WebDriver (without SeleniumBase)")
-    print("This verifies compatibility with conventional WebDriver automations\n")
+    print("\nProgressive Testing - CLI, Headless WebDriver, and Headful WebDriver")
+    print("This verifies browser compatibility in different execution modes\n")
     
     results = {}
     
-    # Test each browser with regular Selenium WebDriver
-    results['chrome_webdriver'] = test_chrome_webdriver()
-    results['firefox_webdriver'] = test_firefox_progressive() #test_firefox_webdriver()
-    results['brave_webdriver'] = test_brave_webdriver()
+    # Test each browser with progressive tests (CLI, headless, headful)
+    results['chrome'] = test_chrome_progressive()
+    results['firefox'] = test_firefox_progressive()
+    results['brave'] = test_brave_progressive()
     
     # Test SeleniumBase - commented out for now due to initialization hangs
     # This test can be enabled once the hang issue is resolved
@@ -602,32 +891,60 @@ def main():
     print("\n⚠ SeleniumBase test skipped (initialization timeout issue)")
     results['seleniumbase'] = None
     
-    # Print summary
+    # Print comprehensive summary
     print("\n" + "=" * 70)
-    print("Test Summary")
+    print("Comprehensive Test Summary")
     print("=" * 70)
     
-    passed = sum(1 for result in results.values() if result is True)
-    failed = sum(1 for result in results.values() if result is False)
-    skipped = sum(1 for result in results.values() if result is None)
-    total = len(results)
+    # Count statistics for each browser
+    total_tests = 0
+    passed_tests = 0
+    failed_tests = 0
+    skipped_tests = 0
     
-    for test_name, result in results.items():
-        if result is True:
-            status = "✓ PASS"
-        elif result is False:
-            status = "✗ FAIL"
+    for browser_name, browser_results in results.items():
+        if browser_results is None:
+            # Browser test was skipped entirely
+            print(f"\n{browser_name.upper()}: ⚠ SKIPPED")
+            skipped_tests += 1
+        elif isinstance(browser_results, dict):
+            # Progressive test results
+            print(f"\n{browser_name.upper()}:")
+            for stage, result in browser_results.items():
+                total_tests += 1
+                if result is True:
+                    status = "✓ PASS"
+                    passed_tests += 1
+                elif result is False:
+                    status = "✗ FAIL"
+                    failed_tests += 1
+                else:
+                    status = "⚠ SKIP"
+                    skipped_tests += 1
+                print(f"  {stage}: {status}")
         else:
-            status = "⚠ SKIP"
-        print(f"  {status}: {test_name}")
+            # Legacy test result (boolean)
+            total_tests += 1
+            if browser_results is True:
+                status = "✓ PASS"
+                passed_tests += 1
+            elif browser_results is False:
+                status = "✗ FAIL"
+                failed_tests += 1
+            else:
+                status = "⚠ SKIP"
+                skipped_tests += 1
+            print(f"\n{browser_name.upper()}: {status}")
     
-    print(f"\nTotal: {total} | Passed: {passed} | Failed: {failed} | Skipped: {skipped}")
+    print(f"\n{'=' * 70}")
+    print(f"Total Tests: {total_tests} | Passed: {passed_tests} | Failed: {failed_tests} | Skipped: {skipped_tests}")
+    print(f"{'=' * 70}")
     
-    if failed > 0:
+    if failed_tests > 0:
         print("\n✗ Some tests failed!")
         print("=" * 70)
         return 1
-    elif passed == 0:
+    elif passed_tests == 0:
         print("\n⚠ All tests were skipped (drivers/browsers not available)")
         print("=" * 70)
         return 1
