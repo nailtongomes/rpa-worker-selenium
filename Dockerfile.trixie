@@ -60,7 +60,7 @@ ENV DEBIAN_FRONTEND=noninteractive \
     DISPLAY=:99 \
     SCREEN_WIDTH=1366 \
     SCREEN_HEIGHT=768 \
-    HOME=/app \
+    HOME=/root \
     TZ=America/Sao_Paulo \
     MOZ_ALLOW_ROOT=1 \
     XDG_RUNTIME_DIR=/tmp/runtime-root
@@ -220,9 +220,14 @@ RUN mkdir -p /app/src /app/logs /app/tmp /app/recordings \
     /app/.cache \
     /app/.config \
     /app/.local/share \
+    /root/.pki/nssdb \
+    /root/.cache \
+    /root/.config \
+    /root/.local/share \
     /data \
     && chmod 1777 /app/tmp \
     && chmod 700 /app/.pki/nssdb \
+    && chmod 700 /root/.pki/nssdb \
     && chmod 777 /data \
     && chmod 777 /app/recordings \
     && chown -R rpauser:rpauser /app
@@ -302,9 +307,9 @@ ENV USE_XVFB=0 \
     VNC_PORT=5900 \
     NOVNC_PORT=6080 \
     RECORDING_DIR=/app/recordings \
-    XDG_CACHE_HOME=/app/.cache \
-    XDG_CONFIG_HOME=/app/.config \
-    XDG_DATA_HOME=/app/.local/share
+    XDG_CACHE_HOME=/root/.cache \
+    XDG_CONFIG_HOME=/root/.config \
+    XDG_DATA_HOME=/root/.local/share
 
 # Health check to ensure browsers are available
 HEALTHCHECK --interval=30s --timeout=10s --start-period=5s --retries=3 \
