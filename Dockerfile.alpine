@@ -133,6 +133,10 @@ ENV USE_XVFB=0 \
     USE_SCREEN_RECORDING=0 \
     XDG_CACHE_HOME=/app/.cache
 
+# Pre-download drivers as root
+RUN python -c "from seleniumbase import Driver; d = Driver(uc=True, incognito=True, headless=True); \
+    d.get('https://www.n3wizards.com/health'); print(d.title); d.quit()" || true
+
 # Health check to ensure browsers are available
 HEALTHCHECK --interval=30s --timeout=10s --start-period=5s --retries=3 \
     CMD chromium --version && firefox --version || exit 1
