@@ -266,7 +266,7 @@ docker build -f dockerfile.slim \
 |------------|------|--------------|-------------------|
 | `Dockerfile.trixie` | debian:trixie (full) | ~4 GB | ~4 GB |
 | **`dockerfile.slim`** | debian:trixie-slim | **~2-2.5 GB** | ~3.5-4 GB |
-| `Dockerfile.alpine` | debian:bookworm-slim | ~1.5 GB | N/A (no optional features) |
+| `Dockerfile.alpine` | alpine:latest | ~1.5 GB | N/A (no optional features) |
 
 ### Size Reduction Examples
 
