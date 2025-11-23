@@ -4,7 +4,7 @@
 # Uses Debian Trixie (13) - more complete and updated than Bookworm (12)
 
 # ---------- STAGE 1: builder
-FROM debian:trixie AS builder
+FROM debian:trixie-slim AS builder
 
 ARG CHROME_VERSION=142.0.7444.162
 # Firefox ESR is downloaded from Mozilla's latest-esr download service (no version needed)
@@ -44,7 +44,12 @@ RUN curl --retry 5 --retry-delay 10 -Lo "firefox.tar.bz2" \
 FROM debian:trixie
 
 # Pass build argument to runtime stage
+# Build arguments for optional features (all default to 0 for minimal image)
 ARG BUILD_PJEOFFICE=0
+ARG ENABLE_VNC=0
+ARG ENABLE_FFMPEG=0
+ARG ENABLE_NOVNC=0
+ARG ENABLE_PDF_TOOLS=0
 
 # Create and activate virtual environment (for PEP 668 compliance in Ubuntu 24.04)
 # This must be done after installing python3-venv below
@@ -86,7 +91,6 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     build-essential \
     # X11 and display management
     xvfb \
-    x11vnc \
     x11-utils \
     x11-xserver-utils \
     xserver-xorg-core \
@@ -165,21 +169,50 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     libappindicator3-1 \
     libgbm1 \
     libdrm2 \
-    # Image processing
-    imagemagick \
-    ghostscript \
     # Security tools
     sudo \
-    # Media codecs and processing
-    ffmpeg \
     # D-Bus for inter-process communication (critical for dialogs)
     dbus \
     dbus-x11 \
     # PolicyKit for authentication dialogs
     polkitd \
-    # Java runtime for applets
-    openjdk-21-jre-headless \
     && rm -rf /var/lib/apt/lists/*
+
+# ============================================================================
+# OPTIONAL: VNC server (installed only when ENABLE_VNC=1)
+# Used for remote debugging and visual inspection
+# ============================================================================
+RUN if [ "$ENABLE_VNC" = "1" ]; then \
+    echo "Installing VNC support..."; \
+    apt-get update && apt-get install -y --no-install-recommends \
+        x11vnc \
+    && rm -rf /var/lib/apt/lists/*; \
+fi
+
+# ============================================================================
+# OPTIONAL: FFmpeg (installed only when ENABLE_FFMPEG=1)
+# Used for screen recording during debugging
+# ============================================================================
+RUN if [ "$ENABLE_FFMPEG" = "1" ]; then \
+    echo "Installing FFmpeg..."; \
+    apt-get update && apt-get install -y --no-install-recommends \
+        ffmpeg \
+    && rm -rf /var/lib/apt/lists/*; \
+fi
+
+# ============================================================================
+# OPTIONAL: PDF tools (installed only when ENABLE_PDF_TOOLS=1)
+# ImageMagick and Ghostscript for PDF manipulation/signing
+# Note: PDF signing can be delegated to external APIs in most cases
+# ============================================================================
+RUN if [ "$ENABLE_PDF_TOOLS" = "1" ]; then \
+    echo "Installing PDF tools (ImageMagick + Ghostscript)..."; \
+    apt-get update && apt-get install -y --no-install-recommends \
+        imagemagick \
+        ghostscript \
+    && rm -rf /var/lib/apt/lists/*; \
+fi
+
 
 # Create and activate virtual environment for PEP 668 compliance
 # Debian Trixie enforces externally-managed Python environment
@@ -265,6 +298,10 @@ RUN if [ "$BUILD_PJEOFFICE" = "1" ]; then \
     mkdir -p /app/.pjeoffice-pro && \
     chown -R rpauser:rpauser /app/.pjeoffice-pro && \
     chmod -R 755 /app/.pjeoffice-pro; \
+    echo "Installing Java..."; \
+    apt-get update && apt-get install -y --no-install-recommends \
+        openjdk-21-jre-headless \
+    && rm -rf /var/lib/apt/lists/*; \
 fi
 
 # Install Python dependencies (using virtual environment)
@@ -273,12 +310,24 @@ RUN pip install --upgrade --no-cache-dir pip \
     && pip install --no-cache-dir -r requirements.txt \
     && chmod -R 777 /opt/venv/lib/python*/site-packages/seleniumbase/drivers || true
 
-# Install noVNC and websockify for browser-based VNC access (using virtual environment)
-RUN mkdir -p /opt/novnc \
-    && git clone --depth 1 https://github.com/novnc/noVNC.git /opt/novnc \
-    && ln -s /opt/novnc/vnc.html /opt/novnc/index.html \
-    && pip install --no-cache-dir websockify \
-    && ln -s /opt/venv/bin/websockify /usr/local/bin/websockify
+
+# ============================================================================
+# OPTIONAL: noVNC and websockify (installed only when ENABLE_NOVNC=1)
+# Browser-based VNC access for remote debugging
+# Requires git to clone noVNC, which is removed after installation
+# ============================================================================
+RUN if [ "$ENABLE_NOVNC" = "1" ]; then \
+    echo "Installing noVNC and websockify..."; \
+    apt-get update && apt-get install -y --no-install-recommends git && \
+    mkdir -p /opt/novnc && \
+    git clone --depth 1 https://github.com/novnc/noVNC.git /opt/novnc && \
+    ln -s /opt/novnc/vnc.html /opt/novnc/index.html && \
+    pip install --no-cache-dir websockify && \
+    ln -s /opt/venv/bin/websockify /usr/local/bin/websockify && \
+    apt-get purge -y git && \
+    apt-get autoremove -y && \
+    rm -rf /var/lib/apt/lists/* /root/.cache/pip; \
+fi
 
 # Copy application files
 COPY . .
@@ -296,6 +345,17 @@ RUN chown -R rpauser:rpauser /opt/venv
 # Ensure runtime directory exists for Firefox sandbox when running as root
 RUN mkdir -p /tmp/runtime-root \
     && chmod 700 /tmp/runtime-root
+
+# ============================================================================
+# CLEANUP: Remove build tools to reduce image size
+# Build tools are only needed during pip install, not at runtime
+# ============================================================================
+RUN apt-get purge -y \
+    build-essential \
+    python3-dev \
+    && apt-get autoremove -y \
+    && apt-get clean \
+    && rm -rf /var/lib/apt/lists/*
 
 # Environment variables for control (all optional; defaults to lightweight/headless)
 ENV USE_XVFB=0 \
@@ -317,7 +377,7 @@ HEALTHCHECK --interval=30s --timeout=10s --start-period=5s --retries=3 \
 
 # Pre-download drivers as root
 RUN python -c "from seleniumbase import Driver; d = Driver(uc=True, incognito=True, headless=True); \
-    d.get('https://www.n3wizards.com/health'); print(d.title); d.quit()" || true
+    d.get('about:blank'); print(d.title); d.quit()" || true
 
 # Run as root user (rpauser kept for compatibility but not used)
 # USER rpauser
