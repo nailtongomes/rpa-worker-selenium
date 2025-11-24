@@ -359,6 +359,7 @@ jobs:
             browser_type: ""
             name: debian-novnc
             tag: rpa-worker-selenium:debian-novnc
+            build_args: "--build-arg ENABLE_VNC=1 --build-arg ENABLE_NOVNC=1"
           - dockerfile: Dockerfile.slim
             browser_type: ""
             name: slim-debug
