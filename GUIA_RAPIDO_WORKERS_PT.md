@@ -225,7 +225,7 @@ vncviewer localhost:5900
 command: python /app/worker_wrapper.py
 
 # Para:
-command: /app/entrypoint.sh python --version
+command: /app/entrypoint.sh
 ```
 
 2. Configure a variável de ambiente SCRIPT_URL:

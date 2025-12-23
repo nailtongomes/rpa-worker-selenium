@@ -36,10 +36,11 @@
 #   SCREEN_HEIGHT: Screen height for virtual display (default: 768)
 #
 # Example for using SCRIPT_URL instead of SCRIPT_NAME:
-#   1. Set SCRIPT_URL in environment section
-#   2. Comment out SCRIPT_NAME (or leave it empty)
-#   3. Change command to: command: /app/entrypoint.sh python --version
-#      (entrypoint will detect SCRIPT_URL and download/execute the script)
+#   1. Set SCRIPT_URL in environment section below
+#   2. Remove or comment out SCRIPT_NAME
+#   3. Change command to: command: /app/entrypoint.sh
+#      The entrypoint will detect SCRIPT_URL and download/execute the script
+#      Note: MAX_RUN_HOURS will not apply; implement restart logic in your script
 
 services:
   # RPA Worker Service
@@ -119,8 +120,9 @@ services:
     command: python /app/worker_wrapper.py
     
     # Health check to ensure worker is responsive
+    # Checks for worker_wrapper.py process specifically
     healthcheck:
-      test: ["CMD-SHELL", "pgrep -f python || exit 1"]
+      test: ["CMD-SHELL", "pgrep -f worker_wrapper.py || exit 1"]
       interval: 60s
       timeout: 10s
       retries: 3

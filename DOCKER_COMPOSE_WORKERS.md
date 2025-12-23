@@ -288,7 +288,7 @@ Download scripts dynamically from a URL:
 command: python /app/worker_wrapper.py
 
 # To:
-command: /app/entrypoint.sh python --version
+command: /app/entrypoint.sh
 ```
 
 2. Set the SCRIPT_URL environment variable:

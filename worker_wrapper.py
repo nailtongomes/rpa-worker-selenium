@@ -88,12 +88,6 @@ class WorkerWrapper:
     
     def _find_script(self):
         """Find the script to execute."""
-        # If SCRIPT_URL is provided, use script downloader
-        if SCRIPT_URL:
-            print(f"[worker_wrapper] SCRIPT_URL provided: {SCRIPT_URL}")
-            print("[worker_wrapper] Script will be downloaded by entrypoint")
-            return None  # Let entrypoint handle it
-        
         # Try to find script in various locations
         script_paths = [
             SRC_DIR / SCRIPT_NAME,
