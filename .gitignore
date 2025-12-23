@@ -58,3 +58,11 @@ recordings/
 
 # Selenium artifacts
 downloaded_files/
+
+# Docker Compose Worker directories (runtime data, not in repo)
+app/db/
+app/tmp/
+app/logs/
+
+# Environment configuration (contains sensitive data)
+.env

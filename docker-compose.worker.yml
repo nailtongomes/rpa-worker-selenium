@@ -1,0 +1,143 @@
+# Docker Compose for Distributed RPA Workers
+# Purpose: Run multiple workers with Dockerfile.trixie for heavy RPA tasks
+# Each worker runs independently with clean environments to avoid certificate conflicts
+# 
+# Resource Planning for 2vCPU/8GB RAM VM (e.g., Hostinger VPS):
+# - Each heavy RPA can use up to 1 CPU and 2GB RAM
+# - With 2 vCPUs and 8GB RAM, we can run 2-3 workers comfortably
+# - Configuration below uses 2 workers with resource limits
+#
+# Usage:
+#   # Start all workers
+#   docker-compose -f docker-compose.worker.yml up -d
+#
+#   # Scale workers (adjust based on your VM resources)
+#   docker-compose -f docker-compose.worker.yml up -d --scale rpa-worker=2
+#
+#   # Stop all workers
+#   docker-compose -f docker-compose.worker.yml down
+#
+#   # View logs
+#   docker-compose -f docker-compose.worker.yml logs -f
+#
+# Environment Variables:
+#   SCRIPT_NAME: Name of the Python script to run (e.g., "my_script.py")
+#                Script should be placed in ./app/src directory
+#   SCRIPT_URL: Alternative to SCRIPT_NAME - URL to download script from
+#   MAX_RUN_HOURS: Maximum hours before forcing container restart (default: 3)
+#   USE_XVFB: Enable virtual display (0=disabled, 1=enabled) - default 0
+#   USE_OPENBOX: Enable window manager (0=disabled, 1=enabled) - default 0
+#   USE_VNC: Enable VNC for debugging (0=disabled, 1=enabled) - default 0
+#   SCREEN_WIDTH: Screen width for virtual display (default: 1366)
+#   SCREEN_HEIGHT: Screen height for virtual display (default: 768)
+
+version: '3.8'
+
+services:
+  # RPA Worker Service
+  # Each instance runs indefinitely with automatic restart
+  # Clean environment on each restart to avoid certificate conflicts
+  rpa-worker:
+    build:
+      context: .
+      dockerfile: Dockerfile.trixie
+      args:
+        # Conditional builds - enable only what you need
+        ENABLE_VNC: 0        # VNC for debugging (increases image size)
+        ENABLE_NOVNC: 0      # Browser-based VNC (increases image size)
+        ENABLE_FFMPEG: 0     # Screen recording (increases image size)
+        ENABLE_PDF_TOOLS: 0  # PDF manipulation tools (increases image size)
+        BUILD_PJEOFFICE: 0   # PJeOffice for Brazilian legal system (increases image size)
+    
+    image: rpa-worker-selenium-trixie:latest
+    
+    # Restart policy: always restart on exit (infinite running)
+    # Containers will restart automatically when Python script exits
+    restart: always
+    
+    # Resource limits for heavy RPA tasks
+    # Adjust based on your VM resources and number of workers
+    deploy:
+      resources:
+        limits:
+          cpus: '1.0'      # Maximum 1 CPU per worker
+          memory: 2048M    # Maximum 2GB RAM per worker
+        reservations:
+          cpus: '0.5'      # Minimum 0.5 CPU reserved
+          memory: 512M     # Minimum 512MB RAM reserved
+    
+    # Volumes for persistent data
+    # Only these directories persist across container restarts
+    # Everything else is cleaned on restart to avoid conflicts
+    volumes:
+      # Database directory - persists across restarts
+      - ./app/db:/app/db
+      
+      # Source scripts directory - mount your Python scripts here
+      - ./app/src:/app/src
+      
+      # Temporary files directory - persists but can be manually cleaned
+      - ./app/tmp:/app/tmp
+      
+      # Optional: logs directory for troubleshooting
+      - ./app/logs:/app/logs
+    
+    # Environment variables
+    # Override these in .env file or command line
+    environment:
+      # Script execution
+      - SCRIPT_NAME=${SCRIPT_NAME:-worker_script.py}
+      - SCRIPT_URL=${SCRIPT_URL:-}
+      - MAX_RUN_HOURS=${MAX_RUN_HOURS:-3}
+      
+      # Python settings
+      - PYTHONUNBUFFERED=1
+      - PYTHONDONTWRITEBYTECODE=1
+      
+      # Display settings (mostly disabled for headless by default)
+      - USE_XVFB=${USE_XVFB:-0}
+      - USE_OPENBOX=${USE_OPENBOX:-0}
+      - USE_VNC=${USE_VNC:-0}
+      - USE_NOVNC=${USE_NOVNC:-0}
+      - USE_SCREEN_RECORDING=${USE_SCREEN_RECORDING:-0}
+      - SCREEN_WIDTH=${SCREEN_WIDTH:-1366}
+      - SCREEN_HEIGHT=${SCREEN_HEIGHT:-768}
+      
+      # Timezone
+      - TZ=America/Sao_Paulo
+    
+    # Command: run the worker wrapper script
+    # The wrapper handles time-based restarts and script execution
+    command: python /app/worker_wrapper.py
+    
+    # Health check to ensure worker is responsive
+    healthcheck:
+      test: ["CMD-SHELL", "pgrep -f python || exit 1"]
+      interval: 60s
+      timeout: 10s
+      retries: 3
+      start_period: 30s
+    
+    # Logging configuration
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "3"
+    
+    # Network mode: bridge (default)
+    # Change to host if you need direct network access
+    network_mode: bridge
+
+# Networks (optional - uses default bridge network)
+networks:
+  default:
+    driver: bridge
+
+# Volumes (optional - using bind mounts above instead of named volumes)
+# Uncomment if you prefer named volumes over bind mounts
+# volumes:
+#   db-data:
+#   src-data:
+#   tmp-data:
+#   logs-data:
