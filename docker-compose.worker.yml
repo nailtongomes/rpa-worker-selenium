@@ -3,7 +3,8 @@
 #
 # Usage:
 #   1. Set SCRIPT_URL environment variable to your script URL
-#   2. docker compose -f docker-compose.worker.yml up -d
+#   2. docker compose -f docker-compose.worker.yml up -d --build
+#   3. docker compose -f docker-compose.worker.yml logs -f
 #
 # Your script should:
 #   - Run for up to 1 hour (or your desired time)
@@ -13,34 +14,64 @@
 
 services:
   rpa-worker:
+  
+    image: local/rpa-worker-selenium-pje:latest
+    
     build:
       context: .
       dockerfile: Dockerfile.trixie
-    
-    image: rpa-worker-selenium-trixie:latest
-    
+      args:
+        BUILD_PJEOFFICE: "1"
+        ENABLE_PDF_TOOLS: "1"
+        CHROME_PROFILE_URL: "${CHROME_PROFILE_URL}"
+
+    user: "0"
+    shm_size: "2gb"
+
+    mem_limit: "2g"
+    mem_reservation: "1g"
+    cpus: "1.0"
+
     # Auto-restart when script exits
     restart: always
-    
+    # restart: "on-failure:5"
+
+    # Segurança/estabilidade
+    stop_grace_period: "30s"
+    init: true
+
+    # Environment variables
+    environment:
+      # Set your script URL here (or use .env file)
+      SCRIPT_URL=${SCRIPT_URL}
+      CHROME_PROFILE_URL="${CHROME_PROFILE_URL:-capas-clientx-01}"
+      
+      USE_XVFB: "1"
+      USE_OPENBOX: "1"
+      USE_PJEOFFICE: "1"
+      USE_NOVNC: "0"
+      USE_VNC: "0"
+      USE_SCREEN_RECORDING: "0"
+      DISPLAY: ":99"
+
+      N3_API_BASE_URL: "${N3_API_BASE_URL}"
+      N3_TOKEN: "${N3_TOKEN}"
+
+      SENHA_TOKEN_A1: "${SENHA_TOKEN_A1}"
+      SECRET_2FA_CNJ: "${SECRET_2FA_CNJ}"
+
+      WORKER_ID: "${WORKER_ID:-capas-clientx-01}"
+      TZ: "America/Fortaleza"
+  
+      # Python settings
+      PYTHONUNBUFFERED=1
+
     # Volumes to persist downloads, scripts, caches, dbs, logs
     volumes:
       - ./app/db:/app/db          # Database files
       - ./app/src:/app/src        # Downloaded scripts
       - ./app/tmp:/app/tmp        # Cache and temp files
       - ./app/logs:/app/logs      # Log files
-    
-    # Environment variables
-    environment:
-      # Set your script URL here (or use .env file)
-      - SCRIPT_URL=${SCRIPT_URL}
-      
-      # Optional: display settings (disabled by default for better performance)
-      - USE_XVFB=${USE_XVFB:-0}
-      - USE_OPENBOX=${USE_OPENBOX:-0}
-      
-      # Python settings
-      - PYTHONUNBUFFERED=1
-      - TZ=America/Sao_Paulo
     
     # Logging
     logging:
