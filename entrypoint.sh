@@ -12,6 +12,7 @@ export PYTHONDONTWRITEBYTECODE=1
 export LANG=C.UTF-8
 export LC_ALL=C.UTF-8
 export DISPLAY=${DISPLAY:-:99}
+export PYTHONPATH="/app:/app/src${PYTHONPATH:+:${PYTHONPATH}}"
 
 # PJeOffice paths - configurable via environment variables
 export PJEOFFICE_CONFIG_DIR=${PJEOFFICE_CONFIG_DIR:-/app/.pjeoffice-pro}
@@ -454,15 +455,12 @@ download_and_execute() {
         SCRIPT_PATH=$(python -c "
 import os
 import sys
-try:
-    from script_downloader import get_filename_from_url
-    url = os.getenv('SCRIPT_URL')
-    if url:
-        print(f'/tmp/{get_filename_from_url(url)}')
-    else:
-        sys.exit(1)
-except Exception as e:
-    sys.stderr.write(f'Error getting script path: {e}\n')
+from script_downloader import get_filename_from_url
+
+url = os.getenv('SCRIPT_URL')
+if url:
+    print(f'/tmp/{get_filename_from_url(url)}')
+else:
     sys.exit(1)
 ")
         
@@ -549,15 +547,12 @@ execute_with_loop() {
                 SCRIPT_PATH=$(python -c "
 import os
 import sys
-try:
-    from script_downloader import get_filename_from_url
-    url = os.getenv('SCRIPT_URL')
-    if url:
-        print(f'/tmp/{get_filename_from_url(url)}')
-    else:
-        sys.exit(1)
-except Exception as e:
-    sys.stderr.write(f'Error: {e}\n')
+from script_downloader import get_filename_from_url
+
+url = os.getenv('SCRIPT_URL')
+if url:
+    print(f'/tmp/{get_filename_from_url(url)}')
+else:
     sys.exit(1)
 ")
                 
