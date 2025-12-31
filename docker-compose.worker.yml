@@ -1,14 +1,17 @@
 # Simple Docker Compose for RPA Worker
-# Downloads and runs script from URL, restarts automatically when script exits
+# Downloads and runs script from URL, restarts automatically in loop mode
 #
 # Usage:
 #   1. Set SCRIPT_URL environment variable to your script URL
 #   2. docker compose -f docker-compose.worker.yml up -d --build
 #   3. docker compose -f docker-compose.worker.yml logs -f
 #
-# Your script should:
-#   - Run for up to 1 hour (or your desired time)
-#   - Raise an error or exit to trigger container restart
+# Features:
+#   - WORKER_LOOP=1: Infinite loop with automatic restart
+#   - WORKER_TIMEOUT=3600: 1 hour timeout per iteration (forces cleanup)
+#   - WORKER_RESTART_DELAY=120: 2 minute delay between iterations
+#   - Auto-restart on script failure or timeout
+#   - Download retry with exponential backoff (max 90s)
 #
 # Persistent data is saved in: app/db, app/src, app/tmp, app/logs
 
@@ -45,6 +48,11 @@ services:
       # Set your script URL here (or use .env file)
       SCRIPT_URL=${SCRIPT_URL}
       CHROME_PROFILE_URL="${CHROME_PROFILE_URL:-capas-clientx-01}"
+      
+      # Worker loop configuration (new!)
+      WORKER_LOOP: "1"
+      WORKER_TIMEOUT: "3600"          # 1 hour per iteration
+      WORKER_RESTART_DELAY: "120"     # 2 minutes between iterations
       
       USE_XVFB: "1"
       USE_OPENBOX: "1"

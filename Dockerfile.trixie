@@ -50,7 +50,7 @@ ARG ENABLE_VNC=0
 ARG ENABLE_FFMPEG=0
 ARG ENABLE_NOVNC=0
 ARG ENABLE_PDF_TOOLS=0
-ARG CHROME_PROFILE_URL=
+ARG CHROME_PROFILE_URL=""
 
 # Create and activate virtual environment (for PEP 668 compliance in Ubuntu 24.04)
 # This must be done after installing python3-venv below
@@ -69,7 +69,8 @@ ENV DEBIAN_FRONTEND=noninteractive \
     HOME=/root \
     TZ=America/Sao_Paulo \
     MOZ_ALLOW_ROOT=1 \
-    XDG_RUNTIME_DIR=/tmp/runtime-root
+    XDG_RUNTIME_DIR=/tmp/runtime-root \
+    CHROME_PROFILE_URL=${CHROME_PROFILE_URL}
 
 # Install core system dependencies and desktop environment components
 RUN apt-get update && apt-get install -y --no-install-recommends \
@@ -234,13 +235,19 @@ RUN ln -s /opt/chrome/chrome /usr/local/bin/chrome \
     && chmod +x /usr/local/bin/chromedriver \
     && chmod +x /opt/chrome/chrome
 
-# Optional: Download Chrome profile zip from URL
-# When CHROME_PROFILE_URL is provided, downloads the .zip file to /usr/local/share/ProfileChrome-slim.zip
-# This allows scripts to use a pre-configured Chrome profile with extensions
+# Optional: Download Chrome profile zip from URL at build time
+# When CHROME_PROFILE_URL is provided during build, downloads and extracts the profile
+# Location: /usr/local/share/chrome-profile/
+# If URL is not provided at build time, it can be downloaded at runtime via entrypoint
 RUN if [ -n "$CHROME_PROFILE_URL" ]; then \
-    echo "Downloading Chrome profile from $CHROME_PROFILE_URL..."; \
-    curl -fsSL "$CHROME_PROFILE_URL" -o /usr/local/share/ProfileChrome-slim.zip && \
-    echo "Chrome profile downloaded to /usr/local/share/ProfileChrome-slim.zip"; \
+    echo "📦 Downloading Chrome profile from $CHROME_PROFILE_URL..."; \
+    mkdir -p /usr/local/share/chrome-profile && \
+    curl -fsSL "$CHROME_PROFILE_URL" -o /tmp/chrome-profile.zip && \
+    unzip -q /tmp/chrome-profile.zip -d /usr/local/share/chrome-profile && \
+    rm -f /tmp/chrome-profile.zip && \
+    echo "✅ Chrome profile extracted to /usr/local/share/chrome-profile/"; \
+else \
+    echo "ℹ️ CHROME_PROFILE_URL not set at build time - can be provided at runtime"; \
 fi
 
 # Create symbolic links and set permissions for Firefox
@@ -318,6 +325,7 @@ fi
 COPY requirements.txt .
 RUN pip install --upgrade --no-cache-dir pip \
     && pip install --no-cache-dir -r requirements.txt \
+    && pip cache purge \
     && chmod -R 777 /opt/venv/lib/python*/site-packages/seleniumbase/drivers || true
 
 
