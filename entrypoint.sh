@@ -81,29 +81,47 @@ download_chrome_profile() {
         echo "$(log_timestamp) ℹ️  CHROME_PROFILE_URL not set, skipping profile download"
         return 0
     fi
-    
-    # Check if profile already exists from build time
-    if [ -d "/usr/local/share/chrome-profile" ] && [ "$(ls -A /usr/local/share/chrome-profile 2>/dev/null)" ]; then
-        echo "$(log_timestamp) ✅ Chrome profile already present from build time"
+
+    mkdir -p /usr/local/share
+
+    local ZIP_NAME
+    local DEST
+
+    # Resolve ZIP name
+    if [[ "$CHROME_PROFILE_URL" == *.zip ]]; then
+        ZIP_NAME="$(basename "$CHROME_PROFILE_URL")"
+    else
+        ZIP_NAME="ProfileChrome.zip"
+    fi
+
+    DEST="/usr/local/share/$ZIP_NAME"
+
+    # Export canonical path for downstream scripts
+    export CHROME_PROFILE_ZIP_PATH="$DEST"
+
+    # If already present, skip download
+    if [ -s "$DEST" ]; then
+        echo "$(log_timestamp) ✅ Chrome profile ZIP already present: $DEST"
+        echo "$(log_timestamp) 📦 CHROME_PROFILE_ZIP_PATH=$CHROME_PROFILE_ZIP_PATH"
         return 0
     fi
+
+    echo "$(log_timestamp) ⬇️  Downloading Chrome profile ZIP to $DEST ..."
     
-    echo "$(log_timestamp) ⬇️  Downloading Chrome profile from runtime..."
-    
-    mkdir -p /usr/local/share/chrome-profile
-    
-    if curl -fsSL "$CHROME_PROFILE_URL" -o /tmp/chrome-profile.zip; then
-        if unzip -q /tmp/chrome-profile.zip -d /usr/local/share/chrome-profile; then
-            rm -f /tmp/chrome-profile.zip
-            echo "$(log_timestamp) ✅ Chrome profile downloaded and extracted successfully"
+    if curl -fsSL "$CHROME_PROFILE_URL" -o "$DEST"; then
+        if unzip -tq "$DEST" >/dev/null 2>&1; then
+            echo "$(log_timestamp) ✅ Chrome profile ZIP downloaded successfully"
+            echo "$(log_timestamp) 📦 CHROME_PROFILE_ZIP_PATH=$CHROME_PROFILE_ZIP_PATH"
             return 0
         else
-            echo "$(log_timestamp) ❌ Failed to extract Chrome profile"
-            rm -f /tmp/chrome-profile.zip
+            echo "$(log_timestamp) ❌ Downloaded file is not a valid ZIP"
+            rm -f "$DEST"
+            unset CHROME_PROFILE_ZIP_PATH
             return 1
         fi
     else
-        echo "$(log_timestamp) ❌ Failed to download Chrome profile"
+        echo "$(log_timestamp) ❌ Failed to download Chrome profile ZIP"
+        unset CHROME_PROFILE_ZIP_PATH
         return 1
     fi
 }
