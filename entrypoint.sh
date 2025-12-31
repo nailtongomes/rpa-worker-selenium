@@ -453,13 +453,25 @@ download_and_execute() {
         # Determine the downloaded script path
         SCRIPT_PATH=$(python -c "
 import os
-from script_downloader import get_filename_from_url
-url = os.getenv('SCRIPT_URL')
-if url:
-    print(f'/tmp/{get_filename_from_url(url)}')
-" 2>/dev/null)
+import sys
+try:
+    from script_downloader import get_filename_from_url
+    url = os.getenv('SCRIPT_URL')
+    if url:
+        print(f'/tmp/{get_filename_from_url(url)}')
+    else:
+        sys.exit(1)
+except Exception as e:
+    sys.stderr.write(f'Error getting script path: {e}\n')
+    sys.exit(1)
+")
         
         # Validate script exists
+        if [ -z "$SCRIPT_PATH" ]; then
+            echo "$(log_timestamp) ❌ ERROR: Failed to determine script path"
+            return 1
+        fi
+        
         if [ ! -f "$SCRIPT_PATH" ]; then
             echo "$(log_timestamp) ❌ ERROR: Downloaded script not found at $SCRIPT_PATH"
             return 1
@@ -485,8 +497,83 @@ execute_with_loop() {
         echo ""
         echo "$(log_timestamp) 🚀 Starting iteration #${iteration}..."
         
-        # Execute script with timeout
-        if timeout ${WORKER_TIMEOUT} bash -c 'download_and_execute'; then
+        # Execute script with timeout - call function directly
+        if timeout ${WORKER_TIMEOUT} bash << 'SCRIPT_EOF'
+            # Source the functions we need in this subshell
+            log_timestamp() { echo "[$(date '+%Y-%m-%d %H:%M:%S')]"; }
+            
+            # Re-define download function in subshell
+            download_script_with_retry() {
+                local url="$1"
+                local max_time=90
+                local attempt=1
+                local wait_time=5
+                local start_time=$(date +%s)
+                
+                echo "$(log_timestamp) ⬇️  Downloading script from: $url"
+                
+                while true; do
+                    local current_time=$(date +%s)
+                    local elapsed=$((current_time - start_time))
+                    
+                    if [ $elapsed -ge $max_time ]; then
+                        echo "$(log_timestamp) ❌ Download timeout after ${elapsed}s (max ${max_time}s)"
+                        return 1
+                    fi
+                    
+                    echo "$(log_timestamp) 🔄 Download attempt $attempt (elapsed: ${elapsed}s)..."
+                    
+                    if python /app/script_downloader.py; then
+                        echo "$(log_timestamp) ✅ Script downloaded successfully"
+                        return 0
+                    fi
+                    
+                    attempt=$((attempt + 1))
+                    echo "$(log_timestamp) ⏳ Waiting ${wait_time}s before retry..."
+                    sleep $wait_time
+                    wait_time=$((wait_time * 2))
+                    
+                    if [ $wait_time -gt 40 ]; then
+                        wait_time=40
+                    fi
+                done
+            }
+            
+            # Execute download and run
+            if [ -n "$SCRIPT_URL" ]; then
+                if ! download_script_with_retry "$SCRIPT_URL"; then
+                    echo "$(log_timestamp) ❌ ERROR: Script download failed after retries"
+                    exit 1
+                fi
+                
+                SCRIPT_PATH=$(python -c "
+import os
+import sys
+try:
+    from script_downloader import get_filename_from_url
+    url = os.getenv('SCRIPT_URL')
+    if url:
+        print(f'/tmp/{get_filename_from_url(url)}')
+    else:
+        sys.exit(1)
+except Exception as e:
+    sys.stderr.write(f'Error: {e}\n')
+    sys.exit(1)
+")
+                
+                if [ -z "$SCRIPT_PATH" ] || [ ! -f "$SCRIPT_PATH" ]; then
+                    echo "$(log_timestamp) ❌ ERROR: Downloaded script not found"
+                    exit 1
+                fi
+                
+                echo "$(log_timestamp) ▶️  Executing downloaded script: $SCRIPT_PATH"
+                python "$SCRIPT_PATH"
+            else
+                echo "$(log_timestamp) ℹ️  SCRIPT_URL not set, running default smoke test..."
+                python /app/smoke_test.py
+            fi
+SCRIPT_EOF
+        then
             echo "$(log_timestamp) ✅ Script completed successfully"
         else
             local exit_code=$?
@@ -527,11 +614,6 @@ main() {
     
     # Check if we're in loop mode or single execution mode
     if [ "${WORKER_LOOP}" = "1" ]; then
-        # Export function for use in subshell
-        export -f download_and_execute
-        export -f download_script_with_retry
-        export -f log_timestamp
-        
         execute_with_loop
     elif [ -n "$SCRIPT_URL" ]; then
         # Single execution with SCRIPT_URL
