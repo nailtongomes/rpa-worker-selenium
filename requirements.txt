@@ -46,3 +46,7 @@ typing_extensions>=4.12.2
 
 boto3
 pyyaml>=6.0
+
+# Testing
+pytest>=8.0.0
+pytest-timeout>=2.2.0
