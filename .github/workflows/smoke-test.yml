@@ -416,3 +416,99 @@ jobs:
         name: docker-novnc-test-${{ matrix.name }}-results
         path: data/
         retention-days: 7
+
+  docker-trixie-integration-test:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+    
+    - name: Set up Docker Buildx
+      uses: docker/setup-buildx-action@v3
+    
+    - name: Build Trixie Docker image with test dependencies
+      run: |
+        docker build -f Dockerfile.trixie \
+          --build-arg BUILD_PJEOFFICE=1 \
+          --build-arg ENABLE_PDF_TOOLS=1 \
+          -t rpa-worker-trixie:test .
+    
+    - name: Log browser and Python versions
+      run: |
+        docker run --rm rpa-worker-trixie:test bash -c "
+          echo '=== System Information ===' && \
+          python --version && \
+          chrome --version && \
+          firefox --version && \
+          chromedriver --version && \
+          geckodriver --version && \
+          openssl version && \
+          echo '=== Key Package Versions ===' && \
+          pip show pytest selenium seleniumbase pillow opencv-python reportlab PyMuPDF endesive cryptography | grep -E '^(Name|Version):' && \
+          echo '=== Verify oscrypto is NOT installed ===' && \
+          (pip show oscrypto && echo 'ERROR: oscrypto found!' && exit 1) || echo 'OK: oscrypto not installed'
+        "
+    
+    - name: Create test directories
+      run: |
+        mkdir -p data test-results
+        chmod 777 data test-results
+    
+    - name: Run Trixie integration tests (no display)
+      run: |
+        docker run --rm \
+          -e CACHE_DIR=/data \
+          -v $(pwd)/data:/data \
+          -v $(pwd)/test-results:/test-results \
+          rpa-worker-trixie:test \
+          bash -c "pytest -v --timeout=180 --junitxml=/test-results/junit-no-display.xml -m 'trixie and integration and not requires_display' tests/trixie_integration_test.py || exit 0"
+    
+    - name: Run Trixie integration tests (with Xvfb)
+      run: |
+        docker run --rm \
+          -e USE_XVFB=1 \
+          -e DISPLAY=:99 \
+          -e CACHE_DIR=/data \
+          -v $(pwd)/data:/data \
+          -v $(pwd)/test-results:/test-results \
+          rpa-worker-trixie:test \
+          bash -c "sleep 3 && pytest -v --timeout=180 --junitxml=/test-results/junit-xvfb.xml -m 'trixie and integration' tests/trixie_integration_test.py::TestDisplay || exit 0"
+    
+    - name: Run Trixie integration tests (with Xvfb + Openbox)
+      run: |
+        docker run --rm \
+          -e USE_XVFB=1 \
+          -e USE_OPENBOX=1 \
+          -e DISPLAY=:99 \
+          -e CACHE_DIR=/data \
+          -v $(pwd)/data:/data \
+          -v $(pwd)/test-results:/test-results \
+          rpa-worker-trixie:test \
+          bash -c "sleep 5 && pytest -v --timeout=180 --junitxml=/test-results/junit-full.xml -m 'trixie and integration' tests/trixie_integration_test.py || exit 0"
+    
+    - name: Display test results summary
+      if: always()
+      run: |
+        echo "=== Test Results Summary ==="
+        for file in test-results/*.xml; do
+          if [ -f "$file" ]; then
+            echo "File: $(basename $file)"
+            grep -oP 'tests="\K[0-9]+' "$file" | head -1 | xargs -I {} echo "  Tests: {}"
+            grep -oP 'failures="\K[0-9]+' "$file" | head -1 | xargs -I {} echo "  Failures: {}"
+            grep -oP 'errors="\K[0-9]+' "$file" | head -1 | xargs -I {} echo "  Errors: {}"
+            grep -oP 'skipped="\K[0-9]+' "$file" | head -1 | xargs -I {} echo "  Skipped: {}"
+          fi
+        done
+    
+    - name: Upload test results
+      if: always()
+      uses: actions/upload-artifact@v4
+      with:
+        name: docker-trixie-integration-test-results
+        path: |
+          test-results/
+          data/
+        retention-days: 7
