@@ -27,7 +27,7 @@ pyperclip==1.9.0
 
 # HTTP and requests
 requests>=2.32.3
-urllib3==2.2.3
+urllib3>=2.5.0,<3
 httpx==0.28.1
 
 # Authentication and security
