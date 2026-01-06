@@ -41,7 +41,7 @@ psutil==6.1.0
 pytz==2024.2
 tinydb==4.8.2
 pymongo==4.15.5
-typing_extensions==4.12.2
+typing_extensions>=4.12.2
 google-genai==1.56.0
 
 boto3
