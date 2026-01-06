@@ -2,22 +2,26 @@
 
 # Selenium and WebDriver
 seleniumbase==4.45.8
-selenium>=4.25.0
+selenium
 
 # Virtual display for headless execution
 pyvirtualdisplay
 
 # Web scraping and parsing
-beautifulsoup4==4.13.3
-lxml==5.3.0
+beautifulsoup4
+lxml
 
 # Data processing
 pandas==2.2.3
 openpyxl==3.1.5
 PyPDF2==3.0.1
+PyMuPDF==1.26.7
+endesive==2.19.2
 
 # Image processing and automation
-opencv-python==4.10.0.84
+reportlab==4.4.7
+qrcode==8.2
+opencv-python==4.12.0.88
 pillow>=10.1.0
 PyAutoGUI
 pyperclip==1.9.0
@@ -25,18 +29,21 @@ pyperclip==1.9.0
 # HTTP and requests
 requests==2.32.3
 urllib3==2.2.3
+httpx==0.28.1
 
 # Authentication and security
 PyJWT==2.10.1
 pyotp==2.9.0
 
 # Utilities
-filelock==3.18.0
+filelock
+2captcha-python
 psutil==6.1.0
 pytz==2024.2
 tinydb==4.8.2
+pymongo==4.15.5
 typing_extensions==4.12.2
-2captcha-python
+google-genai==1.56.0
 
 boto3
 pyyaml>=6.0
