@@ -1,6 +1,8 @@
+# cryptography endesive
+
 # Selenium and WebDriver
+seleniumbase==4.45.8
 selenium>=4.25.0
-seleniumbase
 
 # Virtual display for headless execution
 pyvirtualdisplay
@@ -34,5 +36,7 @@ psutil==6.1.0
 pytz==2024.2
 tinydb==4.8.2
 typing_extensions==4.12.2
+2captcha-python
+
 boto3
 pyyaml>=6.0
