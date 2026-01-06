@@ -15,11 +15,11 @@ Test Coverage:
 - Verify oscrypto absence
 
 Environment Variables:
-- A1_P12_PATH: Path to .p12 certificate file (optional)
-- A1_P12_PASSWORD: Password for .p12 file (optional)
-- DISPLAY: X11 display (default: :99)
-- USE_XVFB: Enable Xvfb (default: 0)
-- USE_OPENBOX: Enable Openbox (default: 0)
+    A1_P12_PATH: Path to .p12 certificate file (optional)
+    A1_P12_PASSWORD: Password for .p12 file (optional)
+    DISPLAY: X11 display (default: :99)
+    USE_XVFB: Enable Xvfb (default: 0)
+    USE_OPENBOX: Enable Openbox (default: 0)
 
 Usage:
     # Run all trixie integration tests
@@ -257,6 +257,7 @@ class TestSystemInfo:
 class TestDisplay:
     """Test Xvfb and Openbox functionality."""
     
+    @pytest.mark.requires_display
     def test_xvfb_process(self, display_info):
         """Test Xvfb process is running when enabled."""
         if not display_info["use_xvfb"]:
@@ -265,6 +266,7 @@ class TestDisplay:
         assert check_process_running("Xvfb"), "Xvfb process not running"
         print(f"\n✓ Xvfb process is running")
     
+    @pytest.mark.requires_display
     def test_openbox_process(self, display_info):
         """Test Openbox process is running when enabled."""
         if not display_info["use_openbox"]:
@@ -275,6 +277,7 @@ class TestDisplay:
         assert check_process_running("openbox"), "Openbox process not running"
         print(f"\n✓ Openbox process is running")
     
+    @pytest.mark.requires_display
     def test_display_accessible(self, display_info):
         """Test X11 display is accessible."""
         if not display_info["use_xvfb"]:
@@ -284,6 +287,7 @@ class TestDisplay:
         assert check_display_accessible(display), f"Display {display} not accessible"
         print(f"\n✓ Display {display} is accessible")
     
+    @pytest.mark.requires_display
     def test_screenshot_capability(self, display_info, temp_dir):
         """Test ability to take screenshots using xwd."""
         if not display_info["use_xvfb"]:
@@ -374,7 +378,7 @@ class TestSeleniumBase:
             
             # Verify title
             title = driver.title
-            # Firefox might have empty title or actual "about:blank"
+            # Firefox might have an empty title or the actual string "about:blank"
             assert title in ["", "about:blank"], f"Unexpected title: {title}"
             
             # Take screenshot
@@ -572,6 +576,7 @@ class TestA1Certificate:
         
         print(f"\n✓ Cryptography library available with PKI support")
     
+    @pytest.mark.requires_cert
     def test_a1_certificate_operations(self, a1_cert_info, temp_dir):
         """Test A1 certificate operations if certificate is available."""
         if not a1_cert_info["available"]:
@@ -614,6 +619,7 @@ class TestA1Certificate:
         print(f"  Subject: {subject}")
         print(f"  Issuer: {issuer}")
     
+    @pytest.mark.requires_cert
     def test_pdf_signing_with_endesive(self, a1_cert_info, temp_dir):
         """Test PDF signing with endesive if certificate is available."""
         if not a1_cert_info["available"]:
@@ -654,13 +660,15 @@ class TestA1Certificate:
         
         try:
             from cryptography.hazmat.primitives import serialization
+            from datetime import datetime
             
-            # Prepare signing data
+            # Prepare signing data with current date
+            current_date = datetime.utcnow().strftime("%Y%m%d%H%M%S+00'00'")
             dct = {
                 "sigflags": 3,
                 "contact": "test@example.com",
                 "location": "Test Location",
-                "signingdate": "20240101000000+00'00'",
+                "signingdate": current_date,
                 "reason": "Test Signature",
             }
             

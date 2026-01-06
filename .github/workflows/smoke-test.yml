@@ -464,7 +464,7 @@ jobs:
           -v $(pwd)/data:/data \
           -v $(pwd)/test-results:/test-results \
           rpa-worker-trixie:test \
-          bash -c "pytest -v --timeout=180 --junitxml=/test-results/junit-no-display.xml -m 'trixie and integration' tests/trixie_integration_test.py -k 'not (xvfb or openbox or display or screenshot)' || exit 0"
+          bash -c "pytest -v --timeout=180 --junitxml=/test-results/junit-no-display.xml -m 'trixie and integration and not requires_display' tests/trixie_integration_test.py || exit 0"
     
     - name: Run Trixie integration tests (with Xvfb)
       run: |
