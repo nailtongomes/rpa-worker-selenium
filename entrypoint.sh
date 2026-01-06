@@ -323,7 +323,7 @@ start_vnc() {
     
     # VNC requires Xvfb to be running
     if [ "${USE_XVFB}" != "1" ]; then
-        echo "$(log_timestamp) ⚠️  VNC server requires Xvfb (USE_XVFB=1), skipping VNC"
+        echo "$(log_timestamp) ⚠️  WARNING: VNC server requires Xvfb (USE_XVFB=1), skipping VNC"
         return 0
     fi
     
