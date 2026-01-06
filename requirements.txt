@@ -1,5 +1,5 @@
 # Selenium and WebDriver
-seleniumbase==4.45.8
+seleniumbase>=4.45.8
 selenium
 
 # Virtual display for headless execution
@@ -26,7 +26,7 @@ PyAutoGUI
 pyperclip==1.9.0
 
 # HTTP and requests
-requests==2.32.3
+requests>=2.32.3
 urllib3==2.2.3
 httpx==0.28.1
 
