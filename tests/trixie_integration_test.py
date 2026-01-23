@@ -360,6 +360,49 @@ class TestSeleniumBase:
             if driver:
                 driver.quit()
     
+    
+    @pytest.mark.timeout(60)
+    def test_chrome_cdp(self, temp_dir):
+        """Test opening about:blank in sb_cdp with SeleniumBase."""
+        try:
+            from seleniumbase import sb_cdp
+        except ImportError:
+            pytest.fail("SeleniumBase not available")
+        
+        driver = None
+        try:
+            # Use headless2 mode (Chrome's native headless)
+            driver = sb_cdp.Chrome(
+                url=None, headless=True, uc_mode=True, incognito=False, 
+                geoloc=(-15.8022109, -47.8625291), tzone='America/Sao_Paulo'
+            )
+            
+            # Navigate to about:blank
+            driver.open("about:blank")
+            
+            # Verify title
+            title = driver.get_title()
+            assert title == "" or title.lower() == "about:blank", f"Unexpected title: {title}"
+            
+            # Take screenshot
+            screenshot_path = temp_dir / "chrome_about_blank.png"
+            driver.save_screenshot(str(screenshot_path))
+            
+            assert screenshot_path.exists(), "Screenshot not saved"
+            
+            print(f"\n✓ Chrome SeleniumBase with CDP test passed")
+            print(f"  Title: '{title}'")
+            print(f"  Screenshot: {screenshot_path}")
+            
+        finally:
+            if driver:
+                try:
+                    driver.stop()
+                except Exception:
+                    pass
+    
+
+
     @pytest.mark.timeout(60)
     def test_firefox_about_blank(self, temp_dir):
         """Test opening about:blank in Firefox with SeleniumBase."""
