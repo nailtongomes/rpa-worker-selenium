@@ -1,0 +1,66 @@
+version: '3.8'
+
+# Docker Compose configuration for RPA Worker in Standby Mode
+# This setup runs a worker that waits for HTTP task requests
+
+services:
+  rpa-standby:
+    image: ghcr.io/nailtongomes/rpa-worker-selenium:latest
+    container_name: rpa-standby
+    restart: always
+    
+    ports:
+      - "8080:8080"  # Task server port
+    
+    environment:
+      # Worker mode configuration
+      WORKER_MODE: "standby"
+      TASK_SERVER_PORT: "8080"
+      TASK_AUTH_TOKEN: "${TASK_AUTH_TOKEN}"  # Set in .env file
+      
+      # Execution timeout
+      WORKER_TIMEOUT: "3600"  # 1 hour per task
+      
+      # Display services (enable if your scripts need GUI/browser automation)
+      USE_XVFB: "1"
+      USE_OPENBOX: "1"
+      USE_PJEOFFICE: "0"  # Enable if using PJeOffice
+      
+      # Screen recording (for debugging)
+      USE_SCREEN_RECORDING: "0"
+      
+      # API credentials (pass through from .env)
+      N3_API_BASE_URL: "${N3_API_BASE_URL}"
+      N3_TOKEN: "${N3_TOKEN}"
+      
+      # Timezone
+      TZ: "America/Fortaleza"
+    
+    volumes:
+      - ./data/db:/app/db
+      - ./data/logs:/app/logs
+      - ./data/tmp:/app/tmp
+      - ./data/recordings:/app/recordings
+    
+    shm_size: "2gb"
+    
+    deploy:
+      resources:
+        limits:
+          memory: 2g
+          cpus: '1.0'
+        reservations:
+          memory: 1g
+    
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "3"
+    
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8080/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 10s
