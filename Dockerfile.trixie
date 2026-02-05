@@ -7,8 +7,8 @@
 FROM debian:trixie-slim AS builder
 
 # https://googlechromelabs.github.io/chrome-for-testing/
-ARG CHROME_VERSION=143.0.7499.192 
-# last 142.0.7444.162
+ARG CHROME_VERSION=145.0.7632.46 
+# last 142.0.7444.162 -- 143.0.7499.192
 # Firefox ESR is downloaded from Mozilla's latest-esr download service (no version needed)
 
 # https://github.com/mozilla/geckodriver/releases
