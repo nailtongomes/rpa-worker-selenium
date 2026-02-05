@@ -1,5 +1,5 @@
 # Selenium and WebDriver
-seleniumbase>=4.45.13
+seleniumbase>=4.46.4
 selenium
 
 # Virtual display for headless execution
