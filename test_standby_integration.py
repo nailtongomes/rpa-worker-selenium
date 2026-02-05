@@ -11,13 +11,18 @@ Tests that:
 import pytest
 import subprocess
 import os
+import pathlib
+
+
+# Get the repository root directory
+REPO_ROOT = pathlib.Path(__file__).parent.resolve()
 
 
 def test_entrypoint_exports_worker_mode_default():
     """Test that WORKER_MODE defaults to 'pull'."""
     result = subprocess.run(
         ['bash', '-c', 'source ./entrypoint.sh > /dev/null 2>&1 && echo "$WORKER_MODE"'],
-        cwd='/home/runner/work/rpa-worker-selenium/rpa-worker-selenium',
+        cwd=str(REPO_ROOT),
         capture_output=True,
         text=True,
         timeout=5
@@ -31,7 +36,7 @@ def test_entrypoint_exports_task_server_port():
     """Test that TASK_SERVER_PORT is exported with default value."""
     result = subprocess.run(
         ['bash', '-c', 'source ./entrypoint.sh > /dev/null 2>&1 && echo "$TASK_SERVER_PORT"'],
-        cwd='/home/runner/work/rpa-worker-selenium/rpa-worker-selenium',
+        cwd=str(REPO_ROOT),
         capture_output=True,
         text=True,
         timeout=5
@@ -42,7 +47,7 @@ def test_entrypoint_exports_task_server_port():
 
 def test_entrypoint_has_standby_check():
     """Test that entrypoint.sh contains the standby mode check."""
-    with open('/home/runner/work/rpa-worker-selenium/rpa-worker-selenium/entrypoint.sh', 'r') as f:
+    with open(REPO_ROOT / 'entrypoint.sh', 'r') as f:
         content = f.read()
     
     # Check for standby mode logic
@@ -54,7 +59,7 @@ def test_entrypoint_has_standby_check():
 
 def test_entrypoint_standby_before_loop():
     """Test that standby check comes before loop check."""
-    with open('/home/runner/work/rpa-worker-selenium/rpa-worker-selenium/entrypoint.sh', 'r') as f:
+    with open(REPO_ROOT / 'entrypoint.sh', 'r') as f:
         content = f.read()
     
     # Find positions of key checks
@@ -68,15 +73,15 @@ def test_entrypoint_standby_before_loop():
 
 def test_task_server_file_exists():
     """Test that task_server.py exists and is executable."""
-    task_server_path = '/home/runner/work/rpa-worker-selenium/rpa-worker-selenium/task_server.py'
-    assert os.path.exists(task_server_path), "task_server.py not found"
+    task_server_path = REPO_ROOT / 'task_server.py'
+    assert task_server_path.exists(), "task_server.py not found"
     assert os.access(task_server_path, os.X_OK), "task_server.py is not executable"
 
 
 def test_task_server_imports():
     """Test that task_server.py can be imported."""
     import sys
-    sys.path.insert(0, '/home/runner/work/rpa-worker-selenium/rpa-worker-selenium')
+    sys.path.insert(0, str(REPO_ROOT))
     
     try:
         import task_server
@@ -89,7 +94,7 @@ def test_task_server_imports():
 
 def test_worker_readme_documents_standby():
     """Test that WORKER_README.md documents the standby mode."""
-    with open('/home/runner/work/rpa-worker-selenium/rpa-worker-selenium/WORKER_README.md', 'r') as f:
+    with open(REPO_ROOT / 'WORKER_README.md', 'r') as f:
         content = f.read()
     
     # Check for standby mode documentation
@@ -103,7 +108,7 @@ def test_worker_readme_documents_standby():
 
 def test_requirements_includes_flask():
     """Test that requirements.txt includes Flask."""
-    with open('/home/runner/work/rpa-worker-selenium/rpa-worker-selenium/requirements.txt', 'r') as f:
+    with open(REPO_ROOT / 'requirements.txt', 'r') as f:
         content = f.read()
     
     assert 'Flask' in content or 'flask' in content, "Flask not in requirements.txt"

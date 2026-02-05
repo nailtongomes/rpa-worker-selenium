@@ -1,12 +1,9 @@
 #!/bin/bash
-"""
-Manual test script for standby mode
-
-This script simulates the container environment and tests:
-1. Default mode (pull) - existing behavior
-2. Standby mode activation
-3. Task execution
-"""
+# Manual test script for standby mode
+# This script simulates the container environment and tests:
+# 1. Default mode (pull) - existing behavior
+# 2. Standby mode activation
+# 3. Task execution
 
 cd "$(dirname "$0")"
 
