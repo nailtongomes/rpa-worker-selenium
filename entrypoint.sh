@@ -24,9 +24,14 @@ export RECORDING_DIR=${RECORDING_DIR:-/app/recordings}
 export RECORDING_FILENAME=${RECORDING_FILENAME:-recording_$(date +%Y%m%d_%H%M%S).mp4}
 
 # Worker configuration
+export WORKER_MODE=${WORKER_MODE:-pull}
 export WORKER_LOOP=${WORKER_LOOP:-0}
 export WORKER_TIMEOUT=${WORKER_TIMEOUT:-3600}  # 1 hour default
 export WORKER_RESTART_DELAY=${WORKER_RESTART_DELAY:-120}  # 2 minutes default
+
+# Task server configuration (for standby mode)
+export TASK_SERVER_PORT=${TASK_SERVER_PORT:-8080}
+export TASK_AUTH_TOKEN=${TASK_AUTH_TOKEN:-}
 
 # PIDs for background processes
 XVFB_PID=""
@@ -624,6 +629,14 @@ main() {
     start_vnc
     start_novnc
     start_screen_recording
+    
+    # Check if we're in standby mode (HTTP server)
+    if [ "${WORKER_MODE}" = "standby" ]; then
+        echo "$(log_timestamp) 🌐 Worker mode: STANDBY (HTTP server)"
+        echo "$(log_timestamp) 🚀 Starting task server on port ${TASK_SERVER_PORT}..."
+        python /app/task_server.py
+        exit $?
+    fi
     
     # Check if we're in loop mode or single execution mode
     if [ "${WORKER_LOOP}" = "1" ]; then
