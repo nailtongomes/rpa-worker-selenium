@@ -17,6 +17,7 @@ A production-ready Docker image for running dynamic Python scripts with Selenium
 
 - 🚀 **NEW**: `dockerfile.slim` - Optimized image with conditional features (44% smaller)
 - 👷 **NEW**: Simple RPA worker with SCRIPT_URL download and auto-restart
+- 🌐 **NEW**: HTTP Standby Mode - REST API for on-demand task execution
 - 🐍 Python 3.12 on Debian Trixie (slim variant)
 - 🌐 Selenium WebDriver & SeleniumBase
 - 🎛️ **NEW**: Build-time flags for VNC, FFmpeg, noVNC, PDF tools (pay only for what you use)
@@ -157,6 +158,45 @@ docker compose -f docker-compose.worker.yml logs -f
 ```
 
 See [WORKER_README.md](WORKER_README.md) for complete setup guide.
+
+#### Option 5: HTTP Standby Mode ⭐ **NEW**
+
+Run a worker that waits for HTTP task requests instead of executing immediately:
+
+```bash
+# Start worker in standby mode
+docker run -d \
+  --name rpa-standby \
+  -p 8080:8080 \
+  -e WORKER_MODE=standby \
+  -e TASK_SERVER_PORT=8080 \
+  -e TASK_AUTH_TOKEN=your-secret-token \
+  -e USE_XVFB=1 \
+  --restart=always \
+  rpa-worker-selenium
+
+# Send a task via HTTP
+curl -X POST http://localhost:8080/task \
+  -H "Content-Type: application/json" \
+  -H "Authorization: Bearer your-secret-token" \
+  -d '{
+    "script_url": "https://example.com/script.py",
+    "script_name": "script.py",
+    "payload": {"foo": "bar"}
+  }'
+
+# Check health
+curl http://localhost:8080/health
+```
+
+Features:
+- **REST API**: Send tasks via HTTP POST with JSON payload
+- **Authentication**: Optional Bearer token security
+- **Auto-restart**: Container restarts after each task to clear memory
+- **Status monitoring**: Health endpoint shows current state
+- **Custom payloads**: Pass JSON data to your scripts
+
+See [WORKER_README.md](WORKER_README.md) for complete API documentation and examples.
 
 ## Writing Selenium Scripts
 
