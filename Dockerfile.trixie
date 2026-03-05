@@ -347,6 +347,7 @@ fi
 COPY requirements.txt .
 RUN pip install --upgrade --no-cache-dir pip \
     && pip install --no-cache-dir -r requirements.txt \
+    && pip install seleniumbase -U \
     && pip cache purge \
     && chmod -R 777 /opt/venv/lib/python*/site-packages/seleniumbase/drivers || true
 
