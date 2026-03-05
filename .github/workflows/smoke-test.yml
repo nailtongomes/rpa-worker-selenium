@@ -50,6 +50,28 @@ jobs:
           rpa-worker-trixie:base \
           python /app/test_browser_drivers.py
 
+    - name: Verify Firefox default profile created at build time
+      run: |
+        docker run --rm rpa-worker-trixie:base bash -c "
+          echo '=== Checking Firefox default profile ===' &&
+          PROFILE_DIR=\$(find /root/.mozilla/firefox -maxdepth 1 -name '*.default*' -type d | head -1) &&
+          if [ -z \"\$PROFILE_DIR\" ]; then
+            echo '✗ No Firefox default profile found under /root/.mozilla/firefox/'
+            ls -laR /root/.mozilla/firefox/ 2>/dev/null || echo 'Directory does not exist'
+            exit 1
+          fi &&
+          echo \"✓ Profile directory: \$PROFILE_DIR\" &&
+          for f in cert9.db key4.db; do
+            if [ -f \"\$PROFILE_DIR/\$f\" ]; then
+              echo \"✓ \$f found (\$(stat -c%s \"\$PROFILE_DIR/\$f\") bytes)\"
+            else
+              echo \"✗ \$f NOT found in \$PROFILE_DIR\"
+              exit 1
+            fi
+          done &&
+          echo '✅ Firefox profile and NSS databases verified'
+        "
+
     - name: Upload smoke test artifacts
       if: always()
       uses: actions/upload-artifact@v4

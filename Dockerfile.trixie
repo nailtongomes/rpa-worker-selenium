@@ -420,6 +420,18 @@ HEALTHCHECK --interval=30s --timeout=10s --start-period=15s --retries=3 \
 RUN python -c "from seleniumbase import Driver; d = Driver(uc=True, incognito=True, headless=True); \
     d.get('about:blank'); print(d.title); d.quit()" || true
 
+# Warm-up Firefox: create the default profile and initialise NSS databases
+# (cert9.db / key4.db) so they can be patched at runtime for A1 certificates
+RUN python -c "\
+from selenium import webdriver; \
+from selenium.webdriver.firefox.options import Options; \
+opts = Options(); \
+opts.add_argument('--headless'); \
+d = webdriver.Firefox(options=opts); \
+d.get('about:blank'); \
+print('Firefox profile created:', d.capabilities.get('moz:profile', 'unknown')); \
+d.quit()"
+
 # Run as root user (rpauser kept for compatibility but not used)
 # USER rpauser
 
