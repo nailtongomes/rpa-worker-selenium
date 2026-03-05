@@ -16,6 +16,7 @@ PyPDF2==3.0.1
 PyMuPDF==1.26.7
 endesive==2.19.2
 cryptography>=44,<47
+oscrypto
 
 # Image processing and automation
 reportlab==4.4.7
