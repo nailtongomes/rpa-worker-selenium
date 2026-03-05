@@ -8,248 +8,82 @@ on:
   workflow_dispatch:
 
 jobs:
-  smoke-test:
+  # ============================================================
+  # Job 1: Basic smoke test – Dockerfile.trixie (no extras)
+  # Validates: Chrome, Firefox, SeleniumBase, browser drivers
+  # ============================================================
+  trixie-smoke-test:
     runs-on: ubuntu-latest
     permissions:
       contents: read
-    
-    steps:
-    - name: Checkout code
-      uses: actions/checkout@v4
-    
-    - name: Set up Python
-      uses: actions/setup-python@v5
-      with:
-        python-version: '3.11'
-        cache: 'pip'
-    
-    - name: Install dependencies
-      run: |
-        python -m pip install --upgrade pip
-        pip install -r requirements.txt
-    
-    - name: Set up Chrome
-      uses: browser-actions/setup-chrome@v1
-      with:
-        chrome-version: stable
-    
-    - name: Install ChromeDriver
-      run: |
-        # Get Chrome version
-        CHROME_VERSION=$(google-chrome --version | sed -E 's/.* ([0-9]+\.[0-9]+\.[0-9]+\.[0-9]+).*/\1/')
-        echo "Chrome version: $CHROME_VERSION"
-        
-        # Validate Chrome version was extracted
-        if [ -z "$CHROME_VERSION" ]; then
-          echo "Error: Failed to extract Chrome version"
-          exit 1
-        fi
-        
-        # Extract major version
-        MAJOR_VERSION=$(echo $CHROME_VERSION | cut -d. -f1)
-        
-        # Get matching ChromeDriver version using Chrome for Testing JSON API
-        CHROMEDRIVER_VERSION=$(curl -s "https://googlechromelabs.github.io/chrome-for-testing/LATEST_RELEASE_${MAJOR_VERSION}")
-        echo "ChromeDriver version: $CHROMEDRIVER_VERSION"
-        
-        # Validate ChromeDriver version was retrieved
-        if [ -z "$CHROMEDRIVER_VERSION" ]; then
-          echo "Error: Failed to retrieve ChromeDriver version"
-          exit 1
-        fi
-        
-        # Download and install ChromeDriver
-        wget -q "https://storage.googleapis.com/chrome-for-testing-public/$CHROMEDRIVER_VERSION/linux64/chromedriver-linux64.zip"
-        unzip -q chromedriver-linux64.zip
-        sudo mv chromedriver-linux64/chromedriver /usr/local/bin/
-        sudo chmod +x /usr/local/bin/chromedriver
-        chromedriver --version
-    
-    - name: Run test suite
-      run: python test_features.py
-    
-    - name: Test helper scripts
-      run: |
-        # Test helper scripts individually
-        python src/helper1.py
-        python src/helper2.py
-        python src/default_script.py
-    
-    - name: Create data directory
-      run: mkdir -p data
-    
-    - name: Test helper scripts integration
-      env:
-        TEST_HELPERS: "1"
-        TARGET_URL: https://example.com
-        CACHE_DIR: ./data
-        PYTHONPATH: ./src
-      run: python smoke_test.py
-    
-    - name: Run smoke test
-      env:
-        TARGET_URL: https://example.com
-        CACHE_DIR: ./data
-      run: python smoke_test.py
-    
-    - name: Run browser WebDriver tests
-      run: python test_browser_drivers.py
-    
-    - name: Run noVNC tests
-      run: python test_novnc.py
-    
-    - name: Run VNC tests
-      run: python test_vnc.py
-    
-    - name: Run VNC integration tests
-      run: python test_vnc_integration.py
-    
-    - name: Run entrypoint tests
-      run: python test_entrypoint.py
-    
-    - name: Run Caddy config tests
-      run: python test_caddy_config.py
-    
-    - name: Run full smoke test unit tests
-      run: python test_full_smoke_test.py
-    
-    - name: Run full smoke test with all browsers
-      env:
-        TARGET_URL: https://example.com
-        CACHE_DIR: ./data
-        TEST_ALL_BROWSERS: "1"
-      run: python full_smoke_test.py
-    
-    - name: Upload smoke test artifacts
-      if: always()
-      uses: actions/upload-artifact@v4
-      with:
-        name: smoke-test-results
-        path: data/
-        retention-days: 7
 
-  docker-smoke-test:
-    runs-on: ubuntu-latest
-    permissions:
-      contents: read
-    strategy:
-      fail-fast: false
-      matrix:
-        include:
-          - dockerfile: Dockerfile
-            browser_type: chrome
-            name: chrome-default
-            tag: rpa-worker-selenium:chrome-default
-          - dockerfile: Dockerfile
-            browser_type: brave
-            name: brave
-            tag: rpa-worker-selenium:brave
-          - dockerfile: Dockerfile.firefox
-            browser_type: ""
-            name: firefox
-            tag: rpa-worker-selenium:firefox
-          - dockerfile: Dockerfile.trixie
-            browser_type: ""
-            name: debian
-            tag: rpa-worker-selenium:debian
-          - dockerfile: Dockerfile.alpine
-            browser_type: ""
-            name: alpine
-            tag: rpa-worker-selenium:alpine
-    
     steps:
     - name: Checkout code
       uses: actions/checkout@v4
-    
+
     - name: Set up Docker Buildx
       uses: docker/setup-buildx-action@v3
-    
-    - name: Build Docker image
+
+    - name: Build Trixie image (base)
       run: |
-        if [ -n "${{ matrix.browser_type }}" ]; then
-          docker build -f ${{ matrix.dockerfile }} --build-arg BROWSER_TYPE=${{ matrix.browser_type }} -t ${{ matrix.tag }} .
-        else
-          docker build -f ${{ matrix.dockerfile }} -t ${{ matrix.tag }} .
-        fi
-    
+        docker build -f Dockerfile.trixie \
+          --load \
+          -t rpa-worker-trixie:base .
+
     - name: Create data directory
       run: mkdir -p data && chmod 777 data
-    
+
     - name: Run smoke test in container
       run: |
         docker run --rm \
           -e TARGET_URL=https://example.com \
           -e CACHE_DIR=/data \
           -v $(pwd)/data:/data \
-          ${{ matrix.tag }} \
+          rpa-worker-trixie:base \
           python /app/smoke_test.py
-    
+
     - name: Run browser WebDriver tests in container
       run: |
         docker run --rm \
           -e CACHE_DIR=/data \
           -v $(pwd)/data:/data \
-          ${{ matrix.tag }} \
+          rpa-worker-trixie:base \
           python /app/test_browser_drivers.py
-    
-    - name: Run Alpine smoke test
-      if: matrix.name == 'alpine'
-      run: |
-        docker run --rm \
-          -e TARGET_URL=https://example.com \
-          -e CACHE_DIR=/data \
-          -e VERBOSE=1 \
-          -v $(pwd)/data:/data \
-          ${{ matrix.tag }} \
-          python /app/alpine_smoke_test.py
-    
-    - name: Upload Docker smoke test artifacts
+
+    - name: Upload smoke test artifacts
       if: always()
       uses: actions/upload-artifact@v4
       with:
-        name: docker-smoke-test-${{ matrix.name }}-results
+        name: trixie-smoke-test-results
         path: data/
         retention-days: 7
 
-  docker-pjeoffice-smoke-test:
+  # ============================================================
+  # Job 2: PJeOffice test – Dockerfile.trixie with BUILD_PJEOFFICE=1
+  # Validates: Xvfb, OpenBox, PJeOffice startup and processes
+  # ============================================================
+  trixie-pjeoffice-test:
     runs-on: ubuntu-latest
     permissions:
       contents: read
-    strategy:
-      fail-fast: false
-      matrix:
-        include:
-          - dockerfile: Dockerfile
-            browser_type: chrome
-            name: chrome-pjeoffice
-            tag: rpa-worker-selenium:chrome-pje
-          - dockerfile: Dockerfile.trixie
-            browser_type: ""
-            name: debian-pjeoffice
-            tag: rpa-worker-selenium:debian-pje
-          - dockerfile: Dockerfile.slim
-            browser_type: ""
-            name: slim-pjeoffice
-            tag: rpa-worker-selenium:slim-pje
-    
+
     steps:
     - name: Checkout code
       uses: actions/checkout@v4
-    
+
     - name: Set up Docker Buildx
       uses: docker/setup-buildx-action@v3
-    
-    - name: Build Docker image with PJeOffice
+
+    - name: Build Trixie image with PJeOffice
       run: |
-        if [ -n "${{ matrix.browser_type }}" ]; then
-          docker build -f ${{ matrix.dockerfile }} --build-arg BUILD_PJEOFFICE=1 --build-arg BROWSER_TYPE=${{ matrix.browser_type }} -t ${{ matrix.tag }} .
-        else
-          docker build -f ${{ matrix.dockerfile }} --build-arg BUILD_PJEOFFICE=1 -t ${{ matrix.tag }} .
-        fi
-    
+        docker build -f Dockerfile.trixie \
+          --build-arg BUILD_PJEOFFICE=1 \
+          --load \
+          -t rpa-worker-trixie:pjeoffice .
+
     - name: Create data directory
       run: mkdir -p data && chmod 777 data
-    
+
     - name: Run smoke test with Xvfb and PJeOffice
       run: |
         docker run --rm \
@@ -260,56 +94,111 @@ jobs:
           -e TARGET_URL=https://example.com \
           -e CACHE_DIR=/data \
           -v $(pwd)/data:/data \
-          ${{ matrix.tag }} \
+          rpa-worker-trixie:pjeoffice \
           bash -c "sleep 5 && python /app/smoke_test.py"
-    
+
     - name: Verify processes in container
       run: |
-        # Run a container and check if processes are running
         docker run --rm \
           -e USE_XVFB=1 \
           -e USE_OPENBOX=1 \
           -e USE_PJEOFFICE=1 \
-          ${{ matrix.tag }} \
+          rpa-worker-trixie:pjeoffice \
           bash -c "sleep 5 && pgrep -f Xvfb && pgrep -f pjeoffice && echo 'All processes running'"
-    
-    - name: Upload Docker PJeOffice smoke test artifacts
+
+    - name: Upload PJeOffice test artifacts
       if: always()
       uses: actions/upload-artifact@v4
       with:
-        name: docker-pjeoffice-smoke-test-${{ matrix.name }}-results
+        name: trixie-pjeoffice-test-results
         path: data/
         retention-days: 7
 
-  docker-screen-recording-test:
+  # ============================================================
+  # Job 3: noVNC test – Dockerfile.trixie with ENABLE_VNC=1 and ENABLE_NOVNC=1
+  # Validates: Xvfb, x11vnc, websockify (noVNC) startup and processes
+  # ============================================================
+  trixie-novnc-test:
     runs-on: ubuntu-latest
     permissions:
       contents: read
-    strategy:
-      fail-fast: false
-      matrix:
-        include:
-          - dockerfile: Dockerfile
-            browser_type: chrome
-            name: chrome-recording
-            tag: rpa-worker-selenium:chrome-rec
-    
+
     steps:
     - name: Checkout code
       uses: actions/checkout@v4
-    
+
     - name: Set up Docker Buildx
       uses: docker/setup-buildx-action@v3
-    
-    - name: Build Docker image
+
+    - name: Build Trixie image with VNC and noVNC
       run: |
-        docker build -f ${{ matrix.dockerfile }} --build-arg BROWSER_TYPE=${{ matrix.browser_type }} -t ${{ matrix.tag }} .
-    
+        docker build -f Dockerfile.trixie \
+          --build-arg ENABLE_VNC=1 \
+          --build-arg ENABLE_NOVNC=1 \
+          --load \
+          -t rpa-worker-trixie:novnc .
+
+    - name: Create data directory
+      run: mkdir -p data && chmod 777 data
+
+    - name: Run smoke test with noVNC enabled
+      run: |
+        docker run --rm \
+          -e USE_XVFB=1 \
+          -e USE_VNC=1 \
+          -e USE_NOVNC=1 \
+          -e CHECK_PROCESSES=1 \
+          -e TARGET_URL=https://example.com \
+          -e CACHE_DIR=/data \
+          -v $(pwd)/data:/data \
+          rpa-worker-trixie:novnc \
+          bash -c "sleep 5 && python /app/smoke_test.py"
+
+    - name: Verify noVNC processes in container
+      run: |
+        docker run --rm \
+          -e USE_XVFB=1 \
+          -e USE_VNC=1 \
+          -e USE_NOVNC=1 \
+          rpa-worker-trixie:novnc \
+          bash -c "sleep 5 && pgrep -f Xvfb && pgrep -f x11vnc && pgrep -f websockify && echo 'All noVNC processes running'"
+
+    - name: Upload noVNC test artifacts
+      if: always()
+      uses: actions/upload-artifact@v4
+      with:
+        name: trixie-novnc-test-results
+        path: data/
+        retention-days: 7
+
+  # ============================================================
+  # Job 4: Screen recording test – Dockerfile.trixie with ENABLE_FFMPEG=1
+  # Validates: Xvfb, FFmpeg screen recording, recording file creation
+  # ============================================================
+  trixie-screen-recording-test:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+
+    - name: Set up Docker Buildx
+      uses: docker/setup-buildx-action@v3
+
+    - name: Build Trixie image with FFmpeg
+      run: |
+        docker build -f Dockerfile.trixie \
+          --build-arg ENABLE_FFMPEG=1 \
+          --load \
+          -t rpa-worker-trixie:ffmpeg .
+
     - name: Create directories
       run: |
         mkdir -p data recordings
         chmod 777 data recordings
-    
+
     - name: Run smoke test with screen recording
       run: |
         docker run --rm \
@@ -321,124 +210,57 @@ jobs:
           -e RECORDING_DIR=/recordings \
           -v $(pwd)/data:/data \
           -v $(pwd)/recordings:/recordings \
-          ${{ matrix.tag }} \
+          rpa-worker-trixie:ffmpeg \
           bash -c "sleep 5 && python /app/smoke_test.py && sleep 2"
-    
+
     - name: Verify recording file exists
       run: |
         if [ -z "$(ls -A recordings/*.mp4 2>/dev/null)" ]; then
-          echo "Error: No recording file found"
+          echo "Error: No recording file found in ./recordings/"
+          echo "Check that ENABLE_FFMPEG=1 was used at build time and USE_SCREEN_RECORDING=1 at runtime."
+          ls -lh recordings/ 2>/dev/null || echo "recordings/ directory is empty or inaccessible"
           exit 1
         fi
         echo "Recording file(s) found:"
         ls -lh recordings/*.mp4
-    
+
     - name: Upload screen recording artifacts
       if: always()
       uses: actions/upload-artifact@v4
       with:
-        name: docker-screen-recording-test-${{ matrix.name }}-results
+        name: trixie-screen-recording-test-results
         path: |
           data/
           recordings/
         retention-days: 7
 
-  docker-novnc-test:
+  # ============================================================
+  # Job 5: Full integration test – Dockerfile.trixie with all features
+  # Validates: Python packages, PDF tools, A1 certs, display, browsers
+  # ============================================================
+  trixie-integration-test:
     runs-on: ubuntu-latest
     permissions:
       contents: read
-    strategy:
-      fail-fast: false
-      matrix:
-        include:
-          - dockerfile: Dockerfile
-            browser_type: chrome
-            name: chrome-novnc
-            tag: rpa-worker-selenium:chrome-novnc
-          - dockerfile: Dockerfile.trixie
-            browser_type: ""
-            name: debian-novnc
-            tag: rpa-worker-selenium:debian-novnc
-            build_args: "--build-arg ENABLE_VNC=1 --build-arg ENABLE_NOVNC=1"
-          - dockerfile: Dockerfile.slim
-            browser_type: ""
-            name: slim-debug
-            tag: rpa-worker-selenium:slim-debug
-            build_args: "--build-arg ENABLE_VNC=1 --build-arg ENABLE_NOVNC=1 --build-arg ENABLE_FFMPEG=1 --build-arg ENABLE_PDF_TOOLS=1"
-    
-    steps:
-    - name: Checkout code
-      uses: actions/checkout@v4
-    
-    - name: Set up Docker Buildx
-      uses: docker/setup-buildx-action@v3
-    
-    - name: Build Docker image
-      run: |
-        if [ -n "${{ matrix.browser_type }}" ]; then
-          docker build -f ${{ matrix.dockerfile }} --build-arg BROWSER_TYPE=${{ matrix.browser_type }} -t ${{ matrix.tag }} .
-        elif [ -n "${{ matrix.build_args }}" ]; then
-          docker build -f ${{ matrix.dockerfile }} ${{ matrix.build_args }} -t ${{ matrix.tag }} .
-        else
-          docker build -f ${{ matrix.dockerfile }} -t ${{ matrix.tag }} .
-        fi
-    
-    - name: Create data directory
-      run: mkdir -p data && chmod 777 data
-    
-    - name: Run smoke test with noVNC enabled
-      run: |
-        docker run --rm \
-          -e USE_XVFB=1 \
-          -e USE_VNC=1 \
-          -e USE_NOVNC=1 \
-          -e CHECK_PROCESSES=1 \
-          -e TARGET_URL=https://example.com \
-          -e CACHE_DIR=/data \
-          -v $(pwd)/data:/data \
-          ${{ matrix.tag }} \
-          bash -c "sleep 5 && python /app/smoke_test.py"
-    
-    - name: Verify noVNC processes in container
-      run: |
-        # Run a container and check if noVNC-related processes are running
-        docker run --rm \
-          -e USE_XVFB=1 \
-          -e USE_VNC=1 \
-          -e USE_NOVNC=1 \
-          ${{ matrix.tag }} \
-          bash -c "sleep 5 && pgrep -f Xvfb && pgrep -f x11vnc && pgrep -f websockify && echo 'All noVNC processes running'"
-    
-    - name: Upload Docker noVNC test artifacts
-      if: always()
-      uses: actions/upload-artifact@v4
-      with:
-        name: docker-novnc-test-${{ matrix.name }}-results
-        path: data/
-        retention-days: 7
 
-  docker-trixie-integration-test:
-    runs-on: ubuntu-latest
-    permissions:
-      contents: read
-    
     steps:
     - name: Checkout code
       uses: actions/checkout@v4
-    
+
     - name: Set up Docker Buildx
       uses: docker/setup-buildx-action@v3
-    
-    - name: Build Trixie Docker image with test dependencies
+
+    - name: Build Trixie image with full dependencies
       run: |
         docker build -f Dockerfile.trixie \
           --build-arg BUILD_PJEOFFICE=1 \
           --build-arg ENABLE_PDF_TOOLS=1 \
-          -t rpa-worker-trixie:test .
-    
+          --load \
+          -t rpa-worker-trixie:full .
+
     - name: Log browser and Python versions
       run: |
-        docker run --rm rpa-worker-trixie:test bash -c "
+        docker run --rm rpa-worker-trixie:full bash -c "
           echo '=== System Information ===' && \
           python --version && \
           chrome --version && \
@@ -451,22 +273,22 @@ jobs:
           echo '=== Verify oscrypto is NOT installed ===' && \
           (pip show oscrypto && echo 'ERROR: oscrypto found!' && exit 1) || echo 'OK: oscrypto not installed'
         "
-    
+
     - name: Create test directories
       run: |
         mkdir -p data test-results
         chmod 777 data test-results
-    
-    - name: Run Trixie integration tests (no display)
+
+    - name: Run integration tests (no display)
       run: |
         docker run --rm \
           -e CACHE_DIR=/data \
           -v $(pwd)/data:/data \
           -v $(pwd)/test-results:/test-results \
-          rpa-worker-trixie:test \
+          rpa-worker-trixie:full \
           bash -c "pytest -v --timeout=180 --junitxml=/test-results/junit-no-display.xml -m 'trixie and integration and not requires_display' tests/trixie_integration_test.py || exit 0"
-    
-    - name: Run Trixie integration tests (with Xvfb)
+
+    - name: Run integration tests (with Xvfb)
       run: |
         docker run --rm \
           -e USE_XVFB=1 \
@@ -474,10 +296,10 @@ jobs:
           -e CACHE_DIR=/data \
           -v $(pwd)/data:/data \
           -v $(pwd)/test-results:/test-results \
-          rpa-worker-trixie:test \
+          rpa-worker-trixie:full \
           bash -c "sleep 3 && pytest -v --timeout=180 --junitxml=/test-results/junit-xvfb.xml -m 'trixie and integration' tests/trixie_integration_test.py::TestDisplay || exit 0"
-    
-    - name: Run Trixie integration tests (with Xvfb + Openbox)
+
+    - name: Run integration tests (with Xvfb + Openbox)
       run: |
         docker run --rm \
           -e USE_XVFB=1 \
@@ -486,9 +308,9 @@ jobs:
           -e CACHE_DIR=/data \
           -v $(pwd)/data:/data \
           -v $(pwd)/test-results:/test-results \
-          rpa-worker-trixie:test \
+          rpa-worker-trixie:full \
           bash -c "sleep 5 && pytest -v --timeout=180 --junitxml=/test-results/junit-full.xml -m 'trixie and integration' tests/trixie_integration_test.py || exit 0"
-    
+
     - name: Display test results summary
       if: always()
       run: |
@@ -502,12 +324,12 @@ jobs:
             grep -oP 'skipped="\K[0-9]+' "$file" | head -1 | xargs -I {} echo "  Skipped: {}"
           fi
         done
-    
-    - name: Upload test results
+
+    - name: Upload integration test results
       if: always()
       uses: actions/upload-artifact@v4
       with:
-        name: docker-trixie-integration-test-results
+        name: trixie-integration-test-results
         path: |
           test-results/
           data/
