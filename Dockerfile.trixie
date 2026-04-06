@@ -7,7 +7,7 @@
 FROM debian:trixie-slim AS builder
 
 # https://googlechromelabs.github.io/chrome-for-testing/
-ARG CHROME_VERSION=146.0.7680.153
+ARG CHROME_VERSION=147.0.7727.50
 # last 145.0.7632.159 -- 142.0.7444.162 -- 143.0.7499.192
 # Firefox ESR is downloaded from Mozilla's latest-esr download service (no version needed)
 
@@ -166,6 +166,12 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     libnspr4 \
     p11-kit \
     p11-kit-modules \
+    # PKCS#11 and smartcard support (critical for A1 certificate tokens)
+    libpcsclite1 \
+    pcscd \
+    pcsc-tools \
+    opensc \
+    opensc-pkcs11 \
     # Additional desktop utilities for window management
     wmctrl \
     xdotool \
