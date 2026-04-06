@@ -33,6 +33,9 @@ export WORKER_RESTART_DELAY=${WORKER_RESTART_DELAY:-120}  # 2 minutes default
 export TASK_SERVER_PORT=${TASK_SERVER_PORT:-8080}
 export TASK_AUTH_TOKEN=${TASK_AUTH_TOKEN:-}
 
+# Firefox Profile
+export FIREFOX_PROFILE_DIR=${FIREFOX_PROFILE_DIR:-/root/.mozilla/firefox/selenium.default-release}
+
 # PIDs for background processes
 XVFB_PID=""
 OPENBOX_PID=""
@@ -129,6 +132,20 @@ download_chrome_profile() {
         unset CHROME_PROFILE_ZIP_PATH
         return 1
     fi
+}
+
+setup_firefox_profile() {
+    echo "$(log_timestamp) 🦊 Setting up Firefox profile..."
+
+    mkdir -p /root/.mozilla/firefox
+    mkdir -p "${FIREFOX_PROFILE_DIR}"
+
+    # Inicializa NSS do perfil se ainda não existir
+    if [ ! -f "${FIREFOX_PROFILE_DIR}/cert9.db" ]; then
+        certutil -d "sql:${FIREFOX_PROFILE_DIR}" -N --empty-password || true
+    fi
+
+    echo "$(log_timestamp) ✅ Firefox profile ready: ${FIREFOX_PROFILE_DIR}"
 }
 
 # Signal handling for graceful shutdown
@@ -618,6 +635,7 @@ main() {
     
     # Setup directories
     setup_directories
+    setup_firefox_profile
     
     # Download Chrome profile at runtime if needed
     download_chrome_profile
