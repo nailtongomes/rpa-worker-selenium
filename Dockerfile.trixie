@@ -317,6 +317,10 @@ RUN mkdir -p /etc/opt/chrome/policies/managed \
     && chown -R rpauser:rpauser /etc/opt/chrome/policies/managed \
     && chmod 755 /etc/opt/chrome/policies/managed
 
+RUN mkdir -p /etc/opt/chrome_for_testing/policies/managed \
+    && chown -R rpauser:rpauser /etc/opt/chrome_for_testing/policies/managed \
+    && chmod 755 /etc/opt/chrome_for_testing/policies/managed
+
 # Set up OpenBox configuration to prevent menu warnings
 RUN mkdir -p /var/lib/openbox && \
     echo '<?xml version="1.0" encoding="UTF-8"?>' > /var/lib/openbox/debian-menu.xml && \
@@ -393,6 +397,10 @@ RUN chown -R rpauser:rpauser /opt/venv
 RUN mkdir -p /tmp/runtime-root \
     && chmod 700 /tmp/runtime-root
 
+RUN mkdir -p /root/.mozilla/firefox \
+    && firefox --headless --CreateProfile "selenium /root/.mozilla/firefox/selenium.default-release" \
+    && certutil -d sql:/root/.mozilla/firefox/selenium.default-release -N --empty-password || true
+
 # ============================================================================
 # CLEANUP: Remove build tools to reduce image size
 # Build tools are only needed during pip install, not at runtime
@@ -430,9 +438,12 @@ RUN python -c "from seleniumbase import Driver; d = Driver(uc=True, incognito=Tr
 # (cert9.db / key4.db) so they can be patched at runtime for A1 certificates
 RUN python -c "\
 from selenium import webdriver; \
+from selenium.webdriver.firefox.firefox_profile import FirefoxProfile; \
 from selenium.webdriver.firefox.options import Options; \
 opts = Options(); \
 opts.add_argument('--headless'); \
+profile = FirefoxProfile('/root/.mozilla/firefox/selenium.default-release'); \
+opts.profile = profile; \
 d = webdriver.Firefox(options=opts); \
 d.get('about:blank'); \
 print('Firefox profile created:', d.capabilities.get('moz:profile', 'unknown')); \
