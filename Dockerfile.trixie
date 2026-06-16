@@ -7,12 +7,12 @@
 FROM debian:trixie-slim AS builder
 
 # https://googlechromelabs.github.io/chrome-for-testing/
-ARG CHROME_VERSION=148.0.7778.97
-# last 145.0.7632.159 -- 147.0.7727.50
+ARG CHROME_VERSION=149.0.7827.115
+# last 148.0.7778.97 -- 145.0.7632.159 -- 147.0.7727.50
 # Firefox ESR is downloaded from Mozilla's latest-esr download service (no version needed)
 
 # https://github.com/mozilla/geckodriver/releases
-ARG GECKODRIVER_VERSION=0.36.0
+ARG GECKODRIVER_VERSION=0.37.0
 ARG BUILD_PJEOFFICE=0
 
 ENV DEBIAN_FRONTEND=noninteractive
@@ -78,12 +78,13 @@ LABEL maintainer="nailtongsilva@gmail.com" \
       version="3.0" \
       description="Debian Trixie (13) Selenium with comprehensive GUI/window management for PJeOffice and RPA"
 
+# old screen 1366x768
 ENV DEBIAN_FRONTEND=noninteractive \
     PYTHONUNBUFFERED=1 \
     PYTHONDONTWRITEBYTECODE=1 \
     DISPLAY=:99 \
-    SCREEN_WIDTH=1366 \
-    SCREEN_HEIGHT=768 \
+    SCREEN_WIDTH=1600 \
+    SCREEN_HEIGHT=900 \
     HOME=/root \
     MOZ_ALLOW_ROOT=1 \
     XDG_RUNTIME_DIR=/tmp/runtime-root \
