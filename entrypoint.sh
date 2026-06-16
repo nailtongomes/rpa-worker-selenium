@@ -9,8 +9,9 @@ set -e
 # Export environment variables for child processes
 export PYTHONUNBUFFERED=1
 export PYTHONDONTWRITEBYTECODE=1
-export LANG=C.UTF-8
-export LC_ALL=C.UTF-8
+export LANG=${LANG:-pt_BR.UTF-8}
+export LC_ALL=${LC_ALL:-pt_BR.UTF-8}
+export TZ=${TZ:-America/Sao_Paulo}
 export DISPLAY=${DISPLAY:-:99}
 export PYTHONPATH="/app:/app/src${PYTHONPATH:+:${PYTHONPATH}}"
 
