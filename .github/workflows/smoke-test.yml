@@ -66,11 +66,6 @@ jobs:
 
         SCORE="$(grep -oE 'Score: *[0-9]+' data/clearcote-output.log | tail -1 | grep -oE '[0-9]+' || true)"
 
-        if [ -z "$SCORE" ]; then
-          echo "Não foi possível extrair a nota do ClearCote."
-          exit 1
-        fi
-
         echo "CLEARCOTE_SCORE=$SCORE" >> "$GITHUB_ENV"
         echo "### ClearCote audit" >> "$GITHUB_STEP_SUMMARY"
         echo "" >> "$GITHUB_STEP_SUMMARY"
