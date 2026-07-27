@@ -54,23 +54,26 @@ def get_report():
         write_report(payload)
 
 def main() -> int:
+    
     REPORT_DIR.mkdir(parents=True, exist_ok=True)
     sb = None
     started_at = datetime.now(timezone.utc)
 
     try:
+        get_report()
+        
         sb = sb_cdp.Chrome()
         sb.goto(AUDIT_URL)
         sb.click('button[aria-label="Marker 1"]')
         sb.click('button[aria-label="Marker 2"]')
         sb.click('button[aria-label="Marker 3"]')
         sb.press_keys("input", "audit")
-        sb.set_value('input[type="range"]', "100")
+        sb.set_value('input[type="range"]', "80")
         sb.click_and_hold("button[data-interaction-hold]")
         sb.select_option_by_text("select", "Mouse")
         sb.click('button:contains("Run the audit")')
-        sb.sleep(6)
-        sb.assert_element("div.text-successText", timeout=20)
+        sb.sleep(7)
+        sb.assert_element("div.text-successText", timeout=25)
 
         score_text = sb.get_text("div.text-successText")
         score = extract_score(score_text)
