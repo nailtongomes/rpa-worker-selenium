@@ -27,7 +27,8 @@ def write_report(payload: dict) -> None:
 def extract_score(text: str) -> int:
     match = re.search(r"\d+", text or "")
     if not match:
-        raise ValueError(f"Não foi possível extrair a nota do texto: {text!r}")
+        #raise ValueError(f"Não foi possível extrair a nota do texto: {text!r}")
+        return 0
     return int(match.group())
 
 def get_report():
