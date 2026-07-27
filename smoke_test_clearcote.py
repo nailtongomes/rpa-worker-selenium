@@ -47,9 +47,7 @@ def get_report():
             "status": "error",
             "score": None,
             "error_type": type(exc).__name__,
-            "error": str(exc),
-            "started_at": started_at.isoformat(),
-            "finished_at": datetime.now(timezone.utc).isoformat(),
+            "error": str(exc)
         }
         write_report(payload)
 
