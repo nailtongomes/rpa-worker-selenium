@@ -218,7 +218,6 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     # Broad Unicode coverage (accented pt-BR, symbols, legal glyphs)
     fonts-noto-core \
     # Common UI / web fonts
-    fonts-ubuntu \
     fonts-lato \
     fonts-open-sans \
     # Monospace and icon sets
