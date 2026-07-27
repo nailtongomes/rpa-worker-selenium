@@ -204,6 +204,36 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     && rm -rf /var/lib/apt/lists/*
 
 # ============================================================================
+# FINGERPRINT: extended font set + desktop integration
+# Container base ships a sparse, atypical font list — a detectable outlier in
+# canvas/font-enumeration checks. This widens it to a plausible Linux desktop.
+# xdg-utils is required for custom protocol handlers (e.g. pjeoffice://).
+# Isolated block: delete to roll back, no impact on layers above.
+# ============================================================================
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    # Metric-compatible with Arial / Times New Roman / Calibri / Cambria
+    fonts-liberation2 \
+    fonts-crosextra-carlito \
+    fonts-crosextra-caladea \
+    # Broad Unicode coverage (accented pt-BR, symbols, legal glyphs)
+    fonts-noto-core \
+    # Common UI / web fonts
+    fonts-ubuntu \
+    fonts-lato \
+    fonts-open-sans \
+    # Monospace and icon sets
+    fonts-mononoki \
+    fonts-terminus \
+    fonts-powerline \
+    fonts-font-awesome \
+    # Desktop integration: protocol handlers, MIME dispatch
+    xdg-utils \
+    # AT-SPI client lib (GTK dialog introspection)
+    libatspi2.0-0 \
+    && fc-cache -fv \
+    && rm -rf /var/lib/apt/lists/*
+
+# ============================================================================
 # OPTIONAL: VNC server (installed only when ENABLE_VNC=1)
 # Used for remote debugging and visual inspection
 # ============================================================================
