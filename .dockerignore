@@ -1,4 +1,4 @@
-# Git files
+# Git
 .git
 .gitignore
 .gitattributes
@@ -6,21 +6,44 @@
 # Documentation
 *.md
 !README.md
+docs/
 
-# Python cache
-__pycache__
+# Environment
+.env
+.env.*
+
+# Python
+**/__pycache__/
 *.py[cod]
 *$py.class
 *.so
 .Python
 *.egg-info/
-dist/
 build/
+dist/
 
-# Virtual environments
+# Virtualenv
 venv/
 env/
 ENV/
+
+# Tests
+tests/
+test_*.py
+*_test.py
+!smoke_test.py
+!full_smoke_test.py
+!alpine_smoke_test.py
+!test_browser_drivers.py
+
+# Caches
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.cache/
+.coverage
+.coverage.*
+htmlcov/
 
 # IDE
 .vscode/
@@ -33,13 +56,23 @@ ENV/
 Thumbs.db
 
 # Logs
+logs/
 *.log
 
-# Test files
-tests/
-test_*.py
-*_test.py
-!smoke_test.py
-!full_smoke_test.py
-!alpine_smoke_test.py
-!test_browser_drivers.py
+# Temp
+tmp/
+temp/
+
+# Artifacts
+recordings/
+
+# Secrets
+*.pfx
+*.p12
+*.pem
+*.key
+secrets/
+
+# Database
+*.db
+*.sqlite3
