@@ -36,6 +36,7 @@ test_*.py
 !alpine_smoke_test.py
 !test_browser_drivers.py
 !smoke_test_clearcote.py
+!patch_chromedriver.py
 
 # Caches
 .pytest_cache/
