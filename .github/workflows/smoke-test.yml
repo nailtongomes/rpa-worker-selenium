@@ -50,6 +50,35 @@ jobs:
           rpa-worker-trixie:base \
           python /app/test_browser_drivers.py
 
+    - name: Run ClearCote browser fingerprint audit
+      id: clearcote
+      run: |
+        set -o pipefail
+
+        docker run --rm \
+          -e USE_XVFB=1 \
+          -e USE_OPENBOX=1 \
+          -e DISPLAY=:99 \
+          -v "$(pwd)/data:/app/downloaded_files" \
+          rpa-worker-trixie:base \
+          bash -c "sleep 3 && python /app/smoke_test_clearcote.py" \
+          | tee data/clearcote-output.log
+
+        SCORE="$(grep -oE 'Score: *[0-9]+' data/clearcote-output.log | tail -1 | grep -oE '[0-9]+' || true)"
+
+        if [ -z "$SCORE" ]; then
+          echo "Não foi possível extrair a nota do ClearCote."
+          exit 1
+        fi
+
+        echo "CLEARCOTE_SCORE=$SCORE" >> "$GITHUB_ENV"
+        echo "### ClearCote audit" >> "$GITHUB_STEP_SUMMARY"
+        echo "" >> "$GITHUB_STEP_SUMMARY"
+        echo "- Score obtido: **$SCORE/100**" >> "$GITHUB_STEP_SUMMARY"
+        echo "- Relatório PDF: artefato \`trixie-smoke-test-results\`" >> "$GITHUB_STEP_SUMMARY"
+
+        echo "ClearCote score: $SCORE/100"
+
     - name: Verify Firefox default profile created at build time
       run: |
         docker run --rm rpa-worker-trixie:base bash -c "
