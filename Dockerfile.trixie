@@ -282,6 +282,14 @@ COPY --from=builder /downloads/chromedriver-linux64/chromedriver /usr/local/bin/
 COPY --from=builder /downloads/firefox /opt/firefox/
 COPY --from=builder /downloads/geckodriver /usr/local/bin/geckodriver
 
+COPY patch_chromedriver.py /usr/local/bin/patch_chromedriver.py
+
+RUN chmod 0755 \
+        /usr/local/bin/chromedriver \
+        /usr/local/bin/patch_chromedriver.py \
+    && python3 /usr/local/bin/patch_chromedriver.py \
+    && rm -f /usr/local/bin/patch_chromedriver.py
+
 # Create symbolic links and set permissions for Chrome
 RUN ln -s /opt/chrome/chrome /usr/local/bin/chrome \
     && ln -s /opt/chrome/chrome /usr/local/bin/google-chrome \
