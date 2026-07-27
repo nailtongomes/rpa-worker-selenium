@@ -1,3 +1,5 @@
+# syntax=docker/dockerfile:1.7
+
 # rpa-worker-selenium Dockerfile (Debian Trixie Desktop)
 # Full Debian Trixie-based image with comprehensive GUI/window management support
 # Optimized for handling PJeOffice certificate dialogs and complex window interactions
@@ -9,10 +11,9 @@ FROM debian:trixie-slim AS builder
 # https://googlechromelabs.github.io/chrome-for-testing/
 ARG CHROME_VERSION=150.0.7871.49
 ARG FIREFOX_VERSION=140.12.0esr
-ARG GECKODRIVER_VERSION=0.37.0
+ARG GECKODRIVER_VERSION=0.37.1
 
 ENV DEBIAN_FRONTEND=noninteractive
-ARG BUILD_PJEOFFICE=0
 
 # Install build dependencies
 RUN apt-get update && apt-get install -y --no-install-recommends \
@@ -100,10 +101,8 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     # Python and build tools
     python3 \
     python3-pip \
-    python3-dev \
     python3-tk \
     python3-venv \
-    build-essential \
     # X11 and display management
     xvfb \
     x11-utils \
@@ -351,11 +350,18 @@ fi
 
 # Install Python dependencies (using virtual environment)
 COPY requirements.txt .
-RUN pip install --upgrade --no-cache-dir pip \
-    && pip install --no-cache-dir -r requirements.txt \
-    && pip install seleniumbase -U \
-    && pip cache purge \
-    && chmod -R 777 /opt/venv/lib/python*/site-packages/seleniumbase/drivers || true
+RUN --mount=type=cache,target=/root/.cache/pip \
+    apt-get update \
+ && apt-get install -y --no-install-recommends build-essential python3-dev \
+ && pip install --upgrade pip \
+ && pip install -r requirements.txt \
+ && pip install seleniumbase -U \
+ ; RC=$? ; \
+    chmod -R 777 /opt/venv/lib/python*/site-packages/seleniumbase/drivers 2>/dev/null || true ; \
+    apt-get purge -y build-essential python3-dev \
+ && apt-get autoremove -y && apt-get clean \
+ && rm -rf /var/lib/apt/lists/* \
+ ; exit $RC
 
 
 # ============================================================================
@@ -376,37 +382,53 @@ RUN if [ "$ENABLE_NOVNC" = "1" ]; then \
     rm -rf /var/lib/apt/lists/* /root/.cache/pip; \
 fi
 
-# Copy application files
-COPY . .
-
-# Make entrypoint script executable
-RUN chmod +x /app/entrypoint.sh /app/script_downloader.py /app/smoke_test.py
-
-# Set up D-Bus for GUI applications
+# ============================================================================
+# Runtime dirs, ownership and D-Bus (stable — keep above COPY for cache reuse)
+# ============================================================================
 RUN mkdir -p /var/run/dbus \
     && chown rpauser:rpauser /var/run/dbus
 
-# Set ownership of virtual environment for rpauser
 RUN chown -R rpauser:rpauser /opt/venv
 
 # Ensure runtime directory exists for Firefox sandbox when running as root
 RUN mkdir -p /tmp/runtime-root \
     && chmod 700 /tmp/runtime-root
 
+# ============================================================================
+# Firefox profile + NSS databases
+# MUST run BEFORE the Firefox warm-up below, which loads this exact profile
+# path. cert9.db / key4.db are initialised here so they can be patched at
+# runtime for A1 certificates.
+# ============================================================================
 RUN mkdir -p /root/.mozilla/firefox \
     && firefox --headless --CreateProfile "selenium /root/.mozilla/firefox/selenium.default-release" \
     && certutil -d sql:/root/.mozilla/firefox/selenium.default-release -N --empty-password || true
 
 # ============================================================================
-# CLEANUP: Remove build tools to reduce image size
-# Build tools are only needed during pip install, not at runtime
+# Warm-ups (slow, network-bound) — kept above COPY so app code changes
+# do not invalidate them
 # ============================================================================
-RUN apt-get purge -y \
-    build-essential \
-    python3-dev \
-    && apt-get autoremove -y \
-    && apt-get clean \
-    && rm -rf /var/lib/apt/lists/*
+
+# Pre-download drivers as root
+RUN python -c "from seleniumbase import Driver; d = Driver(uc=True, incognito=True, headless=True); \
+    d.get('about:blank'); d.quit()" \
+    && ls /opt/venv/lib/python*/site-packages/seleniumbase/drivers/uc_driver \
+    && rm -rf /root/.cache/selenium /tmp/* ~/.cache/pip \
+    && mkdir -p /tmp/runtime-root && chmod 700 /tmp/runtime-root
+
+# Warm-up Firefox: load the profile created above so NSS is fully initialised
+RUN python -c "\
+from selenium import webdriver; \
+from selenium.webdriver.firefox.firefox_profile import FirefoxProfile; \
+from selenium.webdriver.firefox.options import Options; \
+opts = Options(); \
+opts.add_argument('--headless'); \
+profile = FirefoxProfile('/root/.mozilla/firefox/selenium.default-release'); \
+opts.profile = profile; \
+d = webdriver.Firefox(options=opts); \
+d.get('about:blank'); \
+print('Firefox profile created:', d.capabilities.get('moz:profile', 'unknown')); \
+d.quit()"
 
 # Environment variables for control (all optional; defaults to lightweight/headless)
 ENV USE_XVFB=0 \
@@ -422,31 +444,17 @@ ENV USE_XVFB=0 \
     XDG_CONFIG_HOME=/root/.config \
     XDG_DATA_HOME=/root/.local/share
 
+# ============================================================================
+# VOLATILE LAYER — app code. Everything below rebuilds on each commit.
+# Keep this section as small as possible.
+# ============================================================================
+COPY . .
+
+RUN chmod +x /app/entrypoint.sh /app/script_downloader.py /app/smoke_test.py
+
 # Health check to ensure browsers are available
 HEALTHCHECK --interval=30s --timeout=10s --start-period=15s --retries=3 \
     CMD chrome --version && firefox --version || exit 1
-
-# Pre-download drivers as root
-RUN python -c "from seleniumbase import Driver; d = Driver(uc=True, incognito=True, headless=True); \
-    d.get('about:blank'); d.quit()" \
-    && ls /opt/venv/lib/python*/site-packages/seleniumbase/drivers/uc_driver \
-    && rm -rf /root/.cache/selenium /tmp/* ~/.cache/pip \
-    && mkdir -p /tmp/runtime-root && chmod 700 /tmp/runtime-root
-
-# Warm-up Firefox: create the default profile and initialise NSS databases
-# (cert9.db / key4.db) so they can be patched at runtime for A1 certificates
-RUN python -c "\
-from selenium import webdriver; \
-from selenium.webdriver.firefox.firefox_profile import FirefoxProfile; \
-from selenium.webdriver.firefox.options import Options; \
-opts = Options(); \
-opts.add_argument('--headless'); \
-profile = FirefoxProfile('/root/.mozilla/firefox/selenium.default-release'); \
-opts.profile = profile; \
-d = webdriver.Firefox(options=opts); \
-d.get('about:blank'); \
-print('Firefox profile created:', d.capabilities.get('moz:profile', 'unknown')); \
-d.quit()"
 
 # Run as root user (rpauser kept for compatibility but not used)
 # USER rpauser
