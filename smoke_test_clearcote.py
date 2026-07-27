@@ -6,6 +6,7 @@ from datetime import datetime, timezone
 from pathlib import Path
 
 from seleniumbase import sb_cdp
+from seleniumbase import Driver
 
 
 REPORT_DIR = Path(os.getenv("CLEARCOTE_REPORT_DIR", "/app/reports/clearcote"))
@@ -29,6 +30,27 @@ def extract_score(text: str) -> int:
         raise ValueError(f"Não foi possível extrair a nota do texto: {text!r}")
     return int(match.group())
 
+def get_report():
+
+    try:
+        d = Driver(uc=True, headless=False)
+        d.get('https://abrahamjuliot.github.io/creepjs/')
+        d.sleep(12)
+        d.save_screenshot('/app/creepjs.png')
+        pdf_path = REPORT_DIR / "creepjs.pdf"
+        sb.save_as_pdf(pdf_path.name, str(REPORT_DIR))
+        d.quit()
+        
+    except Exception as exc:
+        payload = {
+            "status": "error",
+            "score": None,
+            "error_type": type(exc).__name__,
+            "error": str(exc),
+            "started_at": started_at.isoformat(),
+            "finished_at": datetime.now(timezone.utc).isoformat(),
+        }
+        write_report(payload)
 
 def main() -> int:
     REPORT_DIR.mkdir(parents=True, exist_ok=True)
