@@ -9,8 +9,10 @@
 FROM debian:trixie-slim AS builder
 
 # https://googlechromelabs.github.io/chrome-for-testing/
-ARG CHROME_VERSION=150.0.7871.49
-ARG FIREFOX_VERSION=140.12.0esr
+ARG CHROME_VERSION=156.0.8078.47
+# OLD: 150.0.7871.49
+ARG FIREFOX_VERSION=153.5.1esr
+#140.12.0esr
 ARG GECKODRIVER_VERSION=0.37.1
 
 ENV DEBIAN_FRONTEND=noninteractive
