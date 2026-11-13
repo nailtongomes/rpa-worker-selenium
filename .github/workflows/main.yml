@@ -1,0 +1,17 @@
+name: Cleanup PR Images
+on:
+  pull_request:
+    types: [closed]
+jobs:
+  cleanup:
+    runs-on: ubuntu-latest
+    concurrency:
+      group: cleanup-images
+    permissions:
+      packages: write
+    steps:
+      - uses: dataaxiom/ghcr-cleanup-action@v1
+        with:
+          packages: 'tiecd/k8s'
+          delete-tags: '*-rc*'
+          keep-n-tagged: 3
