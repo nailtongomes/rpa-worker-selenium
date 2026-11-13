@@ -115,3 +115,21 @@ jobs:
           echo "- \`BUILD_PJEOFFICE=1\`" >> $GITHUB_STEP_SUMMARY
           echo "- \`ENABLE_PDF_TOOLS=1\`" >> $GITHUB_STEP_SUMMARY
           echo "- \`CHROME_PROFILE_URL=\${{ secrets.CHROME_PROFILE_URL != '' && '[SET]' || '[NOT SET]' }}\`" >> $GITHUB_STEP_SUMMARY
+
+  cleanup:
+    needs: build-and-push
+    runs-on: ubuntu-latest
+    concurrency:
+      group: cleanup-images
+    permissions:
+      packages: write
+
+    steps:
+      - name: Cleanup old GHCR images
+        uses: dataaxiom/ghcr-cleanup-action@v1
+        with:
+          packages: 'rpa-worker-selenium'
+          keep-n-tagged: 5
+          exclude-tags: 'latest,prod,production,stable,deploy-*'
+          delete-untagged: false
+          dry-run: false
