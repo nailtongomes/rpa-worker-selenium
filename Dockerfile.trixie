@@ -8,11 +8,7 @@
 # ---------- STAGE 1: builder
 FROM debian:trixie-slim AS builder
 
-# https://googlechromelabs.github.io/chrome-for-testing/
-ARG CHROME_VERSION=156.0.8078.47
-# OLD: 150.0.7871.49
 ARG FIREFOX_VERSION=153.5.1esr
-#140.12.0esr
 ARG GECKODRIVER_VERSION=0.37.1
 
 ENV DEBIAN_FRONTEND=noninteractive
@@ -28,12 +24,6 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     && rm -rf /var/lib/apt/lists/*
 
 WORKDIR /downloads
-
-# Download Chrome and ChromeDriver from Chrome for Testing
-RUN curl -f -Lo "chromedriver-linux64.zip" "https://storage.googleapis.com/chrome-for-testing-public/${CHROME_VERSION}/linux64/chromedriver-linux64.zip" \
- && curl -f -Lo "chrome-linux64.zip" "https://storage.googleapis.com/chrome-for-testing-public/${CHROME_VERSION}/linux64/chrome-linux64.zip" \
- && unzip chromedriver-linux64.zip \
- && unzip chrome-linux64.zip
 
 # Download Firefox ESR and GeckoDriver
 RUN curl -f --retry 5 -Lo firefox.tar.xz \
@@ -235,6 +225,43 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     && rm -rf /var/lib/apt/lists/*
 
 # ============================================================================
+# Google Chrome STABLE (oficial .deb) + chromedriver casado com a versão
+# Inspirado no SeleniumBase: apt resolve deps; driver resolvido pela versão real
+# CHROME_VERSION vazio = última stable. Pin ex.: 142.0.7444.175
+# (Google remove .debs antigos do pool; pin só funciona p/ versões recentes)
+# ============================================================================
+ARG CHROME_VERSION=""
+RUN set -eux; \
+    apt-get update; \
+    if [ -n "$CHROME_VERSION" ]; then \
+        DEB_URL="https://dl.google.com/linux/chrome/deb/pool/main/g/google-chrome-stable/google-chrome-stable_${CHROME_VERSION}-1_amd64.deb"; \
+    else \
+        DEB_URL="https://dl.google.com/linux/direct/google-chrome-stable_current_amd64.deb"; \
+    fi; \
+    curl -fsSL --retry 5 -o /tmp/chrome.deb "$DEB_URL"; \
+    apt-get install -y --no-install-recommends /tmp/chrome.deb; \
+    rm -f /tmp/chrome.deb; \
+    # Remove o repo que o .deb adiciona -> evita upgrade silencioso do Chrome
+    rm -f /etc/apt/sources.list.d/google-chrome*.list /etc/apt/sources.list.d/google-chrome*.sources; \
+    # chromedriver casado: tenta versão exata, senão LATEST do mesmo build
+    CHROME_FULL="$(google-chrome --version | grep -oE '[0-9]+(\.[0-9]+){3}')"; \
+    CHROME_BUILD="${CHROME_FULL%.*}"; \
+    CFT="https://storage.googleapis.com/chrome-for-testing-public"; \
+    if ! curl -fsSL -o /tmp/cd.zip "${CFT}/${CHROME_FULL}/linux64/chromedriver-linux64.zip"; then \
+        DRV="$(curl -fsSL https://googlechromelabs.github.io/chrome-for-testing/LATEST_RELEASE_${CHROME_BUILD})"; \
+        curl -fsSL -o /tmp/cd.zip "${CFT}/${DRV}/linux64/chromedriver-linux64.zip"; \
+    fi; \
+    unzip -q /tmp/cd.zip -d /tmp; \
+    install -m 0755 /tmp/chromedriver-linux64/chromedriver /usr/local/bin/chromedriver; \
+    rm -rf /tmp/cd.zip /tmp/chromedriver-linux64 /var/lib/apt/lists/*; \
+    ln -sf /usr/bin/google-chrome-stable /usr/local/bin/chrome; \
+    # Sanity check: major do driver == major do Chrome (falha o build se divergir)
+    D_MAJOR="$(chromedriver --version | grep -oE '[0-9]+' | head -1)"; \
+    C_MAJOR="${CHROME_FULL%%.*}"; \
+    test "$D_MAJOR" = "$C_MAJOR"; \
+    echo "Chrome ${CHROME_FULL} / chromedriver major ${D_MAJOR} OK"
+
+# ============================================================================
 # OPTIONAL: VNC server (installed only when ENABLE_VNC=1)
 # Used for remote debugging and visual inspection
 # ============================================================================
@@ -275,27 +302,15 @@ fi
 RUN python3 -m venv /opt/venv
 ENV PATH="/opt/venv/bin:$PATH"
 
-# Copy Chrome and ChromeDriver from builder stage
-COPY --from=builder /downloads/chrome-linux64 /opt/chrome
-COPY --from=builder /downloads/chromedriver-linux64/chromedriver /usr/local/bin/chromedriver
-
 # Copy Firefox and GeckoDriver from builder stage
 COPY --from=builder /downloads/firefox /opt/firefox/
 COPY --from=builder /downloads/geckodriver /usr/local/bin/geckodriver
 
+# Patch do chromedriver instalado no bloco do Chrome stable
 COPY patch_chromedriver.py /usr/local/bin/patch_chromedriver.py
-
-RUN chmod 0755 \
-        /usr/local/bin/chromedriver \
-        /usr/local/bin/patch_chromedriver.py \
-    && python3 /usr/local/bin/patch_chromedriver.py \
-    && rm -f /usr/local/bin/patch_chromedriver.py
-
-# Create symbolic links and set permissions for Chrome
-RUN ln -s /opt/chrome/chrome /usr/local/bin/chrome \
-    && ln -s /opt/chrome/chrome /usr/local/bin/google-chrome \
-    && chmod +x /usr/local/bin/chromedriver \
-    && chmod +x /opt/chrome/chrome
+RUN python3 /usr/local/bin/patch_chromedriver.py \
+    && rm -f /usr/local/bin/patch_chromedriver.py \
+    && chromedriver --version
 
 # Optional: Download Chrome profile zip from URL at build time
 # When CHROME_PROFILE_URL is provided during build, downloads and extracts the profile
