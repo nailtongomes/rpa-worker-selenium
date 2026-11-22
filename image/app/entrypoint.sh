@@ -665,7 +665,7 @@ main() {
         download_and_execute
     else
         # No SCRIPT_URL and no loop mode, execute arguments as normal
-        echo "$(log_timestamp) ▶️  Executing command: $@"
+        echo "$(log_timestamp) ▶️  Executing command: $*"
         exec "$@"
     fi
 }

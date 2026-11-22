@@ -285,7 +285,8 @@ COPY --from=builder /downloads/chromedriver-linux64/chromedriver /usr/local/bin/
 COPY --from=builder /downloads/firefox /opt/firefox/
 COPY --from=builder /downloads/geckodriver /usr/local/bin/geckodriver
 
-COPY patch_chromedriver.py /usr/local/bin/patch_chromedriver.py
+# Build-time only: patched and deleted in the same layer
+COPY image/patch_chromedriver.py /usr/local/bin/patch_chromedriver.py
 
 RUN chmod 0755 \
         /usr/local/bin/chromedriver \
@@ -389,14 +390,25 @@ RUN if [ "$BUILD_PJEOFFICE" = "1" ]; then \
     && rm -rf /var/lib/apt/lists/*; \
 fi
 
-# Install Python dependencies (using virtual environment)
+# ============================================================================
+# Python dependencies (virtual environment)
+#
+# SeleniumBase always tracks the latest release on PyPI: it is upgraded right
+# after requirements.txt, in the SAME layer (a separate layer would duplicate
+# every package it upgrades, e.g. selenium/psutil, adding ~50 MB).
+# Any new value for SELENIUMBASE_REFRESH busts the cache of this layer; the
+# release workflow passes the run id, so every published image ships the
+# newest SeleniumBase even when the GitHub Actions layer cache is warm.
+# ============================================================================
 COPY requirements.txt .
+ARG SELENIUMBASE_REFRESH=""
 RUN --mount=type=cache,target=/root/.cache/pip \
     apt-get update \
  && apt-get install -y --no-install-recommends build-essential python3-dev \
  && pip install --upgrade pip \
  && pip install -r requirements.txt \
- && pip install seleniumbase -U \
+ && pip install --upgrade seleniumbase \
+ && pip show seleniumbase | grep -E '^(Name|Version):' \
  ; RC=$? ; \
     chmod -R 777 /opt/venv/lib/python*/site-packages/seleniumbase/drivers 2>/dev/null || true ; \
     apt-get purge -y build-essential python3-dev \
@@ -488,8 +500,10 @@ ENV USE_XVFB=0 \
 # ============================================================================
 # VOLATILE LAYER — app code. Everything below rebuilds on each commit.
 # Keep this section as small as possible.
+# Only image/app/ is shipped to /app (see .dockerignore allowlist); docs,
+# examples and tests stay out of the production image.
 # ============================================================================
-COPY . .
+COPY image/app/ /app/
 
 RUN chmod +x /app/entrypoint.sh /app/script_downloader.py /app/smoke_test.py
 

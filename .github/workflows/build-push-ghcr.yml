@@ -88,6 +88,7 @@ jobs:
             ENABLE_VNC=1
             ENABLE_NOVNC=1
             CHROME_PROFILE_URL=${{ secrets.CHROME_PROFILE_URL || '' }}
+            SELENIUMBASE_REFRESH=${{ github.run_id }}
           cache-from: type=gha
           cache-to: type=gha,mode=max
           labels: |
@@ -114,6 +115,9 @@ jobs:
           echo "### 🏗️ Build Args Used" >> $GITHUB_STEP_SUMMARY
           echo "- \`BUILD_PJEOFFICE=1\`" >> $GITHUB_STEP_SUMMARY
           echo "- \`ENABLE_PDF_TOOLS=1\`" >> $GITHUB_STEP_SUMMARY
+          echo "- \`ENABLE_VNC=1\`" >> $GITHUB_STEP_SUMMARY
+          echo "- \`ENABLE_NOVNC=1\`" >> $GITHUB_STEP_SUMMARY
+          echo "- \`SELENIUMBASE_REFRESH=${{ github.run_id }}\` (SeleniumBase mais recente do PyPI)" >> $GITHUB_STEP_SUMMARY
           echo "- \`CHROME_PROFILE_URL=\${{ secrets.CHROME_PROFILE_URL != '' && '[SET]' || '[NOT SET]' }}\`" >> $GITHUB_STEP_SUMMARY
 
   cleanup:
