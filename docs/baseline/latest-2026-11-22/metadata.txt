@@ -1,0 +1,9 @@
+image: ghcr.io/nailtongomes/rpa-worker-selenium:latest
+repo_digests: ["ghcr.io/nailtongomes/rpa-worker-selenium@sha256:a068235db8c12f41fa4d3ab01905b6e56299ddb82200a631af033dedad8d83e1"]
+entrypoint: ["/app/entrypoint.sh"]
+cmd: ["python","--version"]
+user: ""
+workdir: "/app"
+exposed_ports: null
+healthcheck: {"Test":["CMD-SHELL","chrome --version && firefox --version || exit 1"],"Interval":30000000000,"Timeout":10000000000,"StartPeriod":15000000000,"Retries":3}
+size_bytes: 5366458893

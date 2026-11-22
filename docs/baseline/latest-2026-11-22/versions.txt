@@ -1,0 +1,13 @@
+debian         13.7
+python         Python 3.13.5
+chrome         Google Chrome for Testing 158.0.8127.36 
+chromedriver   ChromeDriver 158.0.8127.36 (14d6f648e8cd7ad750a4044200ce94d3321be260)
+firefox        Mozilla Firefox 153.7.0esr
+geckodriver    geckodriver 0.37.1 (300705c65d1b 2026-07-17 09:25 +0000)
+java           openjdk version "21.0.13.1" 2026-11-17
+openssl        OpenSSL 3.5.9 29 Sep 2026 (Library: OpenSSL 3.5.9 29 Sep 2026)
+imagemagick    Version: ImageMagick 7.1.1-43 Q16 x86_64 22550 https://imagemagick.org
+ghostscript    10.05.1
+x11vnc         x11vnc: 0.9.17 lastmod: 2025-04-11
+websockify     Version: 0.13.0
+ffmpeg         não instalado
