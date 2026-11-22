@@ -1,5 +1,3 @@
-version: '3.8'
-
 # Docker Compose configuration for RPA Worker in Standby Mode
 # This setup runs a worker that waits for HTTP task requests
 

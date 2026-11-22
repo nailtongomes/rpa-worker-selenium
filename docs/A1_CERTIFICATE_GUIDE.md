@@ -67,7 +67,7 @@ docker run --rm \
 
 ### 2. Example Python Script
 
-See `example_cert_management.py` for a complete working example. Here's the essential flow:
+See `examples/scripts/example_cert_management.py` for a complete working example. Here's the essential flow:
 
 ```python
 import subprocess
@@ -478,8 +478,8 @@ def switch_certificate(old_nickname, new_pfx_path, new_password, new_nickname):
 ## Support
 
 For issues specific to certificate management:
-- Check the example script: `example_cert_management.py`
+- Check the example script: `examples/scripts/example_cert_management.py`
 - Review Chrome logs: Add `chrome_options.add_argument('--enable-logging')` 
 - Test certificate manually with `certutil` commands
 
-For general issues, see the main [README.md](README.md).
+For general issues, see the main [README.md](../README.md).

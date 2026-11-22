@@ -20,16 +20,13 @@ The default VNC setup has no password protection. A reverse proxy adds:
 
 ### Option 1: Quick Setup with Docker Compose (Recommended)
 
-Create a `docker-compose.caddy.yml` file:
+Use o exemplo pronto em `examples/compose/docker-compose.caddy.yml` (trecho abaixo):
 
 ```yaml
-version: '3.8'
-
 services:
   # RPA Worker with VNC enabled
   rpa-worker-vnc:
-    build: .
-    image: rpa-worker-selenium:latest
+    image: ghcr.io/nailtongomes/rpa-worker-selenium:latest
     container_name: rpa-worker-vnc
     environment:
       - USE_XVFB=1
@@ -37,14 +34,14 @@ services:
       - SCREEN_WIDTH=1920
       - SCREEN_HEIGHT=1080
     volumes:
-      - ./scripts:/app/src
+      - ../scripts:/app/examples:ro
       - ./recordings:/app/recordings
     # Don't expose VNC port directly - access through Caddy
     # ports:
     #   - "5900:5900"  # Commented out for security
     networks:
       - rpa-network
-    command: python /app/example_vnc_debug.py
+    command: python /app/examples/example_vnc_debug.py
 
   # Caddy reverse proxy with websocket support for VNC
   caddy:
@@ -201,10 +198,10 @@ Copy the hash and paste it in the Caddyfile after the username.
 
 ```bash
 # Using the docker-compose file
-docker-compose -f docker-compose.caddy.yml up -d
+docker compose -f examples/compose/docker-compose.caddy.yml up -d
 
 # Check logs
-docker-compose -f docker-compose.caddy.yml logs -f
+docker compose -f examples/compose/docker-compose.caddy.yml logs -f
 ```
 
 ### 3. Connect to VNC
@@ -295,17 +292,17 @@ vnc.yourdomain.com {
 
 1. Check services are running:
 ```bash
-docker-compose -f docker-compose.caddy.yml ps
+docker compose -f examples/compose/docker-compose.caddy.yml ps
 ```
 
 2. Check Caddy logs:
 ```bash
-docker-compose -f docker-compose.caddy.yml logs caddy
+docker compose -f examples/compose/docker-compose.caddy.yml logs caddy
 ```
 
 3. Verify VNC is accessible from Caddy:
 ```bash
-docker-compose -f docker-compose.caddy.yml exec caddy wget -O- http://rpa-worker-vnc:5900
+docker compose -f examples/compose/docker-compose.caddy.yml exec caddy wget -O- http://rpa-worker-vnc:5900
 ```
 
 ### Certificate Issues (Production)
@@ -322,7 +319,7 @@ sudo netstat -tlnp | grep -E ':80|:443'
 
 3. Check Caddy logs for certificate errors:
 ```bash
-docker-compose -f docker-compose.caddy.yml logs caddy | grep -i certificate
+docker compose -f examples/compose/docker-compose.caddy.yml logs caddy | grep -i certificate
 ```
 
 ### Authentication Not Working
@@ -334,7 +331,7 @@ docker run --rm caddy:2-alpine caddy hash-password --plaintext 'test123'
 ```
 3. Check Caddy config syntax:
 ```bash
-docker-compose -f docker-compose.caddy.yml exec caddy caddy validate --config /etc/caddy/Caddyfile
+docker compose -f examples/compose/docker-compose.caddy.yml exec caddy caddy validate --config /etc/caddy/Caddyfile
 ```
 
 ## Advanced Configuration
@@ -407,21 +404,21 @@ Access metrics at `http://localhost:2019/metrics`
 
 Here's a complete production-ready example:
 
-**docker-compose.caddy.yml:**
+**examples/compose/docker-compose.caddy.yml:**
 ```yaml
 version: '3.8'
 
 services:
   rpa-worker-vnc:
-    build: .
-    image: rpa-worker-selenium:latest
+
+    image: ghcr.io/nailtongomes/rpa-worker-selenium:latest
     environment:
       - USE_XVFB=1
       - USE_VNC=1
       - SCREEN_WIDTH=1920
       - SCREEN_HEIGHT=1080
     volumes:
-      - ./scripts:/app/src
+      - ../scripts:/app/examples:ro
     networks:
       - rpa-network
     restart: unless-stopped
@@ -510,7 +507,7 @@ novnc.yourdomain.com {
 
 **Start the stack:**
 ```bash
-docker-compose -f docker-compose.caddy.yml up -d
+docker compose -f examples/compose/docker-compose.caddy.yml up -d
 ```
 
 **Access:**

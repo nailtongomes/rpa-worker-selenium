@@ -418,5 +418,5 @@ subprocess.run([
 ## See Also
 
 - [A1 Certificate Management Guide](A1_CERTIFICATE_GUIDE.md) - For personal certificates (.pfx/.p12)
-- [example_cert_management.py](example_cert_management.py) - Personal certificate management example
+- [example_cert_management.py](../examples/scripts/example_cert_management.py) - Personal certificate management example
 - Official [ca-certificates documentation](https://manpages.debian.org/bookworm/ca-certificates/update-ca-certificates.8.en.html)

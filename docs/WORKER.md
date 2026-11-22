@@ -22,26 +22,26 @@ After executing each task, the container restarts to clear memory.
 
 1. **Create directories:**
 ```bash
-mkdir -p app/src app/db app/tmp app/logs
+mkdir -p examples/compose/data/{src,db,tmp,logs}
 ```
 
 2. **Set your script URL:**
 ```bash
 # Create .env file
-cp .env.example .env
+cp .env.example examples/compose/.env
 
 # Edit .env and set SCRIPT_URL
-nano .env
+nano examples/compose/.env
 ```
 
 3. **Start the worker:**
 ```bash
-docker compose -f docker-compose.worker.yml up -d
+docker compose -f examples/compose/docker-compose.worker.yml up -d
 ```
 
 4. **View logs:**
 ```bash
-docker compose -f docker-compose.worker.yml logs -f
+docker compose -f examples/compose/docker-compose.worker.yml logs -f
 ```
 
 ## How It Works
@@ -49,7 +49,7 @@ docker compose -f docker-compose.worker.yml logs -f
 1. Worker downloads your script from SCRIPT_URL
 2. Script runs and does its work
 3. When script exits (with error after ~1 hour), container restarts automatically
-4. All data in `app/db`, `app/src`, `app/tmp`, and `app/logs` persists between restarts
+4. All data in `examples/compose/data/db`, `examples/compose/data/src`, `examples/compose/data/tmp`, and `examples/compose/data/logs` persists between restarts
 
 ## Your Script Requirements
 
@@ -85,34 +85,34 @@ if __name__ == "__main__":
 ## Persistent Data
 
 The following directories persist between restarts:
-- `app/db` - Database files
-- `app/src` - Downloaded scripts (cached)
-- `app/tmp` - Cache and temporary files
-- `app/logs` - Log files
+- `examples/compose/data/db` - Database files
+- `examples/compose/data/src` - Downloaded scripts (cached)
+- `examples/compose/data/tmp` - Cache and temporary files
+- `examples/compose/data/logs` - Log files
 
 ## Commands
 
 ```bash
 # Start worker
-docker compose -f docker-compose.worker.yml up -d
+docker compose -f examples/compose/docker-compose.worker.yml up -d
 
 # Stop worker
-docker compose -f docker-compose.worker.yml down
+docker compose -f examples/compose/docker-compose.worker.yml down
 
 # View logs
-docker compose -f docker-compose.worker.yml logs -f
+docker compose -f examples/compose/docker-compose.worker.yml logs -f
 
 # Restart worker
-docker compose -f docker-compose.worker.yml restart
+docker compose -f examples/compose/docker-compose.worker.yml restart
 
 # Check status
-docker compose -f docker-compose.worker.yml ps
+docker compose -f examples/compose/docker-compose.worker.yml ps
 ```
 
 ## Troubleshooting
 
 **Worker keeps restarting immediately:**
-- Check logs: `docker compose -f docker-compose.worker.yml logs`
+- Check logs: `docker compose -f examples/compose/docker-compose.worker.yml logs`
 - Verify SCRIPT_URL is accessible
 - Check your script for errors
 
@@ -123,9 +123,9 @@ docker compose -f docker-compose.worker.yml ps
 **Need to clear cache:**
 ```bash
 # Stop worker and clear temp files
-docker compose -f docker-compose.worker.yml down
-rm -rf app/tmp/*
-docker compose -f docker-compose.worker.yml up -d
+docker compose -f examples/compose/docker-compose.worker.yml down
+rm -rf examples/compose/data/tmp/*
+docker compose -f examples/compose/docker-compose.worker.yml up -d
 ```
 
 ## Standby Mode (HTTP Server)

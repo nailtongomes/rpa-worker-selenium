@@ -7,15 +7,17 @@ This guide helps you quickly start using the VNC remote debugging feature to obs
 - Docker installed on your machine
 - For traditional VNC: A VNC client (vncviewer, RealVNC Viewer, TightVNC, etc.)
 - For browser-based VNC: Any modern web browser (Chrome, Firefox, Edge, Safari)
-- The rpa-worker-selenium image built
+- A imagem publicada (`docker pull ghcr.io/nailtongomes/rpa-worker-selenium:latest`), que já vem com VNC e noVNC
 
 ## Quick Start
 
-### 1. Build the Image (if not already built)
+### 1. Pull the Image
 
 ```bash
-docker build -t rpa-worker-selenium .
+docker pull ghcr.io/nailtongomes/rpa-worker-selenium:latest
 ```
+
+Run the commands below from the repository root (they mount `examples/scripts`).
 
 ### 2. Choose Your Access Method
 
@@ -29,7 +31,8 @@ docker run --rm \
   -e USE_VNC=1 \
   -e USE_NOVNC=1 \
   -p 6080:6080 \
-  rpa-worker-selenium example_novnc_debug.py
+  -v "$PWD/examples/scripts:/app/examples:ro" \
+  ghcr.io/nailtongomes/rpa-worker-selenium:latest python /app/examples/example_novnc_debug.py
 ```
 
 Then open your browser and navigate to:
@@ -46,7 +49,8 @@ docker run --rm \
   -e USE_XVFB=1 \
   -e USE_VNC=1 \
   -p 5900:5900 \
-  rpa-worker-selenium example_vnc_debug.py
+  -v "$PWD/examples/scripts:/app/examples:ro" \
+  ghcr.io/nailtongomes/rpa-worker-selenium:latest python /app/examples/example_vnc_debug.py
 ```
 
 Connect with your VNC client:
@@ -70,7 +74,8 @@ docker run --rm \
   -e USE_NOVNC=1 \
   -p 5900:5900 \
   -p 6080:6080 \
-  rpa-worker-selenium example_vnc_debug.py
+  -v "$PWD/examples/scripts:/app/examples:ro" \
+  ghcr.io/nailtongomes/rpa-worker-selenium:latest python /app/examples/example_vnc_debug.py
 ```
 
 Now you can access via:
@@ -105,7 +110,8 @@ docker run --rm \
   -e NOVNC_PORT=6081 \
   -p 5901:5901 \
   -p 6081:6081 \
-  rpa-worker-selenium example_novnc_debug.py
+  -v "$PWD/examples/scripts:/app/examples:ro" \
+  ghcr.io/nailtongomes/rpa-worker-selenium:latest python /app/examples/example_novnc_debug.py
 ```
 
 Access via browser at `http://localhost:6081/vnc.html`
@@ -113,9 +119,7 @@ Access via browser at `http://localhost:6081/vnc.html`
 ### Debug with PJeOffice
 
 ```bash
-# Build with PJeOffice support first
-docker build --build-arg BUILD_PJEOFFICE=1 -t rpa-worker-selenium-pje .
-
+# A imagem publicada já inclui PJeOffice, VNC e noVNC
 # Run with all services
 docker run --rm \
   -e USE_XVFB=1 \
@@ -124,19 +128,20 @@ docker run --rm \
   -e USE_VNC=1 \
   -e USE_NOVNC=1 \
   -p 6080:6080 \
-  rpa-worker-selenium-pje my_script.py
+  -v "$PWD:/app/work:ro" \
+  ghcr.io/nailtongomes/rpa-worker-selenium:latest python /app/work/my_script.py
 ```
 
 Access via browser at `http://localhost:6080/vnc.html`
 
 ### Use Docker Compose
 
-Create or use the included `docker-compose.yml`:
+Use o exemplo `examples/compose/docker-compose.yml` (perfil `debug`) ou crie o seu:
 
 ```yaml
 services:
   rpa-worker-vnc:
-    image: rpa-worker-selenium:latest
+    image: ghcr.io/nailtongomes/rpa-worker-selenium:latest
     ports:
       - "6080:6080"  # noVNC browser access
       - "5900:5900"  # Traditional VNC (optional)
@@ -247,7 +252,8 @@ docker run --rm \
   -e USE_VNC=1 \
   -e USE_NOVNC=1 \
   -p 6080:6080 \
-  rpa-worker-selenium example_novnc_debug.py
+  -v "$PWD/examples/scripts:/app/examples:ro" \
+  ghcr.io/nailtongomes/rpa-worker-selenium:latest python /app/examples/example_novnc_debug.py
 
 # Open browser to: http://localhost:6080/vnc.html
 # Click "Connect"
@@ -261,7 +267,8 @@ docker run --rm \
   -e USE_XVFB=1 \
   -e USE_VNC=1 \
   -p 5900:5900 \
-  rpa-worker-selenium example_vnc_debug.py
+  -v "$PWD/examples/scripts:/app/examples:ro" \
+  ghcr.io/nailtongomes/rpa-worker-selenium:latest python /app/examples/example_vnc_debug.py
 
 # In another terminal, connect
 vncviewer localhost:5900
@@ -300,17 +307,10 @@ You should see:
   - Run the container in a private network
   - Do not expose VNC/noVNC ports to the internet
 
-## Alpine Image Note
-
-**Important:** The noVNC feature is **not available** in `Dockerfile.alpine`. This is intentional to keep the Alpine image lightweight for serverless deployments. If you need noVNC, use one of the other Dockerfiles:
-- `Dockerfile` (main unified - Chrome/Brave)
-- `Dockerfile.firefox`
-- `Dockerfile.trixie` (Debian Trixie-based with enhanced GUI support)
-
 ## Additional Resources
 
-- Main README: See full documentation in [README.md](README.md)
-- Traditional VNC example: See [example_vnc_debug.py](example_vnc_debug.py)
-- Browser-based VNC example: See [example_novnc_debug.py](example_novnc_debug.py)
+- Main README: See full documentation in [README.md](../README.md)
+- Traditional VNC example: See [example_vnc_debug.py](../examples/scripts/example_vnc_debug.py)
+- Browser-based VNC example: See [example_novnc_debug.py](../examples/scripts/example_novnc_debug.py)
 - Production proxy setup: See [VNC_CADDY_PROXY.md](VNC_CADDY_PROXY.md)
-- Tests: Run `python test_vnc.py` and `python test_vnc_integration.py`
+- Tests: `pytest tests/unit/test_entrypoint.py` (ordem e dependências dos serviços VNC/noVNC)
