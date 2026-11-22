@@ -23,10 +23,9 @@ def test_imports():
     try:
         import full_smoke_test
         print("  ✓ full_smoke_test module imported successfully")
-        return True
     except Exception as e:
         print(f"  ✗ Failed to import full_smoke_test: {e}")
-        return False
+        raise
 
 
 def test_log_function():
@@ -49,10 +48,9 @@ def test_log_function():
         importlib.reload(fsm)
         
         print("  ✓ Log functions work correctly")
-        return True
     except Exception as e:
         print(f"  ✗ Log function test failed: {e}")
-        return False
+        raise
 
 
 def test_record_test_function():
@@ -79,12 +77,11 @@ def test_record_test_function():
         assert test_results["test_fail"]["passed"] is False
         
         print("  ✓ record_test function works correctly")
-        return True
     except Exception as e:
         print(f"  ✗ record_test function test failed: {e}")
         import traceback
         traceback.print_exc()
-        return False
+        raise
 
 
 def test_check_python_version():
@@ -105,12 +102,11 @@ def test_check_python_version():
         assert test_results["python_version"]["passed"] is True
         
         print("  ✓ check_python_version works correctly")
-        return True
     except Exception as e:
         print(f"  ✗ check_python_version test failed: {e}")
         import traceback
         traceback.print_exc()
-        return False
+        raise
 
 
 def test_check_process_alive():
@@ -132,12 +128,11 @@ def test_check_process_alive():
         assert result is False
         
         print("  ✓ check_process_alive works correctly")
-        return True
     except Exception as e:
         print(f"  ✗ check_process_alive test failed: {e}")
         import traceback
         traceback.print_exc()
-        return False
+        raise
 
 
 def test_filesystem_operations():
@@ -161,12 +156,11 @@ def test_filesystem_operations():
         assert fsm.test_results["filesystem_operations"]["passed"] is True
         
         print("  ✓ test_filesystem_operations works correctly")
-        return True
     except Exception as e:
         print(f"  ✗ test_filesystem_operations test failed: {e}")
         import traceback
         traceback.print_exc()
-        return False
+        raise
 
 
 def test_script_downloader_test():
@@ -187,12 +181,11 @@ def test_script_downloader_test():
         assert test_results["script_downloader"]["passed"] is True
         
         print("  ✓ test_script_downloader works correctly")
-        return True
     except Exception as e:
         print(f"  ✗ test_script_downloader test failed: {e}")
         import traceback
         traceback.print_exc()
-        return False
+        raise
 
 
 def test_environment_variables_test():
@@ -213,12 +206,11 @@ def test_environment_variables_test():
         assert test_results["environment_variables"]["passed"] is True
         
         print("  ✓ test_environment_variables works correctly")
-        return True
     except Exception as e:
         print(f"  ✗ test_environment_variables test failed: {e}")
         import traceback
         traceback.print_exc()
-        return False
+        raise
 
 
 def test_report_generation():
@@ -262,12 +254,11 @@ def test_report_generation():
             assert "test3" in report["tests"]
         
         print("  ✓ generate_report works correctly")
-        return True
     except Exception as e:
         print(f"  ✗ generate_report test failed: {e}")
         import traceback
         traceback.print_exc()
-        return False
+        raise
 
 
 def test_configuration_from_env():
@@ -298,55 +289,8 @@ def test_configuration_from_env():
         assert fsm.BRAVE_BROWSER_PATH == '/opt/brave'
         
         print("  ✓ Configuration from environment variables works correctly")
-        return True
     except Exception as e:
         print(f"  ✗ Configuration test failed: {e}")
         import traceback
         traceback.print_exc()
-        return False
-
-
-def main():
-    """Run all tests."""
-    print("=" * 60)
-    print("Full Smoke Test - Unit Test Suite")
-    print("=" * 60)
-    print()
-    
-    results = []
-    
-    try:
-        results.append(test_imports())
-        results.append(test_log_function())
-        results.append(test_record_test_function())
-        results.append(test_check_python_version())
-        results.append(test_check_process_alive())
-        results.append(test_filesystem_operations())
-        results.append(test_script_downloader_test())
-        results.append(test_environment_variables_test())
-        results.append(test_report_generation())
-        results.append(test_configuration_from_env())
-        
-        print()
-        print("=" * 60)
-        passed = sum(results)
-        total = len(results)
-        print(f"Test Results: {passed}/{total} passed")
-        print("=" * 60)
-        
-        if all(results):
-            print("✓ All tests passed successfully!")
-            return 0
-        else:
-            print(f"✗ {total - passed} test(s) failed!")
-            return 1
-            
-    except Exception as e:
-        print(f"\n✗ Unexpected error: {e}")
-        import traceback
-        traceback.print_exc()
-        return 1
-
-
-if __name__ == "__main__":
-    sys.exit(main())
+        raise
