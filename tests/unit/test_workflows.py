@@ -160,3 +160,11 @@ def test_dependabot_updates_github_actions():
     config = yaml.safe_load((REPO_ROOT / ".github" / "dependabot.yml").read_text())
     ecosystems = {u["package-ecosystem"] for u in config["updates"]}
     assert "github-actions" in ecosystems
+
+
+def test_gate_scenario_titles_have_no_colon():
+    """test-image.sh separa título e função por ':' — um ':' no título corta o resumo."""
+    text = (REPO_ROOT / GATE).read_text()
+    block = text[text.index("SCENARIOS=("):text.index(")", text.index("SCENARIOS=("))]
+    for entry in re.findall(r'"([^"]+)"', block):
+        assert entry.count(":") == 1, f"título com ':' em {entry!r}"
