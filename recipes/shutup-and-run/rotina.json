@@ -1,0 +1,23 @@
+{
+  "name": "rpa-rotina",
+  "image": "ghcr.io/nailtongomes/rpa-worker-selenium:latest",
+  "env": {
+    "USE_XVFB": "1",
+    "USE_OPENBOX": "1",
+    "USE_PJEOFFICE": "1",
+    "A1_PFX_PATH": "/run/shutup-and-run/certificate/client.pfx",
+    "A1_PFX_PASSWORD_FILE": "/run/shutup-and-run/secrets/certificate-password",
+    "WORKER_ID": "pc-local"
+  },
+  "secret_env": {
+    "SCRIPT_URL": null,
+    "API_TOKEN": null
+  },
+  "cpu": 1,
+  "memory": "2g",
+  "shm": "1g",
+  "timeout_secs": 1800,
+  "policy": "interval",
+  "interval_secs": 900,
+  "enabled": false
+}

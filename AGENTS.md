@@ -44,11 +44,12 @@ Para conferir se uma mudança alterou o contrato, compare snapshots
 | `.dockerignore` | **allowlist**: só `requirements.txt` e `image/` entram no contexto |
 | `tests/unit/` | testes rápidos no host (sem Docker) — rodam com `pytest` |
 | `tests/image/` | testes que rodam dentro da imagem (contrato, serviços, browsers, integração) + `fixtures/` |
+| `recipes/` | receitas plug and play (JSON do shutup-and-run, compose, scripts modelo); validadas por `tests/unit/test_recipes.py`, e a de teste do A1 roda no portão |
 | `examples/server/` | N workers num servidor: compose com 4 workers + `workers.sh` (docker run) |
 | `examples/compose/` | compose de worker, standby, debug (VNC) e Caddy |
 | `examples/scripts/` | scripts de exemplo (não vão para a imagem) |
 | `docs/` | guias de uso; `docs/baseline/` tem a foto da imagem de produção |
-| `scripts/` | `test-image.sh` (portão), `image-snapshot.sh`, `release-notes.sh` (notas do GitHub Release) e `update-icp-brasil.py` |
+| `scripts/` | `test-image.sh` (portão), `run-recipe.py` (roda uma receita do shutup-and-run com o Docker local), `image-snapshot.sh`, `release-notes.sh` (notas do GitHub Release) e `update-icp-brasil.py` |
 | `.github/workflows/ci.yml` | CI de PR: unit tests + build igual ao release + `test-image.sh` |
 | `.github/workflows/build-push-ghcr.yml` | release: build → `test-image.sh` → push para o GHCR |
 | `.github/workflows/nightly.yml` | build diário sem cache + `test-image.sh` + relatório de drift |
@@ -88,6 +89,11 @@ exige conferir o fingerprint e fixá-lo no script **e** em `tests/unit/test_a1ce
 
 **Logs com URL:** nunca registre `SCRIPT_URL`/`HELPER_URLS`/URLs de usuário cruas: use `mask_url`
 (bash, entrypoint) ou `script_downloader.mask_url`/`mask_text` (Python).
+
+**Mexer nas receitas (`recipes/`):** elas são copiadas e rodadas como estão. As do shutup-and-run seguem o
+contrato dele (campos aceitos, `cpu` ≤ 1 e `memory` ≤ 2g do perfil `shared-pc`, certificado nos caminhos fixos
+`/run/shutup-and-run/...`); `tests/unit/test_recipes.py` trava isso e o portão roda `teste-a1.json`. Segredos só
+como `secret_env: null` ou arquivo; URLs de exemplo em `example.com`; portas só em `127.0.0.1`.
 
 **Mexer no entrypoint:** mantenha `set -e`, funções pequenas e o padrão de log
 `$(log_timestamp) <emoji> mensagem`. Serviços que dependem de outro (OpenBox → Xvfb,
@@ -173,5 +179,8 @@ noVNC → VNC) devem checar a dependência e pular com aviso, não falhar.
 - [x] **Quick wins:** URLs com token mascaradas nos logs; relay conferido antes de cada iteração do
   loop; `/app/preflight.py`; ACs da ICP-Brasil em `/opt/icp-brasil` (`verify_chain`); GitHub Release
   com notas e rollback; loop do entrypoint sem duplicação (usa as mesmas funções via `export -f`).
+- [x] **Receitas:** `recipes/` (shutup-and-run: teste do A1, rotina, tarefa por poll; Docker local com noVNC;
+  worker na VPS saindo pela internet do cliente), `scripts/run-recipe.py` e cenário no portão; o preflight tenta
+  de novo um browser lento (aviso, não falha).
 - [ ] **Fase 3:** alinhar `requirements.txt` com o que de fato roda (`cryptography`, `psutil`,
   `oscrypto`); revisar `set -e` x falha no download do profile.

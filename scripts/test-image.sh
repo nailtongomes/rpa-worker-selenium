@@ -121,6 +121,28 @@ scenario_a1_certificate() {
             /repo/tests/image/test_preflight.py"
 }
 
+scenario_recipe_shutup_and_run() {
+    # recipes/shutup-and-run/teste-a1.json como o shutup-and-run roda num PC compartilhado:
+    # 1 CPU, 2 GB sem swap, --init, pids 4096, sem portas, certificado repassado (somente
+    # leitura) em /run/shutup-and-run/... -> preflight (browsers + A1 + Java) precisa passar
+    local dir="$RESULTS/recipe" log="$RESULTS/logs/recipe-shutup-and-run.log" rc arg
+    local password='Senha-Receita-7' docker_args=()
+    rm -rf "$dir" && mkdir -p "$dir" && chmod 777 "$dir"
+    run_in_image --entrypoint python "$IMAGE" -c \
+        "import sys; sys.path.insert(0, '/app'); import a1_testkit as k; k.make_test_pki('/results/recipe/pki', '${password}')" \
+        || { echo "não gerou a ICP de teste"; return 1; }
+    printf '%s' "$password" > "$dir/senha.txt"
+    for arg in "${EXTRA_ARGS[@]}"; do docker_args+=("--docker-arg=$arg"); done
+    timeout 1200 python3 "$REPO/scripts/run-recipe.py" "$REPO/recipes/shutup-and-run/teste-a1.json" \
+        --image "$IMAGE" --pfx "$dir/pki/a1.pfx" --password-file "$dir/senha.txt" "${docker_args[@]}" > "$log" 2>&1
+    rc=$?
+    grep -E '✅|⚠️|❌' "$log" | tail -25
+    if grep -q "$password" "$log"; then echo "a senha do certificado apareceu no log"; return 1; fi
+    grep -q "Firefox apresenta o certificado" "$log" || { echo "A1 não foi testado nos browsers"; return 1; }
+    grep -q "worker pronto" "$log" || { echo "preflight não aprovou o worker"; return 1; }
+    return "$rc"
+}
+
 # Relay de teste dentro do container ("internet falsa": responde a qualquer host com o
 # IP 203.0.113.7 e grava os destinos), iniciado antes do entrypoint, como um relay real.
 RELAY_FAKE_IP="203.0.113.7"
@@ -329,6 +351,7 @@ SCENARIOS=(
     "browsers headless sem display:scenario_headless_no_display"
     "serviços + browsers + integração (Xvfb/OpenBox/PJeOffice/VNC/noVNC):scenario_full_services"
     "certificado A1 (ICP de teste, .p7s, PAdES, Java, browsers com mTLS):scenario_a1_certificate"
+    "receita shutup-and-run (teste-a1.json: 1 CPU, 2 GB, certificado repassado):scenario_recipe_shutup_and_run"
     "relay de saída (EGRESS_PROXY_URL - todo o tráfego, DNS, WebRTC, A1):scenario_egress_relay"
     "relay de saída - proxy HTTP e falhas (relay fora do ar, senha errada):scenario_egress_failures"
     "smoke_test.py (falha se o browser falhar):scenario_smoke_test"

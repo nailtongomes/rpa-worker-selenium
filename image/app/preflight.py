@@ -13,6 +13,9 @@ Junta três verificações (cada uma também existe sozinha):
   2. a1         /app/a1_check.py, se houver A1_PFX_URL/A1_PFX_PATH (ou --a1 on / self-test).
   3. egress     /app/egress_check.py, se houver EGRESS_PROXY_URL (ou --egress on).
 
+Cada browser/URL tem uma nova tentativa: abrir só na segunda vira aviso (máquina com
+pouca CPU), não falha.
+
 Exit 0 se nada falhou (avisos não falham), 1 caso contrário. O JSON junta os
 relatórios de cada parte em "verificacoes" (para Kestra/monitoramento). Senhas
 nunca aparecem: a1_check e egress_check já as omitem e as URLs vão mascaradas.
@@ -48,6 +51,7 @@ from script_downloader import mask_text, mask_url  # noqa: E402
 APP = Path(__file__).resolve().parent
 PAGE_TITLE = "PREFLIGHT-OK"
 SYMBOL = {"ok": "✅", "aviso": "⚠️ ", "erro": "❌", "pulado": "⏭️ "}
+BROWSER_TRIES = 2  # 1 nova tentativa por browser/URL (ver attempt)
 
 
 def _has_display() -> bool:
@@ -132,12 +136,7 @@ def check_browsers(names: list, urls: list, insecure: bool) -> dict:
     steps = []
 
     def run(step: str, fn) -> None:
-        try:
-            detail = fn()
-            steps.append({"status": "ok", "passo": step, "detalhe": detail})
-        except Exception as exc:  # noqa: BLE001 - o relatório precisa continuar
-            steps.append({"status": "erro", "passo": step,
-                          "detalhe": f"{type(exc).__name__}: {mask_text(exc, *urls)[:300]}"})
+        steps.append(attempt(step, fn, urls))
 
     with _LocalPage() as page:
         for name in names:
@@ -161,6 +160,30 @@ def check_browsers(names: list, urls: list, insecure: bool) -> dict:
 
         run(f"Chrome abre {mask_url(url)}", reach)
     return _summary(steps)
+
+
+def attempt(step: str, fn, urls: list = (), tries: int = BROWSER_TRIES) -> dict:
+    """Roda ``fn`` até ``tries`` vezes. Passar só numa nova tentativa é aviso, não erro:
+    com pouca CPU (ex.: 1 núcleo no shutup-and-run, PJeOffice subindo junto) a primeira
+    abertura de um browser pode estourar o tempo e a segunda abrir normalmente."""
+    first_error = ""
+    for n in range(1, tries + 1):
+        started = time.time()
+        try:
+            detail = fn()
+        except Exception as exc:  # noqa: BLE001 - o relatório precisa continuar
+            error = f"{type(exc).__name__}: {mask_text(exc, *urls)[:300]}"
+            first_error = first_error or error
+            if n == tries:
+                return {"status": "erro", "passo": step, "detalhe": error}
+            continue
+        took = f"{time.time() - started:.0f}s"
+        if n == 1:
+            return {"status": "ok", "passo": step, "detalhe": f"{detail} [{took}]"}
+        return {"status": "aviso", "passo": step,
+                "detalhe": f"{detail} [{took}] na tentativa {n}; antes: {first_error[:200]} "
+                           "(browser lento: pouca CPU ou máquina ocupada)"}
+    raise AssertionError("tries precisa ser >= 1")
 
 
 def _summary(steps: list) -> dict:
