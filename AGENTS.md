@@ -68,6 +68,10 @@ instalados em camadas posteriores, como o `websockify` do noVNC, também podem f
 e termine o mesmo `RUN` com `rm -rf /var/lib/apt/lists/*`. Coloque-o perto de pacotes
 do mesmo tipo e lembre que camadas mais acima invalidam o cache de tudo que vem depois.
 
+**Mexer no certificado A1:** a API pública é `image/app/a1cert.py` (scripts de produção importam).
+Mantenha as assinaturas das funções e a regra de nunca expor a senha (log, argv, repr). Qualquer
+mudança precisa passar em `tests/image/test_a1_certificate.py` (Chrome, UC e Firefox com mTLS).
+
 **Mexer no entrypoint:** mantenha `set -e`, funções pequenas e o padrão de log
 `$(log_timestamp) <emoji> mensagem`. Serviços que dependem de outro (OpenBox → Xvfb,
 noVNC → VNC) devem checar a dependência e pular com aviso, não falhar.
@@ -142,5 +146,7 @@ noVNC → VNC) devem checar a dependência e pular com aviso, não falhar.
   `image/**` e `requirements.txt`; um único build igual ao de produção no CI; sem `|| exit 0`;
   testes de browser offline (fixtures locais) + online (página do projeto); `smoke_test.py`
   falha se o browser falhar; build noturno sem cache com relatório de drift.
+- [x] **Certificado A1:** `a1cert.py` (API), `a1_check.py` (verificador para o A1 real, no servidor),
+  `a1_testkit.py` (ICP de teste + servidor mTLS) e cenário no portão; Actions em Node 24 + Dependabot.
 - [ ] **Fase 3:** alinhar `requirements.txt` com o que de fato roda (`cryptography`, `psutil`,
   `oscrypto`); revisar `set -e` x falha no download do profile; remover duplicação do loop no entrypoint.

@@ -24,11 +24,13 @@ Opções:
     --browsers LISTA     chrome,uc,firefox (padrão: todos)
     --keep               não remove o certificado do NSS/policies ao final
     --warn-days N        avisa se faltar menos de N dias para vencer (padrão: 30)
+    --json ARQUIVO       grava o resultado em JSON (para Kestra/monitoramento)
 """
 
 from __future__ import annotations
 
 import argparse
+import json
 import logging
 import os
 import shutil
@@ -48,10 +50,16 @@ OK, WARN, FAIL = "✅", "⚠️ ", "❌"
 class Report:
     def __init__(self) -> None:
         self.failures = 0
+        self.warnings = 0
+        self.steps: list = []
 
     def line(self, status: str, step: str, detail: str = "") -> None:
         if status == FAIL:
             self.failures += 1
+        elif status == WARN:
+            self.warnings += 1
+        level = {OK: "ok", WARN: "aviso", FAIL: "erro"}[status]
+        self.steps.append({"status": level, "passo": step, "detalhe": detail})
         print(f"{status} {step}" + (f": {detail}" if detail else ""), flush=True)
 
     def step(self, name: str, fn):
@@ -123,6 +131,18 @@ def _visit(report: Report, name: str, opener, server, cert) -> None:
             pass
 
 
+def _write_json(path, report: Report, info: dict) -> None:
+    if not path:
+        return
+    Path(path).write_text(json.dumps({
+        "ok": report.failures == 0,
+        "falhas": report.failures,
+        "avisos": report.warnings,
+        "certificado": info,
+        "passos": report.steps,
+    }, ensure_ascii=False, indent=2), encoding="utf-8")
+
+
 def main(argv=None) -> int:
     parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     parser.add_argument("--self-test", action="store_true")
@@ -131,6 +151,7 @@ def main(argv=None) -> int:
     parser.add_argument("--browsers", default="chrome,uc,firefox")
     parser.add_argument("--keep", action="store_true")
     parser.add_argument("--warn-days", type=int, default=30)
+    parser.add_argument("--json")
     args = parser.parse_args(argv)
     logging.basicConfig(level=logging.WARNING, format="%(levelname)s %(name)s: %(message)s")
 
@@ -142,6 +163,7 @@ def main(argv=None) -> int:
 
     cert = report.step("abrir o .pfx com a senha", lambda: _load(args, report, workdir))
     if cert is None:
+        _write_json(args.json, report, {})
         print("\n❌ não foi possível continuar sem abrir o certificado")
         return 1
 
@@ -158,6 +180,9 @@ def main(argv=None) -> int:
         report.line(WARN, "validade", f"vence em {cert.days_left} dias ({info['valido_ate']})")
     else:
         report.line(OK, "validade", f"{cert.days_left} dias restantes ({info['valido_ate']})")
+
+    for level, subject, message in a1cert.usage_findings(cert):
+        report.line({"ok": OK, "aviso": WARN, "erro": FAIL}[level], subject, message)
 
     pdf = Path(args.pdf) if args.pdf else kit.make_sample_pdf(workdir / "documento.pdf")
 
@@ -204,6 +229,7 @@ def main(argv=None) -> int:
                         if not left else "o certificado ficou no NSS do Chrome")
         shutil.rmtree(workdir, ignore_errors=True)
 
+    _write_json(args.json, report, info)
     print()
     if report.failures:
         print(f"❌ {report.failures} verificação(ões) falharam")

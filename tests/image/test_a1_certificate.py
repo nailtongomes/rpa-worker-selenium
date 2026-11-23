@@ -296,3 +296,52 @@ def test_a1_check_cli_end_to_end(pki, pki_url, tmp_path):
     assert PASSWORD not in output
     assert (tmp_path / "out" / "documento.pdf.p7s").is_file()
     assert not list((tmp_path / "work").glob("*.pfx")), "o .pfx baixado não foi apagado"
+
+
+# --- a1_check com casos comuns de certificados reais -------------------------------------
+
+def _run_check(pfx: Path, password: str, tmp_path: Path, *extra: str):
+    secret = tmp_path / "senha"
+    secret.write_text(password)
+    env = {k: v for k, v in os.environ.items() if not k.startswith("A1_")}
+    env.update(A1_PFX_PATH=str(pfx), A1_PFX_PASSWORD_FILE=str(secret), A1_WORK_DIR=str(tmp_path / "work"))
+    report = tmp_path / "a1-check.json"
+    result = subprocess.run(
+        [sys.executable, "/app/a1_check.py", "--out", str(tmp_path / "out"), "--json", str(report), *extra],
+        capture_output=True, text=True, timeout=600, env=env,
+    )
+    output = result.stdout + result.stderr
+    print(output)
+    assert password not in output, "a senha apareceu na saída"
+    import json
+
+    return result.returncode, output, json.loads(report.read_text())
+
+
+def test_a1_check_pfx_without_chain_passes_with_warning(cert, tmp_path):
+    """Muitos .pfx são exportados sem as ACs: deve funcionar, com aviso."""
+    import dataclasses
+
+    pfx = a1cert.export_pfx(dataclasses.replace(cert, chain=[]), tmp_path / "sem-cadeia.pfx", "Senha-123")
+    rc, output, report = _run_check(pfx, "Senha-123", tmp_path, "--browsers", "chrome")
+    assert rc == 0, output
+    assert report["ok"] is True and report["avisos"] >= 1
+    assert any(s["passo"] == "cadeia" and s["status"] == "aviso" for s in report["passos"])
+    assert report["certificado"]["cpf"] == kit.TEST_CPF
+
+
+def test_a1_check_wrong_password_fails_cleanly(pki, tmp_path):
+    rc, output, report = _run_check(pki["pfx"], "senha-errada", tmp_path)
+    assert rc == 1
+    assert "senha incorreta" in output and "Traceback" not in output
+    assert report["ok"] is False
+
+
+def test_a1_check_flags_non_ascii_password_for_pjeoffice(cert, tmp_path):
+    pfx = a1cert.export_pfx(cert, tmp_path / "acento.pfx", "senha-ção")
+    rc, output, report = _run_check(pfx, "senha-ção", tmp_path, "--browsers", "chrome")
+    java = [s for s in report["passos"] if s["passo"].startswith("Java")]
+    if java and java[0]["status"] == "erro":
+        assert rc == 1 and "fora do ASCII" in java[0]["detalhe"]
+    else:  # um Java futuro que aceite senha não-ASCII
+        assert rc == 0, output

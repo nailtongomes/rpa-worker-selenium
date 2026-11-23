@@ -57,6 +57,13 @@ x-worker-env: &worker-env
   SENHA_TOKEN_A1: ${SENHA_TOKEN_A1:-}
   SECRET_2FA_CNJ: ${SECRET_2FA_CNJ:-}
 
+  # Certificado A1 (opcional): lido por `a1cert.load_from_env()` nos scripts.
+  # Mais seguro que A1_PFX_PASSWORD: um arquivo com a senha montado como volume e
+  # A1_PFX_PASSWORD_FILE apontando para ele (não aparece no `docker inspect`).
+  A1_PFX_URL: ${A1_PFX_URL:-}
+  A1_PFX_PASSWORD: ${A1_PFX_PASSWORD:-}
+  A1_PFX_PASSWORD_FILE: ${A1_PFX_PASSWORD_FILE:-}
+
   TZ: ${TZ:-America/Fortaleza}
 
 # --- Workers ----------------------------------------------------------------

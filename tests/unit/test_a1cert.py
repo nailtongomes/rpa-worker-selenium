@@ -140,3 +140,30 @@ def test_java_password_problem_flags_non_ascii(cert, tmp_path):
 )
 def test_der_unwrap(raw, expected):
     assert a1cert._der_unwrap(raw) == expected
+
+
+def _levels(findings):
+    return {subject: level for level, subject, _ in findings}
+
+
+def test_usage_findings_for_well_formed_certificate(cert):
+    levels = _levels(a1cert.usage_findings(cert))
+    assert levels["chave"] == "ok"
+    assert levels["uso da chave"] == "ok"
+    assert levels["uso estendido"] == "ok"
+    assert levels["cadeia"] == "ok"
+
+
+def test_usage_findings_warns_without_chain(cert):
+    import dataclasses
+
+    levels = _levels(a1cert.usage_findings(dataclasses.replace(cert, chain=[])))
+    assert levels["cadeia"] == "aviso"
+
+
+def test_usage_findings_detects_key_mismatch(cert, pki):
+    import dataclasses
+
+    other = a1cert.load_pfx(pki["expired"], PASSWORD)  # outra chave
+    findings = a1cert.usage_findings(dataclasses.replace(cert, private_key=other.private_key))
+    assert ("erro", "chave", "a chave privada não corresponde ao certificado") in findings
