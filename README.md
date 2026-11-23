@@ -111,6 +111,8 @@ Ele abre o `.pfx`, mostra titular/CPF/validade, assina um PDF (`.p7s` e PAdES), 
 Java/PJeOffice abre o arquivo e se Chrome, SeleniumBase UC e Firefox apresentam o certificado
 a um servidor HTTPS local. Senha com acento ou "ç" é recusada pelo Java/PJeOffice; o
 verificador avisa, e `a1cert.export_pfx()` regrava o arquivo com outra senha.
+A cadeia de um A1 ICP-Brasil é validada até as raízes oficiais do ITI, que vêm na imagem em
+`/opt/icp-brasil` (`a1cert.verify_chain(cert)`). Isso não muda a confiança TLS dos browsers.
 Guia completo: [`docs/A1_CERTIFICATE_GUIDE.md`](docs/A1_CERTIFICATE_GUIDE.md); exemplo:
 [`examples/scripts/example_a1_certificate.py`](examples/scripts/example_a1_certificate.py).
 
@@ -128,8 +130,26 @@ docker run -d --shm-size=2g \
 ```
 
 Fica desligado por padrão. Com o relay configurado e fora do ar, o container para em vez
-de sair pelo IP do servidor. Requisitos do relay e a rotina de teste
+de sair pelo IP do servidor. Com `WORKER_LOOP=1`, o relay é conferido antes de cada
+iteração: se ele cair, a iteração é pulada e o worker volta sozinho quando o relay voltar. Requisitos do relay e a rotina de teste
 (`python /app/egress_check.py`) estão em [`docs/EGRESS_RELAY.md`](docs/EGRESS_RELAY.md).
+
+### Preflight: o worker está pronto?
+
+```bash
+docker exec worker-01 python /app/preflight.py --json /data/preflight.json
+```
+
+Um comando, um JSON. Confere se Chrome, SeleniumBase UC e Firefox abrem. Se houver
+`A1_PFX_URL`, roda o `a1_check.py`; se houver `EGRESS_PROXY_URL`, roda o
+`egress_check.py`. `--url https://sistema...` confere se o worker alcança os sistemas.
+Termina com exit 0 se nada falhou.
+
+### Tokens nas URLs
+
+`SCRIPT_URL`/`HELPER_URLS` podem levar token (GitHub raw, S3/GCS pré-assinada, SAS do Azure,
+`https://usuario:token@...`). O log mostra só o caminho: usuário/senha e o valor de todo
+parâmetro da query viram `***`.
 
 ### Sem `SCRIPT_URL`
 
@@ -193,8 +213,14 @@ Cada release publica três tags:
 | `sha-<7 chars>` | imagem de um commit específico |
 | `YYYYMMDD-HHMMSS` | imagem de um momento específico (rollback) |
 
+Cada release também cria um [GitHub Release](https://github.com/nailtongomes/rpa-worker-selenium/releases)
+com o digest publicado, os PRs incluídos, o que mudou dentro da imagem (versões de
+browsers/drivers/pip) e os **comandos de rollback** para a versão anterior.
+
 Rollback: troque `:latest` pela tag anterior no seu compose/Kestra
-(`docker pull ghcr.io/nailtongomes/rpa-worker-selenium:<tag>`).
+(`docker pull ghcr.io/nailtongomes/rpa-worker-selenium:<tag>`), ou aponte a `:latest` de volta
+para todos com `docker buildx imagetools create -t ...:latest ...:sha-<anterior>`. O GHCR guarda
+só as 5 tags mais recentes.
 
 ---
 
@@ -206,10 +232,13 @@ requirements.txt         # pacotes Python da imagem
 image/
   app/                   # tudo que vai para /app dentro da imagem
     entrypoint.sh        #   orquestra Xvfb/OpenBox/PJeOffice/VNC e executa SCRIPT_URL
+    preflight.py         #   "o worker está pronto?" (browsers + A1 + relay num JSON)
+    a1cert.py ...        #   certificado A1 (a1_check.py) e relay de saída (egress_*.py)
     script_downloader.py #   download de SCRIPT_URL e HELPER_URLS
     task_server.py       #   modo standby (HTTP)
     smoke_test.py ...    #   smoke tests usados no CI e como fallback
     src/                 #   helpers de exemplo (/app/src)
+  icp-brasil/            # raízes + ACs oficiais da ICP-Brasil (ITI) -> /opt/icp-brasil
   patch_chromedriver.py  # usado só durante o build
 tests/
   unit/                  # testes rápidos no host (sem Docker)
@@ -219,7 +248,7 @@ examples/
   compose/               # docker-compose de worker, standby, debug e Caddy
   scripts/               # scripts Python de exemplo
 docs/                    # guias (worker, certificados A1/CA, VNC, testes) e baseline da imagem
-scripts/                 # test-image.sh (portão de qualidade) e image-snapshot.sh
+scripts/                 # test-image.sh (portão), image-snapshot.sh, release-notes.sh, update-icp-brasil.py
 .github/workflows/       # ci.yml (PR), build-push-ghcr.yml (release com testes), nightly.yml
 ```
 

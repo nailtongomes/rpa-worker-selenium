@@ -39,11 +39,12 @@ Cenários (cada um é um `docker run` separado; qualquer falha => exit 1):
 | contrato da imagem | `tests/image/test_contract.py`: arquivos de `/app`, Chrome = ChromeDriver, Firefox + profile com NSS, policies do Chrome graváveis, ferramentas (xdotool, certutil, ImageMagick, Java, x11vnc, noVNC...), módulos Python, defaults de ambiente |
 | browsers headless sem display | `tests/image/test_browsers.py` sem Xvfb |
 | serviços + browsers + integração | Xvfb + OpenBox + PJeOffice + VNC + noVNC ligados: `test_services.py`, `test_browsers.py` (inclui UC headful) e `trixie_integration_test.py` |
-| certificado A1 | `tests/image/test_a1_certificate.py` com uma ICP de teste gerada na hora: `.pfx` por URL + senha (AES, 3DES e RC2), senha errada/certificado vencido, PDF → `.p7s` attached (CAdES-BES) e detached, PDF assinado (PAdES), Java/PJeOffice lendo o `.pfx`, importação/limpeza no NSS, e Chrome, SeleniumBase UC e Firefox (headless e com janela) apresentando o certificado a um servidor HTTPS local que **exige** certificado de cliente; controles negativos sem o certificado; `/app/a1_check.py` de ponta a ponta |
-| relay de saída | `tests/image/test_egress.py` com relay SOCKS5 de teste ("internet falsa"): Python, curl, Java do PJeOffice, Chrome, UC e Firefox saem pelo relay; DNS resolvido no relay (hosts `.invalid`); WebRTC sem IP; policies em `chrome://policy`; localhost direto; A1 (mTLS) junto |
+| certificado A1 | `tests/image/test_a1_certificate.py` + `test_preflight.py` com uma ICP de teste gerada na hora: `.pfx` por URL + senha (AES, 3DES e RC2), senha errada/certificado vencido, PDF → `.p7s` attached (CAdES-BES) e detached, PDF assinado (PAdES), Java/PJeOffice lendo o `.pfx`, importação/limpeza no NSS, e Chrome, SeleniumBase UC e Firefox (headless e com janela) apresentando o certificado a um servidor HTTPS local que **exige** certificado de cliente; controles negativos sem o certificado; `/app/a1_check.py` e `/app/preflight.py` de ponta a ponta |
+| relay de saída | `tests/image/test_egress.py` com relay SOCKS5 de teste ("internet falsa"): Python, curl, Java do PJeOffice, Chrome, UC e Firefox saem pelo relay; DNS resolvido no relay (hosts `.invalid`); WebRTC sem IP; policies em `chrome://policy`; localhost direto; A1 (mTLS) junto; `preflight.py` com o relay |
 | relay de saída: proxy HTTP e falhas | proxy HTTP com senha; relay fora do ar, senha errada e esquema inválido **param** o container; `EGRESS_REQUIRED=0` só avisa; senha fora do log |
 | `smoke_test.py` | o script padrão da imagem agora **falha** se o browser falhar |
-| worker em loop | `WORKER_LOOP=1` baixa `SCRIPT_URL` + `HELPER_URLS` e executa ≥ 2 iterações |
+| worker em loop | `WORKER_LOOP=1` baixa `SCRIPT_URL` + `HELPER_URLS` e executa ≥ 2 iterações; as URLs levam usuário/senha e tokens na query, e nenhum deles pode aparecer no log |
+| worker em loop com relay | relay derrubado no meio do loop: as iterações são puladas (o script não roda) e o worker retoma sozinho quando o relay volta |
 | execução única | `SCRIPT_URL` executa e o helper de `/app/src` é importável |
 | falha propaga exit code | script com `sys.exit(3)` => container termina com erro |
 | comando direto | `docker run <imagem> python --version` |
@@ -88,8 +89,8 @@ docker run --rm --shm-size=2g -v "$PWD:/repo:ro" -w /tmp -e USE_XVFB=1 -e USE_OP
 | Workflow | Quando | O que faz |
 |---|---|---|
 | `ci.yml` | todo PR e push na `main` | `unit-tests` → build com as flags do release → `test-image.sh` → ClearCote (informativo) |
-| `build-push-ghcr.yml` | push na `main` que muda `Dockerfile.trixie`, `requirements.txt` ou `image/**` (ou manual) | build (sem push) → `test-image.sh` na **mesma** imagem → diff com a `:latest` atual → `docker push` das tags `latest`, `sha-<7>`, `YYYYMMDD-HHMMSS` |
-| `nightly.yml` | todo dia 04:17 (Brasília) e manual | build **sem cache** + `test-image.sh` + relatório do que mudaria (Debian/PyPI) + variante com FFmpeg (gravação de tela) |
+| `build-push-ghcr.yml` | push na `main` que muda `Dockerfile.trixie`, `requirements.txt` ou `image/**` (ou manual) | build (sem push) → `test-image.sh` na **mesma** imagem → diff com a `:latest` atual → `docker push` das tags `latest`, `sha-<7>`, `YYYYMMDD-HHMMSS` → GitHub Release (`scripts/release-notes.sh`: digest, PRs, mudanças na imagem, rollback) |
+| `nightly.yml` | todo dia 04:17 (Brasília) e manual | build **sem cache** + `test-image.sh` + relatório do que mudaria (Debian/PyPI) + variante com FFmpeg (gravação de tela) + ACs da ICP-Brasil x ITI (falha se o ITI publicou AC nova: rode `scripts/update-icp-brasil.py`) |
 
 Se o portão falhar no release, **nada é publicado** e a `:latest` atual continua em
 produção. Falhas do nightly chegam por e-mail (notificação padrão do GitHub para workflows

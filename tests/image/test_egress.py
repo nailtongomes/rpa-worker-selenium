@@ -287,3 +287,21 @@ def test_egress_check_cli(tmp_path):
     steps = {s["passo"]: s for s in data["passos"]}
     for name in ("Python (requests)", "Chrome (Selenium)", "Chrome (SeleniumBase UC)", "Firefox", "Java (PJeOffice)"):
         assert steps[name]["status"] == "ok" and steps[name]["detalhe"] == FAKE_IP, steps.get(name)
+
+
+def test_preflight_with_relay(tmp_path):
+    """preflight.py inclui o egress_check quando EGRESS_PROXY_URL está definido."""
+    report = tmp_path / "preflight.json"
+    result = subprocess.run(
+        [sys.executable, "/app/preflight.py", "--browsers", "none", "--insecure", "--json", str(report)],
+        capture_output=True, text=True, timeout=600,
+    )
+    output = result.stdout + result.stderr
+    print(output)
+    assert result.returncode == 0, output
+    assert ep.upstream_from_env().password not in output
+    data = json.loads(report.read_text())
+    egress = data["verificacoes"]["egress"]
+    assert egress["ok"] is True and not egress.get("pulado")
+    steps = {s["passo"]: s for s in egress["passos"]}
+    assert steps["Python (requests)"]["detalhe"] == FAKE_IP

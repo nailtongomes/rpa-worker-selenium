@@ -69,7 +69,9 @@ Exemplo completo: [`examples/scripts/example_a1_certificate.py`](../examples/scr
 |---|---|
 | `load_from_env()` / `load_pfx(path, senha)` | Abre o `.pfx`: AES moderno e legados 3DES/RC2. Senha errada → `A1Error("senha incorreta...")` |
 | `cert.summary()`, `cert.cpf`, `cert.cnpj`, `cert.days_left`, `cert.is_valid_now` | Dados do certificado (CPF/CNPJ dos campos ICP-Brasil) |
-| `usage_findings(cert)` | Diagnóstico: tamanho da chave, chave corresponde ao certificado, `digitalSignature`/`nonRepudiation`, `clientAuth`, cadeia, ICP-Brasil |
+| `usage_findings(cert)` | Diagnóstico: tamanho da chave, chave corresponde ao certificado, `digitalSignature`/`nonRepudiation`, `clientAuth`, cadeia, ICP-Brasil (cadeia validada até as raízes do ITI) |
+| `verify_chain(cert)` | Valida a cadeia até uma raiz oficial da ICP-Brasil (`openssl verify`) e devolve o nome da raiz. Usa as ACs do `.pfx` e as de `/opt/icp-brasil`, então funciona com `.pfx` sem cadeia |
+| `icp_brasil_certs(roots_only=False)` | Raízes + ACs oficiais da ICP-Brasil, para usar como `ca_certs` em `verify_p7s`/`verify_pdf` (validar documentos assinados por terceiros) |
 | `install_chrome(cert, padrões)` / `uninstall_chrome(cert)` | NSS do Chrome + policy em `/etc/opt/chrome*/policies/managed/auto_select_certificate.json` |
 | `install_firefox(cert, profile)` / `uninstall_firefox(cert, profile)` | NSS do profile + `security.default_personal_cert = "Select Automatically"` em `user.js` |
 | `sign_p7s(cert, arquivo, attached=True)` / `sign_bytes_p7s(...)` | CMS SignedData com `signing-certificate-v2` (CAdES-BES) |
@@ -83,6 +85,35 @@ O apelido no NSS é `rpa-a1-<fingerprint>`. O CN ICP-Brasil (`NOME:CPF`) tem `:`
 NSS interpreta como separador de token, por isso não é usado. As ACs da cadeia entram
 como `rpa-a1-<fingerprint>-caN` e saem no `uninstall`. Certificados que já estavam no NSS
 com outro apelido não são tocados.
+
+### Cadeia ICP-Brasil (`/opt/icp-brasil`)
+
+A imagem traz as raízes e as ACs intermediárias oficiais da ICP-Brasil, baixadas do
+[repositório do ITI](https://acraiz.icpbrasil.gov.br/):
+
+- `raizes.pem`: AC Raiz Brasileira v5, v6, v8 a v13, com fingerprint SHA-256 fixado no
+  repositório. Ficam de fora a v1 e a v2, já vencidas, e a v7, que usa um algoritmo pós-quântico
+  experimental que o OpenSSL ainda não lê.
+- `acs.pem`: todas as ACs do `ACcompactado.zip` do ITI que fecham cadeia até essas raízes.
+  O pacote é conferido com o SHA-512 que o ITI publica.
+
+Elas servem **só** para validar certificados e assinaturas. Não entram no trust store do
+sistema nem no NSS, e a confiança TLS dos browsers continua a mesma. No `a1_check.py`/`usage_findings`:
+
+| Resultado | Significado |
+|---|---|
+| ✅ `cadeia válida até a Autoridade Certificadora Raiz Brasileira vN` | A1 ICP-Brasil legítimo |
+| ⚠️ `a AC emissora não está entre as ACs oficiais empacotadas` | `.pfx` sem a cadeia e com AC que não está no pacote: AC nova (atualize a imagem) ou certificado falso |
+| ❌ `diz ser ICP-Brasil mas a cadeia não fecha` | raiz que não é do ITI, assinatura inválida ou AC vencida |
+
+Para validar um `.p7s` recebido de terceiros:
+
+```python
+a1cert.verify_p7s("documento.pdf.p7s", ca_certs=a1cert.icp_brasil_certs())
+```
+
+O nightly compara o pacote com o ITI todo dia e falha se surgir uma AC nova. Para
+atualizar, rode `scripts/update-icp-brasil.py` e abra um PR.
 
 ### Padrões de URL da policy do Chrome
 

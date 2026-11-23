@@ -6,6 +6,7 @@
 #   - build da imagem de produção SEM cache + scripts/test-image.sh
 #   - relatório do que mudaria em relação à :latest publicada
 #   - build da variante com FFmpeg + teste de gravação de tela
+#   - ACs da ICP-Brasil empacotadas x repositório do ITI
 # Nada é publicado. Falhas de workflows agendados geram e-mail do GitHub.
 # =============================================================================
 name: Nightly
@@ -76,6 +77,27 @@ jobs:
             test-results/
             snapshots/
           retention-days: 14
+
+  # A1 de AC nova (criada pelo ITI depois do pacote em image/icp-brasil) não fecha
+  # cadeia: falha aqui avisa para rodar scripts/update-icp-brasil.py e abrir um PR.
+  icp-brasil:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v7
+
+      - name: ICP-Brasil ACs up to date with ITI
+        run: |
+          set -o pipefail
+          {
+            echo "### 🔐 ACs da ICP-Brasil (ITI x image/icp-brasil)"
+            echo '```'
+          } >> "$GITHUB_STEP_SUMMARY"
+          status=0
+          python3 scripts/update-icp-brasil.py --check 2>&1 | tee -a "$GITHUB_STEP_SUMMARY" || status=$?
+          echo '```' >> "$GITHUB_STEP_SUMMARY"
+          exit "$status"
 
   screen-recording-variant:
     runs-on: ubuntu-latest

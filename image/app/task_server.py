@@ -22,7 +22,7 @@ import time
 import pathlib
 from datetime import datetime
 from flask import Flask, request, jsonify
-from script_downloader import download_file, get_filename_from_url
+from script_downloader import download_file, get_filename_from_url, mask_url
 
 app = Flask(__name__)
 
@@ -115,7 +115,7 @@ def download_and_execute_script(script_url, script_name, task_payload=None):
     global task_executing
     
     try:
-        print(f"{log_timestamp()} ⬇️  Downloading script from: {script_url}")
+        print(f"{log_timestamp()} ⬇️  Downloading script from: {mask_url(script_url)}")
         
         # Download the script to /tmp
         temp_path = pathlib.Path("/tmp")
@@ -259,7 +259,7 @@ def receive_task():
         task_payload = payload.get("payload")
         
         print(f"{log_timestamp()} ✅ Task validated successfully")
-        print(f"{log_timestamp()} 📝 Script URL: {script_url}")
+        print(f"{log_timestamp()} 📝 Script URL: {mask_url(script_url)}")
         print(f"{log_timestamp()} 📝 Script Name: {script_name}")
         
         # Start execution in a background thread

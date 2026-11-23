@@ -491,40 +491,48 @@ start_novnc() {
     fi
 }
 
+# URL safe for logs: hides user:password and every query value (tokens, signatures).
+# The URL goes through stdin so it never shows up in `ps`.
+mask_url() {
+    printf '%s' "$1" | python /app/script_downloader.py --mask 2>/dev/null || echo "***"
+}
+
 # Function to download script with retry and backoff
 download_script_with_retry() {
     local url="$1"
     local max_time=90
     local attempt=1
     local wait_time=5
-    local start_time=$(date +%s)
-    
-    echo "$(log_timestamp) ⬇️  Downloading script from: $url"
-    
+    local start_time
+    start_time=$(date +%s)
+
+    echo "$(log_timestamp) ⬇️  Downloading script from: $(mask_url "$url")"
+
     while true; do
-        local current_time=$(date +%s)
+        local current_time
+        current_time=$(date +%s)
         local elapsed=$((current_time - start_time))
-        
+
         if [ $elapsed -ge $max_time ]; then
             echo "$(log_timestamp) ❌ Download timeout after ${elapsed}s (max ${max_time}s)"
             return 1
         fi
-        
+
         echo "$(log_timestamp) 🔄 Download attempt $attempt (elapsed: ${elapsed}s)..."
-        
+
         # Run the script downloader
         if python /app/script_downloader.py; then
             echo "$(log_timestamp) ✅ Script downloaded successfully"
             return 0
         fi
-        
+
         attempt=$((attempt + 1))
-        
+
         # Exponential backoff: 5s, 10s, 20s, 40s
         echo "$(log_timestamp) ⏳ Waiting ${wait_time}s before retry..."
         sleep $wait_time
         wait_time=$((wait_time * 2))
-        
+
         # Cap wait time at 40s
         if [ $wait_time -gt 40 ]; then
             wait_time=40
@@ -535,20 +543,21 @@ download_script_with_retry() {
 # Function to download and execute a script
 download_and_execute() {
     echo "$(log_timestamp) 🔍 Checking for SCRIPT_URL environment variable..."
-    
+
     if [ -n "$SCRIPT_URL" ]; then
-        echo "$(log_timestamp) 🎯 SCRIPT_URL detected: $SCRIPT_URL"
-        
+        echo "$(log_timestamp) 🎯 SCRIPT_URL detected: $(mask_url "$SCRIPT_URL")"
+
         # Download with retry logic
         if ! download_script_with_retry "$SCRIPT_URL"; then
             echo "$(log_timestamp) ❌ ERROR: Script download failed after retries"
             return 1
         fi
-        
+
         # Determine the downloaded script path
         SCRIPT_PATH=$(python -c "
 import os
 import sys
+sys.path.insert(0, '/app')
 from script_downloader import get_filename_from_url
 
 url = os.getenv('SCRIPT_URL')
@@ -557,18 +566,18 @@ if url:
 else:
     sys.exit(1)
 ")
-        
+
         # Validate script exists
         if [ -z "$SCRIPT_PATH" ]; then
             echo "$(log_timestamp) ❌ ERROR: Failed to determine script path"
             return 1
         fi
-        
+
         if [ ! -f "$SCRIPT_PATH" ]; then
             echo "$(log_timestamp) ❌ ERROR: Downloaded script not found at $SCRIPT_PATH"
             return 1
         fi
-        
+
         echo "$(log_timestamp) ▶️  Executing downloaded script: $SCRIPT_PATH"
         python "$SCRIPT_PATH"
         return $?
@@ -579,90 +588,43 @@ else:
     fi
 }
 
+# Before each loop iteration: with the egress relay on, is it still working?
+# Same check as at startup (EGRESS_CHECK_URL; "off" only probes the relay itself).
+# Without the relay this is a no-op.
+egress_ready() {
+    [ -n "${EGRESS_PID}" ] || return 0
+    local result
+    if result="$(python /app/egress_proxy.py check --port "${EGRESS_LOCAL_PORT}" 2>&1)"; then
+        return 0
+    fi
+    echo "$(log_timestamp) ⚠️  Egress relay unavailable, skipping this iteration: ${result}"
+    return 1
+}
+
 # Execute script in loop mode with restart
 execute_with_loop() {
     echo "$(log_timestamp) 🔁 Worker loop mode enabled (timeout: ${WORKER_TIMEOUT}s, restart delay: ${WORKER_RESTART_DELAY}s)"
-    
+
+    # The iteration runs in a child bash (so `timeout` can kill it) using the same
+    # functions as single-run mode
+    export -f log_timestamp mask_url download_script_with_retry download_and_execute
+
     local iteration=1
-    
+
     while true; do
         echo ""
-        echo "$(log_timestamp) 🚀 Starting iteration #${iteration}..."
-        
-        # Execute script with timeout - call function directly
-        if timeout ${WORKER_TIMEOUT} bash << 'SCRIPT_EOF'
-            # Source the functions we need in this subshell
-            log_timestamp() { echo "[$(date '+%Y-%m-%d %H:%M:%S')]"; }
-            
-            # Re-define download function in subshell
-            download_script_with_retry() {
-                local url="$1"
-                local max_time=90
-                local attempt=1
-                local wait_time=5
-                local start_time=$(date +%s)
-                
-                echo "$(log_timestamp) ⬇️  Downloading script from: $url"
-                
-                while true; do
-                    local current_time=$(date +%s)
-                    local elapsed=$((current_time - start_time))
-                    
-                    if [ $elapsed -ge $max_time ]; then
-                        echo "$(log_timestamp) ❌ Download timeout after ${elapsed}s (max ${max_time}s)"
-                        return 1
-                    fi
-                    
-                    echo "$(log_timestamp) 🔄 Download attempt $attempt (elapsed: ${elapsed}s)..."
-                    
-                    if python /app/script_downloader.py; then
-                        echo "$(log_timestamp) ✅ Script downloaded successfully"
-                        return 0
-                    fi
-                    
-                    attempt=$((attempt + 1))
-                    echo "$(log_timestamp) ⏳ Waiting ${wait_time}s before retry..."
-                    sleep $wait_time
-                    wait_time=$((wait_time * 2))
-                    
-                    if [ $wait_time -gt 40 ]; then
-                        wait_time=40
-                    fi
-                done
-            }
-            
-            # Execute download and run
-            if [ -n "$SCRIPT_URL" ]; then
-                if ! download_script_with_retry "$SCRIPT_URL"; then
-                    echo "$(log_timestamp) ❌ ERROR: Script download failed after retries"
-                    exit 1
-                fi
-                
-                SCRIPT_PATH=$(python -c "
-import os
-import sys
-from script_downloader import get_filename_from_url
+        if ! egress_ready; then
+            local retry_delay="${WORKER_RESTART_DELAY}"
+            [ "${retry_delay}" -ge 10 ] 2>/dev/null || retry_delay=10
+            echo "$(log_timestamp) 💤 Checking the egress relay again in ${retry_delay}s..."
+            sleep "${retry_delay}"
+            continue
+        fi
 
-url = os.getenv('SCRIPT_URL')
-if url:
-    print(f'/tmp/{get_filename_from_url(url)}')
-else:
-    sys.exit(1)
-")
-                
-                if [ -z "$SCRIPT_PATH" ] || [ ! -f "$SCRIPT_PATH" ]; then
-                    echo "$(log_timestamp) ❌ ERROR: Downloaded script not found"
-                    exit 1
-                fi
-                
-                echo "$(log_timestamp) ▶️  Executing downloaded script: $SCRIPT_PATH"
-                python "$SCRIPT_PATH"
-            else
-                echo "$(log_timestamp) ℹ️  SCRIPT_URL not set, running default smoke test..."
-                python /app/smoke_test.py
-            fi
-SCRIPT_EOF
-        then
+        echo "$(log_timestamp) 🚀 Starting iteration #${iteration}..."
+
+        # Execute script with timeout
+        if timeout "${WORKER_TIMEOUT}" bash -c download_and_execute; then
             echo "$(log_timestamp) ✅ Script completed successfully"
         else
             local exit_code=$?
@@ -672,12 +634,12 @@ SCRIPT_EOF
                 echo "$(log_timestamp) ❌ Script failed with exit code: $exit_code"
             fi
         fi
-        
+
         iteration=$((iteration + 1))
-        
+
         echo "$(log_timestamp) 💤 Waiting ${WORKER_RESTART_DELAY}s before next iteration..."
-        sleep ${WORKER_RESTART_DELAY}
-        
+        sleep "${WORKER_RESTART_DELAY}"
+
         echo "$(log_timestamp) 🧹 Cleaning up for next iteration..."
         # Optional: Add cleanup tasks here (clear temp files, reset state, etc.)
     done
