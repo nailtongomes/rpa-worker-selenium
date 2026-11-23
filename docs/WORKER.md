@@ -18,6 +18,9 @@ After executing each task, the container restarts to clear memory.
 
 ## Quick Start
 
+> **Vários workers no mesmo servidor?** Veja [`examples/server/README.md`](../examples/server/README.md)
+> (docker compose com 4 workers e o script `workers.sh`).
+
 ### Single Execution or Loop Mode
 
 1. **Create directories:**

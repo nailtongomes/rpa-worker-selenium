@@ -36,6 +36,7 @@ Para conferir se uma mudança alterou o contrato, compare snapshots
 | `.dockerignore` | **allowlist**: só `requirements.txt` e `image/` entram no contexto |
 | `tests/unit/` | testes rápidos no host (sem Docker) — rodam com `pytest` |
 | `tests/image/` | testes que rodam dentro da imagem (montando o repo em `/repo`) |
+| `examples/server/` | N workers num servidor: compose com 4 workers + `workers.sh` (docker run) |
 | `examples/compose/` | compose de worker, standby, debug (VNC) e Caddy |
 | `examples/scripts/` | scripts de exemplo (não vão para a imagem) |
 | `docs/` | guias de uso; `docs/baseline/` tem a foto da imagem de produção |

@@ -56,6 +56,19 @@ docker run -d --name rpa-worker-01 --shm-size=2g --restart=always \
 Versão com Docker Compose: [`examples/compose/docker-compose.worker.yml`](examples/compose/docker-compose.worker.yml)
 (detalhes em [`docs/WORKER.md`](docs/WORKER.md)).
 
+### Vários workers no mesmo servidor (ex.: 4)
+
+```bash
+cd examples/server
+cp ../../.env.example .env && nano .env   # SCRIPT_URL e segredos
+docker compose up -d                      # 4 workers: rpa-worker-01..04
+# ou, só com Docker:
+./workers.sh start 4
+```
+
+Guia completo (dimensionamento, atualização, rollback, override por worker):
+[`examples/server/README.md`](examples/server/README.md).
+
 ### Ver o navegador ao vivo (noVNC)
 
 ```bash
@@ -143,6 +156,7 @@ tests/
   unit/                  # testes rápidos no host (sem Docker)
   image/                 # testes que rodam DENTRO da imagem
 examples/
+  server/                # N workers em um servidor: docker-compose (4 workers) e workers.sh
   compose/               # docker-compose de worker, standby, debug e Caddy
   scripts/               # scripts Python de exemplo
 docs/                    # guias (worker, certificados A1/CA, VNC, testes) e baseline da imagem

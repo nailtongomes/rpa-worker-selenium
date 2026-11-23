@@ -63,6 +63,8 @@ downloaded_files/
 examples/compose/data/
 examples/compose/recordings/
 examples/compose/logs/
+examples/server/data/
+examples/server/workers/*.env
 
 # Local image snapshots (scripts/image-snapshot.sh); the committed baseline lives in docs/baseline/
 snapshots/
