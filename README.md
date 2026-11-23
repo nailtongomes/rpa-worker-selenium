@@ -88,6 +88,9 @@ e a seção "Standby" de [`docs/WORKER.md`](docs/WORKER.md).
 
 O container executa o comando passado (padrão: `python --version`). Com `WORKER_LOOP=1`
 e sem `SCRIPT_URL`, roda o smoke test embutido (`/app/smoke_test.py`) em loop.
+O smoke test abre `TARGET_URL` (padrão: página deste projeto no GitHub) com SeleniumBase UC
+e **falha** se o browser falhar; `SMOKE_ALLOW_REQUESTS_FALLBACK=1` restaura o comportamento
+antigo (aceitar o fallback via `requests`).
 
 ---
 
@@ -124,7 +127,12 @@ e sem `SCRIPT_URL`, roda o smoke test embutido (`/app/smoke_test.py`) em loop.
 
 ---
 
-## Tags e rollback
+## Release, tags e rollback
+
+Um push na `main` que muda `Dockerfile.trixie`, `requirements.txt` ou `image/` dispara o
+release: **build → `scripts/test-image.sh` na mesma imagem → push**. Se algum teste falhar,
+nada é publicado e a `:latest` atual continua valendo. Um build noturno sem cache avisa
+antes quando Debian/PyPI quebrarem algo.
 
 Cada release publica três tags:
 
@@ -160,8 +168,8 @@ examples/
   compose/               # docker-compose de worker, standby, debug e Caddy
   scripts/               # scripts Python de exemplo
 docs/                    # guias (worker, certificados A1/CA, VNC, testes) e baseline da imagem
-scripts/                 # ferramentas de desenvolvimento (snapshot, testes em Docker)
-.github/workflows/       # build-push-ghcr.yml (release) e smoke-test.yml (CI)
+scripts/                 # test-image.sh (portão de qualidade) e image-snapshot.sh
+.github/workflows/       # ci.yml (PR), build-push-ghcr.yml (release com testes), nightly.yml
 ```
 
 Só o que está em `image/` e o `requirements.txt` entram no contexto de build
@@ -188,13 +196,18 @@ docker build -f Dockerfile.trixie \
   -t rpa-worker:local .
 ```
 
-### Testes dentro da imagem
+### Portão de qualidade da imagem
+
+O mesmo script roda no CI de todo PR, antes de todo release e toda noite:
 
 ```bash
-docker run --rm rpa-worker:local python /app/smoke_test.py
-docker run --rm rpa-worker:local python /app/test_browser_drivers.py
-scripts/test_trixie_docker.sh test     # suíte de integração (monta tests/ no container)
+scripts/test-image.sh rpa-worker:local                     # completo
+RUN_ONLINE_TESTS=0 scripts/test-image.sh rpa-worker:local  # sem internet
 ```
+
+Ele valida o contrato da imagem, todos os browsers (local e na página do projeto no
+GitHub), Xvfb/OpenBox/PJeOffice/VNC/noVNC, worker em loop, execução única, propagação de
+erro e modo standby. Veja [`docs/TESTING.md`](docs/TESTING.md).
 
 ### Comparar a imagem antes/depois de uma mudança
 

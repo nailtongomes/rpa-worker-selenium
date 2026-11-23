@@ -1,14 +1,23 @@
-name: Build and Push to GHCR
+# =============================================================================
+# Release — build → testa a MESMA imagem → só então publica no GHCR
+#
+# A imagem é construída uma vez (load local), passa por scripts/test-image.sh
+# e, somente se todos os cenários passarem, essa mesma imagem recebe as tags
+# latest, sha-<7> e YYYYMMDD-HHMMSS e é enviada. Se um teste falhar, a :latest
+# atual continua intocada.
+# =============================================================================
+name: Release (build, test, push to GHCR)
 
-# Trigger on push to main when Dockerfile.trixie or this workflow changes
 on:
   push:
     branches:
       - main
     paths:
       - 'Dockerfile.trixie'
+      - 'requirements.txt'
+      - 'image/**'
       - '.github/workflows/build-push-ghcr.yml'
-  
+
   # Manual trigger with optional tag suffix
   workflow_dispatch:
     inputs:
@@ -18,7 +27,11 @@ on:
         default: ''
         type: string
 
-# Set permissions for GITHUB_TOKEN
+# Never run two releases at the same time; never cancel one halfway
+concurrency:
+  group: release
+  cancel-in-progress: false
+
 permissions:
   contents: read
   packages: write
@@ -26,61 +39,53 @@ permissions:
 jobs:
   build-and-push:
     runs-on: ubuntu-latest
-    
+    timeout-minutes: 90
+
     steps:
       - name: 🔄 Checkout code
         uses: actions/checkout@v4
-      
+
       - name: 🐳 Set up Docker Buildx
         uses: docker/setup-buildx-action@v3
-      
+
       - name: 🔑 Login to GitHub Container Registry
         uses: docker/login-action@v3
         with:
           registry: ghcr.io
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
-      
+
       - name: 🏷️ Generate tags and labels
         id: meta
+        env:
+          TAG_SUFFIX: ${{ github.event.inputs.tag_suffix }}
         run: |
-          # Get short SHA
-          SHORT_SHA=$(echo ${{ github.sha }} | cut -c1-7)
-          
-          # Generate timestamp in YYYYMMDD-HHmmss format
-          TIMESTAMP=$(date -u +"%Y%m%d-%H%M%S")
-          
-          # Get repository name in lowercase
-          REPO_LOWER=$(echo "${{ github.repository }}" | tr '[:upper:]' '[:lower:]')
-          
-          # Get optional tag suffix from workflow input
-          TAG_SUFFIX="${{ github.event.inputs.tag_suffix }}"
-          
-          # Generate image name
-          IMAGE_NAME="ghcr.io/${REPO_LOWER}"
-          
-          # Generate tags
-          TAGS="${IMAGE_NAME}:latest${TAG_SUFFIX}"
-          TAGS="${TAGS},${IMAGE_NAME}:sha-${SHORT_SHA}${TAG_SUFFIX}"
-          TAGS="${TAGS},${IMAGE_NAME}:${TIMESTAMP}${TAG_SUFFIX}"
-          
-          echo "tags=${TAGS}" >> $GITHUB_OUTPUT
-          echo "image_name=${IMAGE_NAME}" >> $GITHUB_OUTPUT
-          echo "short_sha=${SHORT_SHA}" >> $GITHUB_OUTPUT
-          echo "timestamp=${TIMESTAMP}" >> $GITHUB_OUTPUT
-          
-          echo "### 🏷️ Generated Tags" >> $GITHUB_STEP_SUMMARY
-          echo "- \`latest${TAG_SUFFIX}\`" >> $GITHUB_STEP_SUMMARY
-          echo "- \`sha-${SHORT_SHA}${TAG_SUFFIX}\`" >> $GITHUB_STEP_SUMMARY
-          echo "- \`${TIMESTAMP}${TAG_SUFFIX}\`" >> $GITHUB_STEP_SUMMARY
-      
-      - name: 🏗️ Build and push Docker image
-        uses: docker/build-push-action@v5
+          SHORT_SHA="${GITHUB_SHA::7}"
+          TIMESTAMP="$(date -u +"%Y%m%d-%H%M%S")"
+          IMAGE_NAME="ghcr.io/$(echo "$GITHUB_REPOSITORY" | tr '[:upper:]' '[:lower:]')"
+
+          {
+            echo "tags<<EOF"
+            echo "${IMAGE_NAME}:latest${TAG_SUFFIX}"
+            echo "${IMAGE_NAME}:sha-${SHORT_SHA}${TAG_SUFFIX}"
+            echo "${IMAGE_NAME}:${TIMESTAMP}${TAG_SUFFIX}"
+            echo "rpa-worker:candidate"
+            echo "EOF"
+            echo "image_name=${IMAGE_NAME}"
+            echo "short_sha=${SHORT_SHA}"
+            echo "timestamp=${TIMESTAMP}"
+            echo "tag_suffix=${TAG_SUFFIX}"
+          } >> "$GITHUB_OUTPUT"
+
+      # 1) Build once, load into the local Docker daemon (nothing is pushed yet)
+      - name: 🏗️ Build image (not pushed yet)
+        uses: docker/build-push-action@v6
         with:
           context: .
           file: ./Dockerfile.trixie
           platforms: linux/amd64
-          push: true
+          load: true
+          push: false
           tags: ${{ steps.meta.outputs.tags }}
           build-args: |
             BUILD_PJEOFFICE=1
@@ -95,30 +100,63 @@ jobs:
             org.opencontainers.image.source=${{ github.event.repository.html_url }}
             org.opencontainers.image.revision=${{ github.sha }}
             org.opencontainers.image.created=${{ steps.meta.outputs.timestamp }}
-      
-      - name: 📊 Build Summary
+
+      # 2) Quality gate on that exact image — a failure stops the release here
+      - name: 🧪 Quality gate (scripts/test-image.sh)
+        run: scripts/test-image.sh rpa-worker:candidate test-results
+
+      # 3) What changes for production compared with the current :latest (informative)
+      - name: 🔍 Diff against current :latest
+        continue-on-error: true
         run: |
-          echo "## 🎉 Build Complete!" >> $GITHUB_STEP_SUMMARY
-          echo "" >> $GITHUB_STEP_SUMMARY
-          echo "### 📦 Image Details" >> $GITHUB_STEP_SUMMARY
-          echo "- **Repository:** \`${{ steps.meta.outputs.image_name }}\`" >> $GITHUB_STEP_SUMMARY
-          echo "- **Platform:** \`linux/amd64\`" >> $GITHUB_STEP_SUMMARY
-          echo "- **Commit SHA:** \`${{ github.sha }}\`" >> $GITHUB_STEP_SUMMARY
-          echo "- **Short SHA:** \`${{ steps.meta.outputs.short_sha }}\`" >> $GITHUB_STEP_SUMMARY
-          echo "- **Timestamp:** \`${{ steps.meta.outputs.timestamp }}\`" >> $GITHUB_STEP_SUMMARY
-          echo "" >> $GITHUB_STEP_SUMMARY
-          echo "### 🚀 Pull Command" >> $GITHUB_STEP_SUMMARY
-          echo "\`\`\`bash" >> $GITHUB_STEP_SUMMARY
-          echo "docker pull ${{ steps.meta.outputs.image_name }}:latest${{ github.event.inputs.tag_suffix }}" >> $GITHUB_STEP_SUMMARY
-          echo "\`\`\`" >> $GITHUB_STEP_SUMMARY
-          echo "" >> $GITHUB_STEP_SUMMARY
-          echo "### 🏗️ Build Args Used" >> $GITHUB_STEP_SUMMARY
-          echo "- \`BUILD_PJEOFFICE=1\`" >> $GITHUB_STEP_SUMMARY
-          echo "- \`ENABLE_PDF_TOOLS=1\`" >> $GITHUB_STEP_SUMMARY
-          echo "- \`ENABLE_VNC=1\`" >> $GITHUB_STEP_SUMMARY
-          echo "- \`ENABLE_NOVNC=1\`" >> $GITHUB_STEP_SUMMARY
-          echo "- \`SELENIUMBASE_REFRESH=${{ github.run_id }}\` (SeleniumBase mais recente do PyPI)" >> $GITHUB_STEP_SUMMARY
-          echo "- \`CHROME_PROFILE_URL=\${{ secrets.CHROME_PROFILE_URL != '' && '[SET]' || '[NOT SET]' }}\`" >> $GITHUB_STEP_SUMMARY
+          docker pull -q "${{ steps.meta.outputs.image_name }}:latest" >/dev/null
+          scripts/image-snapshot.sh "${{ steps.meta.outputs.image_name }}:latest" snapshots/current >/dev/null
+          scripts/image-snapshot.sh rpa-worker:candidate snapshots/candidate >/dev/null
+          {
+            echo "### 🔍 Mudanças em relação à :latest atual"
+            echo '```diff'
+            diff -u snapshots/current/versions.txt snapshots/candidate/versions.txt | grep '^[-+][^-+]' || echo "(versões de browsers/drivers iguais)"
+            diff -u snapshots/current/pip-freeze.txt snapshots/candidate/pip-freeze.txt | grep '^[-+][^-+]' || echo "(pip freeze igual)"
+            echo "dpkg: $(diff snapshots/current/dpkg.txt snapshots/candidate/dpkg.txt | grep -c '^>') pacote(s) alterado(s)"
+            echo '```'
+          } >> "$GITHUB_STEP_SUMMARY"
+
+      # 4) Publish the tested image (same bits, just re-tagged)
+      - name: 🚀 Push tested image
+        id: push
+        run: |
+          docker push --all-tags "${{ steps.meta.outputs.image_name }}"
+          DIGEST="$(docker inspect --format '{{index .RepoDigests 0}}' "${{ steps.meta.outputs.image_name }}:latest${{ steps.meta.outputs.tag_suffix }}")"
+          echo "digest=${DIGEST}" >> "$GITHUB_OUTPUT"
+
+      - name: 📊 Build Summary
+        if: always()
+        run: |
+          cat test-results/summary.md >> "$GITHUB_STEP_SUMMARY" 2>/dev/null || true
+          {
+            echo ""
+            echo "## 📦 Release"
+            if [ -n "${{ steps.push.outputs.digest }}" ]; then
+              echo "- **Publicado:** \`${{ steps.push.outputs.digest }}\`"
+              echo "- **Tags:** \`latest${{ steps.meta.outputs.tag_suffix }}\`, \`sha-${{ steps.meta.outputs.short_sha }}${{ steps.meta.outputs.tag_suffix }}\`, \`${{ steps.meta.outputs.timestamp }}${{ steps.meta.outputs.tag_suffix }}\`"
+              echo ""
+              echo '```bash'
+              echo "docker pull ${{ steps.meta.outputs.image_name }}:latest${{ steps.meta.outputs.tag_suffix }}"
+              echo '```'
+            else
+              echo "- ❌ **Nada foi publicado**: a \`:latest\` atual continua em produção."
+            fi
+            echo "- Build-args: \`BUILD_PJEOFFICE=1 ENABLE_PDF_TOOLS=1 ENABLE_VNC=1 ENABLE_NOVNC=1 SELENIUMBASE_REFRESH=${{ github.run_id }}\`"
+            echo "- \`CHROME_PROFILE_URL\`: ${{ secrets.CHROME_PROFILE_URL != '' && '[SET]' || '[NOT SET]' }}"
+          } >> "$GITHUB_STEP_SUMMARY"
+
+      - name: 📁 Upload test results
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: release-test-results
+          path: test-results/
+          retention-days: 14
 
   cleanup:
     needs: build-and-push

@@ -25,6 +25,9 @@ CACHE_DIR = pathlib.Path(os.getenv("CACHE_DIR", "/data"))
 CACHE_DIR.mkdir(parents=True, exist_ok=True)
 TEST_HELPERS = os.getenv("TEST_HELPERS", "0") == "1"
 CHECK_PROCESSES = os.getenv("CHECK_PROCESSES", "0") == "1"
+# 1 = aceita o fallback com requests como sucesso (comportamento antigo).
+# Padrão 0: se o SeleniumBase falhar, o smoke test falha (exit 1).
+ALLOW_REQUESTS_FALLBACK = os.getenv("SMOKE_ALLOW_REQUESTS_FALLBACK", "0") == "1"
 
 
 def extract_title_from_html(html_content):
@@ -297,8 +300,10 @@ def test_helper_scripts():
 def main():
     """
     Main function to run smoke test.
-    Tries SeleniumBase first, falls back to requests if unavailable.
+    Tries SeleniumBase first. If the browser fails, still fetches the page with
+    requests for diagnostics, but returns 1 unless SMOKE_ALLOW_REQUESTS_FALLBACK=1.
     """
+    browser_failed = False
     # Check processes first if requested
     if CHECK_PROCESSES and not check_processes():
         print("[smoke] Process checks failed")
@@ -323,7 +328,9 @@ def main():
             
             try:
                 driver.set_window_size(1366, 768)
-                driver.open(TARGET_URL)
+                # In UC mode, driver.open() disconnects chromedriver and the
+                # next WebDriver call fails; driver.get() is UC-safe.
+                driver.get(TARGET_URL)
                 
                 ts = datetime.datetime.now().strftime("%Y%m%d_%H%M%S")
                 out = CACHE_DIR / f"smoke_{ts}.png"
@@ -338,8 +345,9 @@ def main():
                 driver.quit()
                 
         except Exception as e:
-            print(f"[smoke] Erro ao usar SeleniumBase: {e}")
-            # Fallback to requests if there's an error during execution
+            print(f"[smoke] ✗ Erro ao usar SeleniumBase: {e}")
+            # Fallback to requests for diagnostics (network vs browser problem)
+            browser_failed = True
             seleniumbase_available = False
     
     if not seleniumbase_available:
@@ -374,6 +382,10 @@ def main():
                 f.write(f"Título: {title}\n")
                 f.write(f"Headers:\n{str(response.headers)}\n")
             
+            if browser_failed and not ALLOW_REQUESTS_FALLBACK:
+                print("[smoke] ✗ FALHA: a página abriu via requests, mas o browser falhou "
+                      "(defina SMOKE_ALLOW_REQUESTS_FALLBACK=1 para aceitar o fallback)")
+                return 1
             return 0
             
         except ImportError:

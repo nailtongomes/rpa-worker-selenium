@@ -1,0 +1,110 @@
+# =============================================================================
+# Nightly — detecta quebras vindas de fora ANTES do próximo release
+#
+# Debian Trixie, PyPI (SeleniumBase sempre na última versão) e os sites
+# mudam sem commit neste repositório. Toda noite:
+#   - build da imagem de produção SEM cache + scripts/test-image.sh
+#   - relatório do que mudaria em relação à :latest publicada
+#   - build da variante com FFmpeg + teste de gravação de tela
+# Nada é publicado. Falhas de workflows agendados geram e-mail do GitHub.
+# =============================================================================
+name: Nightly
+
+on:
+  schedule:
+    - cron: '17 7 * * *'   # 07:17 UTC = 04:17 em Brasília
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  production-image:
+    runs-on: ubuntu-latest
+    timeout-minutes: 90
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Build production image from scratch (no cache)
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: ./Dockerfile.trixie
+          platforms: linux/amd64
+          load: true
+          push: false
+          no-cache: true
+          tags: rpa-worker:nightly
+          build-args: |
+            BUILD_PJEOFFICE=1
+            ENABLE_PDF_TOOLS=1
+            ENABLE_VNC=1
+            ENABLE_NOVNC=1
+            SELENIUMBASE_REFRESH=${{ github.run_id }}
+
+      - name: Quality gate (scripts/test-image.sh)
+        run: scripts/test-image.sh rpa-worker:nightly test-results
+
+      - name: Drift report vs published :latest
+        if: always()
+        continue-on-error: true
+        run: |
+          docker pull -q ghcr.io/nailtongomes/rpa-worker-selenium:latest >/dev/null
+          scripts/image-snapshot.sh ghcr.io/nailtongomes/rpa-worker-selenium:latest snapshots/latest >/dev/null
+          scripts/image-snapshot.sh rpa-worker:nightly snapshots/nightly >/dev/null
+          {
+            cat test-results/summary.md 2>/dev/null || true
+            echo
+            echo "### 🔍 O que mudaria no próximo release (nightly x :latest)"
+            echo '```diff'
+            diff -u snapshots/latest/versions.txt snapshots/nightly/versions.txt | grep '^[-+][^-+]' || echo "(versões de browsers/drivers iguais)"
+            diff -u snapshots/latest/pip-freeze.txt snapshots/nightly/pip-freeze.txt | grep '^[-+][^-+]' || echo "(pip freeze igual)"
+            diff -u snapshots/latest/dpkg.txt snapshots/nightly/dpkg.txt | grep '^[-+][^-+]' || echo "(dpkg igual)"
+            echo '```'
+          } >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Upload results
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: nightly-results
+          path: |
+            test-results/
+            snapshots/
+          retention-days: 14
+
+  screen-recording-variant:
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Build image with FFmpeg (ENABLE_FFMPEG=1)
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: ./Dockerfile.trixie
+          platforms: linux/amd64
+          load: true
+          push: false
+          tags: rpa-worker:ffmpeg
+          build-args: |
+            ENABLE_FFMPEG=1
+          cache-from: type=gha
+
+      - name: Screen recording produces an .mp4
+        run: |
+          mkdir -p recordings && chmod 777 recordings
+          docker run --rm --shm-size=2g \
+            -e USE_XVFB=1 -e USE_SCREEN_RECORDING=1 -e RECORDING_DIR=/recordings \
+            -v "$(pwd)/recordings:/recordings" -v "$(pwd):/repo:ro" -w /tmp \
+            rpa-worker:ffmpeg bash -c "sleep 5 && pytest -p no:cacheprovider -p no:seleniumbase -v --timeout=120 /repo/tests/image/test_services.py"
+          ls -lh recordings/*.mp4
