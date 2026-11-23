@@ -51,6 +51,29 @@ scripts/test_trixie_docker.sh test    # só testes (imagem rpa-worker-trixie:tes
 Certificado A1 (opcional): defina `A1_P12_PATH` e `A1_P12_PASSWORD` e monte o arquivo.
 Sem eles, os testes de certificado são pulados.
 
+## Validação real dos browsers: `tests/image/test_project_page.py`
+
+Abre a página do próprio projeto (`https://github.com/nailtongomes/rpa-worker-selenium/`)
+e confere que o título contém `rpa-worker-selenium` com:
+
+- `requests` (isola problema de rede de problema de browser)
+- Selenium + Chrome headless (chromedriver da imagem)
+- SeleniumBase headless, UC headless e **UC headful no Xvfb/OpenBox** (modo de produção)
+- Firefox headless e headful com o profile `selenium.default-release`
+
+Cada caso tenta até 3 vezes e **falha** se o browser não carregar a página.
+No CI é um passo bloqueante. Localmente:
+
+```bash
+docker run --rm --shm-size=2g -v "$PWD:/repo:ro" -w /tmp -e USE_XVFB=1 -e USE_OPENBOX=1 \
+  rpa-worker:local bash -c "sleep 5 && pytest -p no:cacheprovider -p no:seleniumbase \
+  --timeout=300 -v /repo/tests/image/test_project_page.py"
+```
+
+Outra URL/título: `-e PROJECT_URL=... -e EXPECTED_TEXT=...`.
+Os smoke tests da imagem (`smoke_test.py`, `full_smoke_test.py`, `test_browser_drivers.py`)
+também usam a página do projeto como URL padrão.
+
 ## Comparando imagens (antes/depois)
 
 `scripts/image-snapshot.sh` gera uma "foto" determinística de uma imagem: versões de
@@ -75,7 +98,7 @@ A foto da imagem de produção usada como referência na reorganização está e
 | `trixie-pjeoffice-test` | build com PJeOffice + processos Xvfb/OpenBox/PJeOffice |
 | `trixie-novnc-test` | build com VNC/noVNC + processos |
 | `trixie-screen-recording-test` | build com FFmpeg + arquivo `.mp4` gerado |
-| `trixie-integration-test` | build completo + `tests/image/trixie_integration_test.py` (**ainda não bloqueia**, ver abaixo) |
+| `trixie-integration-test` | build **idêntico ao do release** + `tests/image/test_project_page.py` (**bloqueante**) + `tests/image/trixie_integration_test.py` (ainda não bloqueia, ver abaixo) |
 
 ### Limitações conhecidas (tratadas na Fase 2)
 

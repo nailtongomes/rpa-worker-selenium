@@ -42,7 +42,7 @@ All aspects configurable via environment variables:
 python full_smoke_test.py
 
 # Run with custom URL
-TARGET_URL=https://example.com python full_smoke_test.py
+TARGET_URL=https://github.com/nailtongomes/rpa-worker-selenium/ python full_smoke_test.py
 
 # Run with verbose output
 VERBOSE=1 python full_smoke_test.py
@@ -53,7 +53,7 @@ VERBOSE=1 python full_smoke_test.py
 ```bash
 # Basic Docker run
 docker run --rm \
-  -e TARGET_URL=https://example.com \
+  -e TARGET_URL=https://github.com/nailtongomes/rpa-worker-selenium/ \
   -e CACHE_DIR=/data \
   -v $(pwd)/data:/data \
   rpa-worker-selenium \
@@ -64,7 +64,7 @@ docker run --rm \
   -e USE_XVFB=1 \
   -e CHECK_PROCESSES=1 \
   -e TEST_ALL_BROWSERS=1 \
-  -e TARGET_URL=https://example.com \
+  -e TARGET_URL=https://github.com/nailtongomes/rpa-worker-selenium/ \
   -e CACHE_DIR=/data \
   -v $(pwd)/data:/data \
   rpa-worker-selenium \
@@ -76,7 +76,7 @@ docker run --rm \
   -e USE_OPENBOX=1 \
   -e USE_PJEOFFICE=1 \
   -e CHECK_PROCESSES=1 \
-  -e TARGET_URL=https://example.com \
+  -e TARGET_URL=https://github.com/nailtongomes/rpa-worker-selenium/ \
   -e CACHE_DIR=/data \
   -v $(pwd)/data:/data \
   rpa-worker-selenium-pje \
@@ -87,7 +87,7 @@ docker run --rm \
 
 | Variable | Default | Description |
 |----------|---------|-------------|
-| `TARGET_URL` | https://example.com | URL to test during browser validation |
+| `TARGET_URL` | https://github.com/nailtongomes/rpa-worker-selenium/ | URL to test during browser validation |
 | `CACHE_DIR` | /data | Directory to save test outputs and reports |
 | `TEST_ALL_BROWSERS` | 0 | Test all available browsers (set to 1 to enable) |
 | `CHECK_PROCESSES` | 0 | Check if Xvfb and PJeOffice processes are alive (set to 1 to enable) |
@@ -209,7 +209,7 @@ The script is designed for easy integration with CI/CD pipelines:
 - name: Run Full Smoke Test
   run: |
     docker run --rm \
-      -e TARGET_URL=https://example.com \
+      -e TARGET_URL=https://github.com/nailtongomes/rpa-worker-selenium/ \
       -e CACHE_DIR=/data \
       -v $(pwd)/data:/data \
       rpa-worker-selenium \

@@ -4,7 +4,7 @@ Smoke Test for RPA Worker Selenium
 Minimal viable test with SeleniumBase and fallback to requests.
 
 Environment Variables:
-- TARGET_URL: URL to test (default: https://www.n3wizards.com/index/)
+- TARGET_URL: URL to test (default: https://github.com/nailtongomes/rpa-worker-selenium/)
 - CACHE_DIR: Directory to save screenshots/HTML (default: /data)
 - TEST_HELPERS: Test helper scripts functionality (default: 0)
 - CHECK_PROCESSES: Check if Xvfb and PJeOffice processes are alive (default: 0)
@@ -20,7 +20,7 @@ import subprocess
 
 
 # Configuration
-TARGET_URL = os.getenv("TARGET_URL", "https://www.n3wizards.com/index/")
+TARGET_URL = os.getenv("TARGET_URL", "https://github.com/nailtongomes/rpa-worker-selenium/")
 CACHE_DIR = pathlib.Path(os.getenv("CACHE_DIR", "/data"))
 CACHE_DIR.mkdir(parents=True, exist_ok=True)
 TEST_HELPERS = os.getenv("TEST_HELPERS", "0") == "1"

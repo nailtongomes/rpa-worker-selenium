@@ -66,7 +66,7 @@ jobs:
     - name: Run smoke test in container
       run: |
         docker run --rm \
-          -e TARGET_URL=https://example.com \
+          -e TARGET_URL=https://github.com/nailtongomes/rpa-worker-selenium/ \
           -e CACHE_DIR=/data \
           -v $(pwd)/data:/data \
           rpa-worker-trixie:base \
@@ -167,7 +167,7 @@ jobs:
           -e USE_OPENBOX=1 \
           -e USE_PJEOFFICE=1 \
           -e CHECK_PROCESSES=1 \
-          -e TARGET_URL=https://example.com \
+          -e TARGET_URL=https://github.com/nailtongomes/rpa-worker-selenium/ \
           -e CACHE_DIR=/data \
           -v $(pwd)/data:/data \
           rpa-worker-trixie:pjeoffice \
@@ -224,7 +224,7 @@ jobs:
           -e USE_VNC=1 \
           -e USE_NOVNC=1 \
           -e CHECK_PROCESSES=1 \
-          -e TARGET_URL=https://example.com \
+          -e TARGET_URL=https://github.com/nailtongomes/rpa-worker-selenium/ \
           -e CACHE_DIR=/data \
           -v $(pwd)/data:/data \
           rpa-worker-trixie:novnc \
@@ -281,7 +281,7 @@ jobs:
           -e USE_XVFB=1 \
           -e USE_SCREEN_RECORDING=1 \
           -e CHECK_PROCESSES=1 \
-          -e TARGET_URL=https://example.com \
+          -e TARGET_URL=https://github.com/nailtongomes/rpa-worker-selenium/ \
           -e CACHE_DIR=/data \
           -e RECORDING_DIR=/recordings \
           -v $(pwd)/data:/data \
@@ -326,11 +326,13 @@ jobs:
     - name: Set up Docker Buildx
       uses: docker/setup-buildx-action@v3
 
-    - name: Build Trixie image with full dependencies
+    - name: Build Trixie image (same build-args as the release)
       run: |
         docker build -f Dockerfile.trixie \
           --build-arg BUILD_PJEOFFICE=1 \
           --build-arg ENABLE_PDF_TOOLS=1 \
+          --build-arg ENABLE_VNC=1 \
+          --build-arg ENABLE_NOVNC=1 \
           --load \
           -t rpa-worker-trixie:full .
 
@@ -354,6 +356,17 @@ jobs:
       run: |
         mkdir -p data test-results
         chmod 777 data test-results
+
+    # Blocking: real browsers must open the project page (no '|| exit 0')
+    - name: Visit project page with every browser (blocking)
+      run: |
+        docker run --rm --shm-size=2g \
+          -e USE_XVFB=1 \
+          -e USE_OPENBOX=1 \
+          -v $(pwd)/test-results:/test-results \
+          -v $(pwd):/repo:ro -w /tmp \
+          rpa-worker-trixie:full \
+          bash -c "sleep 5 && pytest -p no:cacheprovider -p no:seleniumbase -v -rA --timeout=300 --junitxml=/test-results/junit-project-page.xml /repo/tests/image/test_project_page.py"
 
     - name: Run integration tests (no display)
       run: |

@@ -16,7 +16,7 @@ This script performs extensive checks beyond the basic smoke_test.py:
 - Browser driver version compatibility
 
 Environment Variables:
-- TARGET_URL: URL to test (default: https://example.com)
+- TARGET_URL: URL to test (default: https://github.com/nailtongomes/rpa-worker-selenium/)
 - CACHE_DIR: Directory to save test outputs (default: /data)
 - TEST_ALL_BROWSERS: Test all available browsers (default: 0)
 - CHECK_PROCESSES: Check if required processes are alive (default: 0)
@@ -34,7 +34,7 @@ import json
 from typing import Dict, List, Tuple, Optional
 
 # Configuration
-TARGET_URL = os.getenv("TARGET_URL", "https://example.com")
+TARGET_URL = os.getenv("TARGET_URL", "https://github.com/nailtongomes/rpa-worker-selenium/")
 CACHE_DIR = pathlib.Path(os.getenv("CACHE_DIR", "/data"))
 TEST_ALL_BROWSERS = os.getenv("TEST_ALL_BROWSERS", "0") == "1"
 CHECK_PROCESSES = os.getenv("CHECK_PROCESSES", "0") == "1"
@@ -655,8 +655,7 @@ def test_network_connectivity() -> bool:
         
         # Test multiple URLs
         test_urls = [
-            "https://example.com",
-            "https://www.google.com",
+            TARGET_URL,
         ]
         
         for url in test_urls:

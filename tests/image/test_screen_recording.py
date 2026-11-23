@@ -47,8 +47,8 @@ def test_screen_recording():
         print("[test] Creating Chrome driver...")
         driver = webdriver.Chrome(service=service, options=chrome_options)
         
-        print("[test] Navigating to example.com...")
-        driver.get("https://example.com")
+        print("[test] Navigating to the project page...")
+        driver.get("https://github.com/nailtongomes/rpa-worker-selenium/")
         time.sleep(2)
         
         print(f"[test] Page title: {driver.title}")

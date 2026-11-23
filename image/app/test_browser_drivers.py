@@ -159,7 +159,7 @@ def test_chrome_progressive():
         # Simple screenshot to validate rendering
         test_png = "/tmp/chrome_cli_test.png"
         cmd_ss = [chrome_binary, "--headless=new", "--screenshot=" + test_png, 
-                  "--window-size=1366,768", "--disable-gpu", "https://example.com"]
+                  "--window-size=1366,768", "--disable-gpu", "https://github.com/nailtongomes/rpa-worker-selenium/"]
         print(f"  → Running: {' '.join(cmd_ss)}")
         proc2 = subprocess.run(cmd_ss, capture_output=True, text=True, timeout=30)
         print("  → stdout:", proc2.stdout.strip())
@@ -396,7 +396,7 @@ def test_firefox_progressive():
 
         # Screenshot simples para validar renderização
         test_png = "/tmp/firefox_cli_test.png"
-        cmd_ss = ["firefox", "--headless", "--screenshot", test_png, "https://example.com"]
+        cmd_ss = ["firefox", "--headless", "--screenshot", test_png, "https://github.com/nailtongomes/rpa-worker-selenium/"]
         print(f"  → Executando: {' '.join(cmd_ss)}")
         proc2 = subprocess.run(cmd_ss, capture_output=True, text=True, timeout=30)
         print("  → stdout:", proc2.stdout.strip())
@@ -642,7 +642,7 @@ def test_brave_progressive():
         test_png = "/tmp/brave_cli_test.png"
         cmd_ss = [brave_path, "--headless=new", "--screenshot=" + test_png,
                   "--window-size=1366,768", "--disable-gpu", "--disable-brave-update", 
-                  "https://example.com"]
+                  "https://github.com/nailtongomes/rpa-worker-selenium/"]
         print(f"  → Running: {' '.join(cmd_ss)}")
         proc2 = subprocess.run(cmd_ss, capture_output=True, text=True, timeout=30)
         print("  → stdout:", proc2.stdout.strip())
