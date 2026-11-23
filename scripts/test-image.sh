@@ -110,6 +110,14 @@ scenario_full_services() {
             /repo/tests/image/trixie_integration_test.py"
 }
 
+scenario_a1_certificate() {
+    # Certificado A1 com ICP de teste gerada na hora: .pfx por URL + senha, formatos
+    # legados, .p7s attached, PAdES, Java (PJeOffice), NSS e Chrome/UC/Firefox
+    # apresentando o certificado a um servidor HTTPS local que exige certificado de cliente
+    run_in_image -e USE_XVFB=1 -e USE_OPENBOX=1 \
+        "$IMAGE" bash -c "sleep 6 && $PYTEST --junitxml=/results/junit-a1.xml /repo/tests/image/test_a1_certificate.py"
+}
+
 scenario_smoke_test() {
     # /app/smoke_test.py é o script padrão da imagem: precisa falhar se o browser falhar
     run_in_image \
@@ -193,6 +201,7 @@ SCENARIOS=(
     "contrato da imagem:scenario_contract"
     "browsers headless sem display:scenario_headless_no_display"
     "serviços + browsers + integração (Xvfb/OpenBox/PJeOffice/VNC/noVNC):scenario_full_services"
+    "certificado A1 (ICP de teste, .p7s, PAdES, Java, browsers com mTLS):scenario_a1_certificate"
     "smoke_test.py (falha se o browser falhar):scenario_smoke_test"
     "worker em loop (SCRIPT_URL + HELPER_URLS):scenario_worker_loop"
     "execução única com SCRIPT_URL:scenario_single_run_ok"

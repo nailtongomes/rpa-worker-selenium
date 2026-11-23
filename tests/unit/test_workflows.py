@@ -129,3 +129,34 @@ def test_no_step_between_gate_and_push_can_retag_latest():
         assert "${IMAGE_NAME}:latest" not in str(step.get("run", "")) or "pull" in step.get("run", ""), step["name"]
     build = steps[_index(steps, lambda s: "docker/build-push-action" in s.get("uses", ""), "build")]
     assert ":latest" not in build["with"]["tags"]
+
+
+# --- Actions em Node 24 + Dependabot ------------------------------------------------
+
+# Majors mínimas que rodam em Node 24 (Node 20 foi descontinuado nos runners do GitHub)
+MIN_MAJOR = {
+    "actions/checkout": 6,
+    "actions/setup-python": 6,
+    "actions/upload-artifact": 6,
+    "docker/build-push-action": 7,
+    "docker/setup-buildx-action": 4,
+    "docker/login-action": 4,
+}
+
+
+def _uses():
+    for path in sorted(WORKFLOWS_DIR.glob("*.yml")):
+        for match in re.finditer(r"uses:\s*([\w.-]+/[\w.-]+)@v(\d+)", path.read_text()):
+            yield path.name, match.group(1), int(match.group(2))
+
+
+@pytest.mark.parametrize("workflow, action, major", list(_uses()))
+def test_actions_use_node24_majors(workflow, action, major):
+    if action in MIN_MAJOR:
+        assert major >= MIN_MAJOR[action], f"{workflow}: {action}@v{major} < v{MIN_MAJOR[action]} (Node 24)"
+
+
+def test_dependabot_updates_github_actions():
+    config = yaml.safe_load((REPO_ROOT / ".github" / "dependabot.yml").read_text())
+    ecosystems = {u["package-ecosystem"] for u in config["updates"]}
+    assert "github-actions" in ecosystems

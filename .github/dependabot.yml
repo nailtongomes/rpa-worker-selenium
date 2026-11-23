@@ -1,0 +1,19 @@
+# Dependabot: mantém as GitHub Actions atualizadas (runtime Node, correções de segurança).
+# Um PR semanal agrupado; o CI (unit tests + build + scripts/test-image.sh) valida antes do merge.
+# Pacotes Python e browsers NÃO entram aqui: SeleniumBase segue a última versão a cada
+# release e Chrome/Firefox são atualizados de propósito pelos ARGs do Dockerfile.trixie.
+version: 2
+updates:
+  - package-ecosystem: github-actions
+    directory: /
+    schedule:
+      interval: weekly
+      day: monday
+      time: "06:00"
+      timezone: America/Sao_Paulo
+    groups:
+      github-actions:
+        patterns: ["*"]
+    commit-message:
+      prefix: "ci"
+    labels: ["dependencies", "github-actions"]
