@@ -50,6 +50,9 @@ def _requires(feature: str):
         ("/app/a1cert.py", False),
         ("/app/a1_testkit.py", False),
         ("/app/a1_check.py", True),
+        ("/app/egress_proxy.py", True),
+        ("/app/egress_check.py", True),
+        ("/app/egress_testkit.py", True),
         ("/app/requirements.txt", False),
     ],
 )
@@ -191,3 +194,14 @@ def test_a1cert_importable_from_user_scripts():
     )
     assert result.returncode == 0, result.stderr
     assert result.stdout.strip() == "/app/a1cert.py"
+
+
+def test_egress_relay_off_by_default():
+    """Sem EGRESS_PROXY_URL o container sai direto: nenhuma variável/policy de proxy."""
+    if os.getenv("EGRESS_PROXY_URL") or os.getenv("EGRESS_PROXY_URL_FILE"):
+        pytest.skip("relay ligado neste container")
+    for name in ("HTTP_PROXY", "HTTPS_PROXY", "http_proxy", "https_proxy", "ALL_PROXY"):
+        assert not os.getenv(name), f"{name} definido sem relay"
+    for d in ["/etc/opt/chrome/policies/managed", "/etc/opt/chrome_for_testing/policies/managed"]:
+        assert not Path(d, "egress_proxy.json").exists()
+    assert not Path("/opt/firefox/distribution/policies.json").exists()

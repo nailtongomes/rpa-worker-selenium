@@ -118,6 +118,68 @@ scenario_a1_certificate() {
         "$IMAGE" bash -c "sleep 6 && $PYTEST --junitxml=/results/junit-a1.xml /repo/tests/image/test_a1_certificate.py"
 }
 
+# Relay de teste dentro do container ("internet falsa": responde a qualquer host com o
+# IP 203.0.113.7 e grava os destinos), iniciado antes do entrypoint, como um relay real.
+RELAY_FAKE_IP="203.0.113.7"
+RELAY_PASSWORD='S3nh@-relay'
+with_relay() {  # $1 = socks5|http, $2 = porta
+    echo "python /app/egress_testkit.py relay --protocol $1 --listen 127.0.0.1:$2 --user rpa \
+--password '${RELAY_PASSWORD}' --fake-ip ${RELAY_FAKE_IP} --record /tmp/egress-records.jsonl >/dev/null 2>&1 & \
+sleep 1; exec /app/entrypoint.sh \"\$@\""
+}
+
+scenario_egress_relay() {
+    # EGRESS_PROXY_URL (SOCKS5 com senha): Python, curl, Java/PJeOffice, Chrome, UC e
+    # Firefox saem pelo relay; DNS resolvido no relay; WebRTC sem vazamento; localhost
+    # direto; certificado A1 (mTLS local) continua funcionando com o relay ligado
+    run_in_image -e USE_XVFB=1 -e USE_OPENBOX=1 \
+        -e EGRESS_PROXY_URL='socks5://rpa:S3nh%40-relay@127.0.0.1:1080' \
+        -e EGRESS_CHECK_URL=http://check.egress-test.invalid/ip -e EGRESS_EXPECTED_IP="$RELAY_FAKE_IP" \
+        -e EGRESS_TEST_RECORDS=/tmp/egress-records.jsonl \
+        --entrypoint bash "$IMAGE" -c "$(with_relay socks5 1080)" _ \
+        bash -c "sleep 6 && $PYTEST --junitxml=/results/junit-egress.xml /repo/tests/image/test_egress.py \
+            /repo/tests/image/test_a1_certificate.py -k 'test_egress or presents_certificate'"
+}
+
+scenario_egress_failures() {
+    # Proxy HTTP com senha funciona; relay fora do ar ou senha errada => o container
+    # NÃO executa nada (EGRESS_REQUIRED=1, padrão); EGRESS_REQUIRED=0 só avisa
+    local log="$RESULTS/logs/egress-failures.log" rc ok=0
+    : > "$log"
+
+    echo "--- proxy HTTP com senha" >> "$log"
+    run_in_image -e EGRESS_PROXY_URL='http://rpa:S3nh%40-relay@127.0.0.1:3129' -e EGRESS_CHECK_URL=off \
+        --entrypoint bash "$IMAGE" -c "$(with_relay http 3129)" _ \
+        python -c "import requests; print('IP', requests.get('http://h.egress-test.invalid/ip', timeout=20).text)" \
+        >> "$log" 2>&1
+    grep -q "IP ${RELAY_FAKE_IP}" "$log" || { echo "proxy HTTP: requests não saiu pelo relay"; ok=1; }
+
+    echo "--- relay fora do ar (EGRESS_REQUIRED padrão)" >> "$log"
+    run_in_image -e EGRESS_PROXY_URL='socks5://rpa:x@127.0.0.1:9' "$IMAGE" echo SHOULD-NOT-RUN >> "$log" 2>&1
+    rc=$?
+    { [ "$rc" -ne 0 ] && ! grep -q "^SHOULD-NOT-RUN" "$log"; } || { echo "relay fora do ar não parou o container"; ok=1; }
+
+    echo "--- senha errada" >> "$log"
+    run_in_image -e EGRESS_PROXY_URL='socks5://rpa:senha-errada-123@127.0.0.1:1080' \
+        --entrypoint bash "$IMAGE" -c "$(with_relay socks5 1080)" _ echo SHOULD-NOT-RUN >> "$log" 2>&1
+    rc=$?
+    { [ "$rc" -ne 0 ] && grep -q "usuário ou senha incorretos" "$log"; } || { echo "senha errada não parou o container"; ok=1; }
+    if grep -q "senha-errada-123" "$log"; then echo "a senha do relay apareceu no log"; ok=1; fi
+
+    echo "--- relay fora do ar com EGRESS_REQUIRED=0" >> "$log"
+    run_in_image -e EGRESS_PROXY_URL='socks5://127.0.0.1:9' -e EGRESS_REQUIRED=0 "$IMAGE" echo RAN-WITH-WARNING \
+        >> "$log" 2>&1 || { echo "EGRESS_REQUIRED=0 não deveria parar"; ok=1; }
+    grep -q "^RAN-WITH-WARNING" "$log" || { echo "EGRESS_REQUIRED=0: comando não executou"; ok=1; }
+
+    echo "--- esquema inválido" >> "$log"
+    run_in_image -e EGRESS_PROXY_URL='ftp://relay:21' "$IMAGE" echo SHOULD-NOT-RUN >> "$log" 2>&1
+    rc=$?
+    [ "$rc" -ne 0 ] || { echo "esquema inválido não parou o container"; ok=1; }
+
+    grep -E "egress|Egress|IP |RAN-WITH|SHOULD-NOT" "$log" | head -20
+    return "$ok"
+}
+
 scenario_smoke_test() {
     # /app/smoke_test.py é o script padrão da imagem: precisa falhar se o browser falhar
     run_in_image \
@@ -202,6 +264,8 @@ SCENARIOS=(
     "browsers headless sem display:scenario_headless_no_display"
     "serviços + browsers + integração (Xvfb/OpenBox/PJeOffice/VNC/noVNC):scenario_full_services"
     "certificado A1 (ICP de teste, .p7s, PAdES, Java, browsers com mTLS):scenario_a1_certificate"
+    "relay de saída (EGRESS_PROXY_URL: todo o tráfego, DNS, WebRTC, A1):scenario_egress_relay"
+    "relay de saída: proxy HTTP e falhas (relay fora do ar, senha errada):scenario_egress_failures"
     "smoke_test.py (falha se o browser falhar):scenario_smoke_test"
     "worker em loop (SCRIPT_URL + HELPER_URLS):scenario_worker_loop"
     "execução única com SCRIPT_URL:scenario_single_run_ok"

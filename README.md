@@ -114,6 +114,23 @@ verificador avisa, e `a1cert.export_pfx()` regrava o arquivo com outra senha.
 Guia completo: [`docs/A1_CERTIFICATE_GUIDE.md`](docs/A1_CERTIFICATE_GUIDE.md); exemplo:
 [`examples/scripts/example_a1_certificate.py`](examples/scripts/example_a1_certificate.py).
 
+### Saída pela internet do cliente (relay, opcional)
+
+Para clientes cujos sistemas só aceitam o IP do cliente (whitelist), todo o tráfego do
+container (Chrome, SeleniumBase, Firefox, Python, PJeOffice) pode sair por um relay:
+
+```bash
+docker run -d --shm-size=2g \
+  -e EGRESS_PROXY_URL='socks5://usuario:senha@relay.exemplo.com.br:1080' \
+  -e EGRESS_EXPECTED_IP=200.200.200.200 \
+  -e SCRIPT_URL=... -e USE_XVFB=1 -e USE_OPENBOX=1 \
+  ghcr.io/nailtongomes/rpa-worker-selenium:latest
+```
+
+Fica desligado por padrão. Com o relay configurado e fora do ar, o container para em vez
+de sair pelo IP do servidor. Requisitos do relay e a rotina de teste
+(`python /app/egress_check.py`) estão em [`docs/EGRESS_RELAY.md`](docs/EGRESS_RELAY.md).
+
 ### Sem `SCRIPT_URL`
 
 O container executa o comando passado (padrão: `python --version`). Com `WORKER_LOOP=1`
@@ -140,6 +157,8 @@ antigo (aceitar o fallback via `requests`).
 | `TASK_AUTH_TOKEN` | — | Token Bearer do modo standby |
 | `A1_PFX_URL` / `A1_PFX_PATH` | — | Certificado A1 (`.pfx`) por URL ou arquivo montado; usado por `a1cert.load_from_env()` |
 | `A1_PFX_PASSWORD` / `A1_PFX_PASSWORD_FILE` | — | Senha do A1 (o arquivo, via Docker secret, tem prioridade e não aparece no `docker inspect`) |
+| `EGRESS_PROXY_URL` / `EGRESS_PROXY_URL_FILE` | — (desligado) | Relay de saída: todo o tráfego sai pela internet do cliente ([guia](docs/EGRESS_RELAY.md)) |
+| `EGRESS_REQUIRED` / `EGRESS_EXPECTED_IP` / `EGRESS_BYPASS` | `1` / — / — | Parar se o relay falhar / IP esperado na saída / destinos que saem direto |
 | `CHROME_PROFILE_URL` | — | `.zip` de profile do Chrome; baixado no boot para `/usr/local/share/<nome>.zip`, caminho exportado em `CHROME_PROFILE_ZIP_PATH` |
 
 ### Display e serviços
@@ -238,7 +257,7 @@ RUN_ONLINE_TESTS=0 scripts/test-image.sh rpa-worker:local  # sem internet
 ```
 
 Ele valida o contrato da imagem, todos os browsers (local e na página do projeto no
-GitHub), certificado A1 (ICP de teste), Xvfb/OpenBox/PJeOffice/VNC/noVNC, worker em loop, execução única, propagação de
+GitHub), certificado A1 (ICP de teste), relay de saída, Xvfb/OpenBox/PJeOffice/VNC/noVNC, worker em loop, execução única, propagação de
 erro e modo standby. Veja [`docs/TESTING.md`](docs/TESTING.md).
 
 ### Comparar a imagem antes/depois de uma mudança
@@ -256,6 +275,7 @@ Mais detalhes em [`docs/TESTING.md`](docs/TESTING.md).
 ## Documentação
 
 - [docs/WORKER.md](docs/WORKER.md) — worker em loop e modo standby
+- [docs/EGRESS_RELAY.md](docs/EGRESS_RELAY.md) — relay de saída (internet do cliente): variáveis, requisitos do relay e rotina de teste
 - [docs/A1_CERTIFICATE_GUIDE.md](docs/A1_CERTIFICATE_GUIDE.md) — certificado A1: `a1cert`, `.p7s`, PAdES, `a1_check.py` e problemas conhecidos
 - [docs/CA_RUNTIME_MANAGEMENT.md](docs/CA_RUNTIME_MANAGEMENT.md) — CAs em tempo de execução
 - [docs/VNC_QUICKSTART.md](docs/VNC_QUICKSTART.md) — debug visual com VNC/noVNC

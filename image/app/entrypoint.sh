@@ -37,6 +37,12 @@ export TASK_AUTH_TOKEN=${TASK_AUTH_TOKEN:-}
 # Firefox Profile
 export FIREFOX_PROFILE_DIR=${FIREFOX_PROFILE_DIR:-/root/.mozilla/firefox/selenium.default-release}
 
+# Egress relay (optional, off by default): all outbound traffic leaves through
+# EGRESS_PROXY_URL (socks5://, http:// or https://, with user:password) instead of
+# the server's own connection. See docs/EGRESS_RELAY.md.
+export EGRESS_REQUIRED=${EGRESS_REQUIRED:-1}
+export EGRESS_LOCAL_PORT=${EGRESS_LOCAL_PORT:-3128}
+
 # PIDs for background processes
 XVFB_PID=""
 OPENBOX_PID=""
@@ -44,6 +50,7 @@ PJEOFFICE_PID=""
 FFMPEG_PID=""
 VNC_PID=""
 NOVNC_PID=""
+EGRESS_PID=""
 
 # Timestamp function for logging
 log_timestamp() {
@@ -135,6 +142,51 @@ download_chrome_profile() {
     fi
 }
 
+# Stop (EGRESS_REQUIRED=1) or warn when the egress relay does not work
+egress_fail() {
+    echo "$(log_timestamp) ❌ Egress relay failed: $1"
+    if [ "${EGRESS_REQUIRED}" = "1" ]; then
+        echo "$(log_timestamp) ❌ EGRESS_REQUIRED=1: stopping so no traffic leaves through the server's own connection"
+        exit 1
+    fi
+    echo "$(log_timestamp) ⚠️  EGRESS_REQUIRED=0: continuing; outbound traffic fails until the relay works"
+}
+
+# Route all outbound traffic through the egress relay (optional)
+setup_egress_proxy() {
+    if [ -z "${EGRESS_PROXY_URL:-}" ] && [ -z "${EGRESS_PROXY_URL_FILE:-}" ]; then
+        python /app/egress_proxy.py unconfigure >/dev/null 2>&1 || true
+        echo "$(log_timestamp) ℹ️  EGRESS_PROXY_URL not set, using the server's internet connection"
+        return 0
+    fi
+
+    local env_lines result
+    if ! env_lines="$(python /app/egress_proxy.py env --port "${EGRESS_LOCAL_PORT}" 2>&1)"; then
+        egress_fail "${env_lines}"
+        return 0
+    fi
+
+    echo "$(log_timestamp) 🌐 Starting egress relay forwarder on 127.0.0.1:${EGRESS_LOCAL_PORT}..."
+    # Restarted automatically if it ever exits; clients never fall back to a direct connection
+    (
+        while true; do
+            python /app/egress_proxy.py serve --listen "127.0.0.1:${EGRESS_LOCAL_PORT}" >> /app/logs/egress_proxy.log 2>&1
+            sleep 1
+        done
+    ) &
+    EGRESS_PID=$!
+
+    # HTTP(S)_PROXY, NO_PROXY and JAVA_TOOL_OPTIONS for every child process
+    eval "${env_lines}"
+    python /app/egress_proxy.py configure --port "${EGRESS_LOCAL_PORT}" >/dev/null
+
+    if result="$(python /app/egress_proxy.py check --port "${EGRESS_LOCAL_PORT}" 2>&1)"; then
+        echo "$(log_timestamp) ✅ Outbound traffic via egress relay (exit: ${result})"
+    else
+        egress_fail "${result}"
+    fi
+}
+
 setup_firefox_profile() {
     echo "$(log_timestamp) 🦊 Setting up Firefox profile..."
 
@@ -158,6 +210,7 @@ handle_sigterm() {
     [ -n "$XVFB_PID" ] && kill -TERM "$XVFB_PID" 2>/dev/null || true
     [ -n "$OPENBOX_PID" ] && kill -TERM "$OPENBOX_PID" 2>/dev/null || true
     [ -n "$PJEOFFICE_PID" ] && kill -TERM "$PJEOFFICE_PID" 2>/dev/null || true
+    [ -n "$EGRESS_PID" ] && kill -TERM "$EGRESS_PID" 2>/dev/null || true
     
     # Wait a moment for FFmpeg to finalize the recording
     if [ -n "$FFMPEG_PID" ]; then
@@ -637,7 +690,10 @@ main() {
     # Setup directories
     setup_directories
     setup_firefox_profile
-    
+
+    # Optional egress relay: must come before any download
+    setup_egress_proxy
+
     # Download Chrome profile at runtime if needed
     download_chrome_profile
     

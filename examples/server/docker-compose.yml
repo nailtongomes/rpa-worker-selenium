@@ -64,6 +64,12 @@ x-worker-env: &worker-env
   A1_PFX_PASSWORD: ${A1_PFX_PASSWORD:-}
   A1_PFX_PASSWORD_FILE: ${A1_PFX_PASSWORD_FILE:-}
 
+  # Relay de saída: o EGRESS_PROXY_URL de cada worker fica no bloco do worker (abaixo)
+  EGRESS_PROXY_URL_FILE: ${EGRESS_PROXY_URL_FILE:-}
+  EGRESS_BYPASS: ${EGRESS_BYPASS:-}
+  EGRESS_REQUIRED: ${EGRESS_REQUIRED:-1}
+  EGRESS_CHECK_URL: ${EGRESS_CHECK_URL:-https://api.ipify.org}
+
   TZ: ${TZ:-America/Fortaleza}
 
 # --- Workers ----------------------------------------------------------------
@@ -77,6 +83,9 @@ services:
       WORKER_ID: rpa-worker-01
       SCRIPT_URL: ${SCRIPT_URL_01:-${SCRIPT_URL:?defina SCRIPT_URL no .env}}
       CHROME_PROFILE_URL: ${CHROME_PROFILE_URL_01:-${CHROME_PROFILE_URL:-}}
+      # Relay de saída (opcional, só alguns clientes): docs/EGRESS_RELAY.md
+      EGRESS_PROXY_URL: ${EGRESS_PROXY_URL_01:-${EGRESS_PROXY_URL:-}}
+      EGRESS_EXPECTED_IP: ${EGRESS_EXPECTED_IP_01:-${EGRESS_EXPECTED_IP:-}}
     volumes:
       - ./data/rpa-worker-01/db:/app/db
       - ./data/rpa-worker-01/src:/app/src
@@ -92,6 +101,8 @@ services:
       WORKER_ID: rpa-worker-02
       SCRIPT_URL: ${SCRIPT_URL_02:-${SCRIPT_URL:?defina SCRIPT_URL no .env}}
       CHROME_PROFILE_URL: ${CHROME_PROFILE_URL_02:-${CHROME_PROFILE_URL:-}}
+      EGRESS_PROXY_URL: ${EGRESS_PROXY_URL_02:-${EGRESS_PROXY_URL:-}}
+      EGRESS_EXPECTED_IP: ${EGRESS_EXPECTED_IP_02:-${EGRESS_EXPECTED_IP:-}}
     volumes:
       - ./data/rpa-worker-02/db:/app/db
       - ./data/rpa-worker-02/src:/app/src
@@ -107,6 +118,8 @@ services:
       WORKER_ID: rpa-worker-03
       SCRIPT_URL: ${SCRIPT_URL_03:-${SCRIPT_URL:?defina SCRIPT_URL no .env}}
       CHROME_PROFILE_URL: ${CHROME_PROFILE_URL_03:-${CHROME_PROFILE_URL:-}}
+      EGRESS_PROXY_URL: ${EGRESS_PROXY_URL_03:-${EGRESS_PROXY_URL:-}}
+      EGRESS_EXPECTED_IP: ${EGRESS_EXPECTED_IP_03:-${EGRESS_EXPECTED_IP:-}}
     volumes:
       - ./data/rpa-worker-03/db:/app/db
       - ./data/rpa-worker-03/src:/app/src
@@ -122,6 +135,8 @@ services:
       WORKER_ID: rpa-worker-04
       SCRIPT_URL: ${SCRIPT_URL_04:-${SCRIPT_URL:?defina SCRIPT_URL no .env}}
       CHROME_PROFILE_URL: ${CHROME_PROFILE_URL_04:-${CHROME_PROFILE_URL:-}}
+      EGRESS_PROXY_URL: ${EGRESS_PROXY_URL_04:-${EGRESS_PROXY_URL:-}}
+      EGRESS_EXPECTED_IP: ${EGRESS_EXPECTED_IP_04:-${EGRESS_EXPECTED_IP:-}}
     volumes:
       - ./data/rpa-worker-04/db:/app/db
       - ./data/rpa-worker-04/src:/app/src
