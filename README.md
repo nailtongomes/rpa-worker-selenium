@@ -1,1081 +1,224 @@
-[![Smoke Test](https://github.com/nailtongomes/rpa-worker-selenium/actions/workflows/smoke-test.yml/badge.svg)](https://github.com/nailtongomes/rpa-worker-selenium/actions/workflows/smoke-test.yml)
-
 # rpa-worker-selenium
 
-A production-ready Docker image for running dynamic Python scripts with Selenium automation. This image uses optimized builds with cache mounts and comes pre-configured with Chrome, ChromeDriver, and comprehensive dependencies for web automation and RPA tasks.
-
-> **Note**: This repository provides five Dockerfile versions:
-> - **`dockerfile.slim`** ⭐ **NEW** - Optimized Debian Trixie with conditional features (recommended)
-> - `Dockerfile` (unified) - Multi-browser support with build arg (Chrome or Brave)
-> - `Dockerfile.firefox` - Uses Firefox browser with GeckoDriver for Mozilla automation
-> - `Dockerfile.trixie` - Debian Trixie-based with Chrome + Firefox ESR + comprehensive GUI/window management + noVNC
-> - `Dockerfile.alpine` - Lightweight for serverless (Lambda, Cloud Run) - Chromium & Firefox ESR
-> 
-> See [DOCKERFILE_VERSIONS.md](DOCKERFILE_VERSIONS.md) for details on which to use.
-
-## Features
-
-- 🚀 **NEW**: `dockerfile.slim` - Optimized image with conditional features (44% smaller)
-- 👷 **NEW**: Simple RPA worker with SCRIPT_URL download and auto-restart
-- 🌐 **NEW**: HTTP Standby Mode - REST API for on-demand task execution
-- 🐍 Python 3.12 on Debian Trixie (slim variant)
-- 🌐 Selenium WebDriver & SeleniumBase
-- 🎛️ **NEW**: Build-time flags for VNC, FFmpeg, noVNC, PDF tools (pay only for what you use)
-- 📦 ChromeDriver (automatically matched to stable Chrome version)
-- 🦊 Firefox ESR + GeckoDriver support
-- 🔐 Certificate support for .pfx files (CA/A1 tokens) with initialized NSS database
-- 🔒 Runtime CA certificate management (install, list, remove)
-- 🖥️ Optional Xvfb (virtual display), OpenBox window manager, and VNC support
-- 🎥 Optional screen recording with FFmpeg (conditional install)
-- ⚖️ Optional PJeOffice support (for Brazilian legal system automations)
-- 🔧 Pre-configured for RPA and automation tasks
-- 📊 Comprehensive packages: requests, beautifulsoup4, pandas, openpyxl, PyAutoGUI, and more
-- 🔒 Runs as root by default for maximum compatibility (non-root user available if needed)
-- 🎯 Multi-stage builds for optimized image size
-- ⚡ Build cache optimizations with BuildKit for faster rebuilds
-- 💡 Lightweight by default - optional services disabled for minimal resource usage
-- ☁️ Serverless-optimized Alpine variant for Lambda, Cloud Run, and Fargate
-
-## Quick Start
-
-### Building the Docker Image
-
-**Optimized Slim (Recommended) ⭐:**
-```bash
-git clone https://github.com/nailtongomes/rpa-worker-selenium.git
-cd rpa-worker-selenium
-
-# Minimal build (~2-2.5 GB)
-DOCKER_BUILDKIT=1 docker build -f dockerfile.slim -t rpa-worker-selenium-slim .
-
-# With debug features (~3.5-4 GB)
-DOCKER_BUILDKIT=1 docker build -f dockerfile.slim \
-  --build-arg ENABLE_VNC=1 \
-  --build-arg ENABLE_NOVNC=1 \
-  --build-arg ENABLE_FFMPEG=1 \
-  --build-arg ENABLE_PDF_TOOLS=1 \
-  -t rpa-worker-selenium-slim-debug .
-```
-
-**Default (Chrome):**
-```bash
-DOCKER_BUILDKIT=1 docker build -t rpa-worker-selenium .
-```
-
-**With Brave Browser:**
-```bash
-DOCKER_BUILDKIT=1 docker build --build-arg BROWSER_TYPE=brave -t rpa-worker-selenium-brave .
-```
-
-**With Firefox:**
-```bash
-DOCKER_BUILDKIT=1 docker build -f Dockerfile.firefox -t rpa-worker-selenium-firefox .
-```
-
-**With Debian Trixie (Enhanced GUI support + Chrome + Firefox + noVNC + Java signers):**
-```bash
-DOCKER_BUILDKIT=1 docker build -f Dockerfile.trixie -t rpa-worker-selenium-debian .
-```
-
-**Alpine (Lightweight for Serverless):**
-```bash
-DOCKER_BUILDKIT=1 docker build -f Dockerfile.alpine -t rpa-worker-selenium-alpine .
-```
-
-> **Note:** `DOCKER_BUILDKIT=1` enables build cache optimizations for faster rebuilds.
-
-> **Note:** Building requires internet access to specific domains during build:
-> - Chrome: `dl.google.com`, `storage.googleapis.com`, `googlechromelabs.github.io`
-> - Brave: `brave-browser-apt-release.s3.brave.com`, `storage.googleapis.com`, `googlechromelabs.github.io`
-> - Firefox: `ftp.mozilla.org`, `github.com`
-> - Debian Trixie: `dl.google.com`, `storage.googleapis.com`, `ftp.mozilla.org`, `github.com`
-> 
-> If you're behind a corporate firewall or in a restricted network, use `Dockerfile.alpine`.
-
-### Running the Example Script
+Imagem Docker de produção para automação web (RPA) em sistemas judiciais brasileiros:
+**Chrome + Firefox + Selenium/SeleniumBase**, execução *headful* com Xvfb + OpenBox,
+**PJeOffice Pro** e suporte a certificados digitais (A1/NSS).
 
 ```bash
-docker run --rm rpa-worker-selenium example_script.py
+docker pull ghcr.io/nailtongomes/rpa-worker-selenium:latest
 ```
 
-### Running the VNC Debugging Example
+A imagem é construída a partir de [`Dockerfile.trixie`](Dockerfile.trixie) (Debian 13 "Trixie")
+e publicada no GHCR pelo GitHub Actions a cada mudança na `main`.
 
-Test the VNC remote debugging feature with the included example:
+---
+
+## O que vem na imagem
+
+| Componente | Versão / origem | Observação |
+|---|---|---|
+| Debian | 13 (Trixie) | locale `pt_BR.UTF-8`, `TZ=America/Sao_Paulo` |
+| Python | 3.13 (venv em `/opt/venv`) | pacotes em [`requirements.txt`](requirements.txt) |
+| Google Chrome for Testing + ChromeDriver | `ARG CHROME_VERSION` | mesma versão, baixados juntos |
+| Firefox ESR (pt-BR) + GeckoDriver | `ARG FIREFOX_VERSION` / `ARG GECKODRIVER_VERSION` | profile `selenium.default-release` com NSS pronto |
+| SeleniumBase | **sempre a mais recente do PyPI** no momento do release | camada própria, renovada a cada release |
+| PJeOffice Pro + Java 21 | 2.5.16 | `BUILD_PJEOFFICE=1` no release |
+| ImageMagick + Ghostscript | Debian | `ENABLE_PDF_TOOLS=1` no release |
+| x11vnc + noVNC | Debian / GitHub | `ENABLE_VNC=1`, `ENABLE_NOVNC=1` no release |
+| FFmpeg (gravação de tela) | — | **não incluso** na imagem publicada (`ENABLE_FFMPEG=0`) |
+
+As versões exatas da imagem atual estão registradas em
+[`docs/baseline/`](docs/baseline/) (gerado por `scripts/image-snapshot.sh`).
+
+---
+
+## Uso rápido
+
+### Executar um script uma vez
 
 ```bash
-# Build the image
-docker build -t rpa-worker-selenium .
-
-# Run with VNC enabled
-docker run --rm \
-  -e USE_XVFB=1 \
-  -e USE_VNC=1 \
-  -p 5900:5900 \
-  rpa-worker-selenium example_vnc_debug.py
-
-# In another terminal, connect with VNC client
-vncviewer localhost:5900
+docker run --rm --shm-size=2g \
+  -e SCRIPT_URL="https://exemplo.com/meu-script.py" \
+  -e USE_XVFB=1 -e USE_OPENBOX=1 \
+  ghcr.io/nailtongomes/rpa-worker-selenium:latest
 ```
 
-This example demonstrates a browser automation that you can observe live via VNC. It's perfect for understanding how the remote debugging feature works.
-
-### Running Your Own Scripts
-
-#### Option 1: Mount a script from your local machine
+### Worker em loop (produção)
 
 ```bash
-docker run --rm -v $(pwd)/my_script.py:/app/src/my_script.py rpa-worker-selenium /app/src/my_script.py
+docker run -d --name rpa-worker-01 --shm-size=2g --restart=always \
+  -e SCRIPT_URL="https://exemplo.com/meu-script.py" \
+  -e WORKER_LOOP=1 -e WORKER_TIMEOUT=3600 -e WORKER_RESTART_DELAY=120 \
+  -e USE_XVFB=1 -e USE_OPENBOX=1 -e USE_PJEOFFICE=1 \
+  ghcr.io/nailtongomes/rpa-worker-selenium:latest
 ```
 
-#### Option 2: Build the script into the image
+Versão com Docker Compose: [`examples/compose/docker-compose.worker.yml`](examples/compose/docker-compose.worker.yml)
+(detalhes em [`docs/WORKER.md`](docs/WORKER.md)).
 
-1. Place your script in the repository directory
-2. Rebuild the image
-3. Run the container with your script:
+### Vários workers no mesmo servidor (ex.: 4)
 
 ```bash
-docker run --rm rpa-worker-selenium your_script.py
+cd examples/server
+cp ../../.env.example .env && nano .env   # SCRIPT_URL e segredos
+docker compose up -d                      # 4 workers: rpa-worker-01..04
+# ou, só com Docker:
+./workers.sh start 4
 ```
 
-#### Option 3: Use docker-compose
+Guia completo (dimensionamento, atualização, rollback, override por worker):
+[`examples/server/README.md`](examples/server/README.md).
+
+### Ver o navegador ao vivo (noVNC)
 
 ```bash
-# Edit docker-compose.yml to specify your script
-docker-compose up
+docker run --rm --shm-size=2g -p 6080:6080 \
+  -e SCRIPT_URL="https://exemplo.com/meu-script.py" \
+  -e USE_XVFB=1 -e USE_OPENBOX=1 -e USE_VNC=1 -e USE_NOVNC=1 \
+  ghcr.io/nailtongomes/rpa-worker-selenium:latest
+# abrir http://localhost:6080/vnc.html
 ```
 
-#### Option 4: Use RPA Worker with Auto-Restart ⭐ **NEW**
+### Modo standby (recebe tarefas por HTTP)
 
-For production RPA tasks that download and run scripts with automatic restart:
+Veja [`examples/compose/docker-compose.standby.yml`](examples/compose/docker-compose.standby.yml)
+e a seção "Standby" de [`docs/WORKER.md`](docs/WORKER.md).
+
+### Sem `SCRIPT_URL`
+
+O container executa o comando passado (padrão: `python --version`). Com `WORKER_LOOP=1`
+e sem `SCRIPT_URL`, roda o smoke test embutido (`/app/smoke_test.py`) em loop.
+
+---
+
+## Variáveis de ambiente
+
+### Execução
+
+| Variável | Padrão | Descrição |
+|---|---|---|
+| `SCRIPT_URL` | — | Script Python baixado para `/tmp/` e executado |
+| `HELPER_URLS` | — | Scripts auxiliares (separados por vírgula), salvos em `/app/src` |
+| `WORKER_MODE` | `pull` | `pull` (baixa e executa) ou `standby` (servidor HTTP em `/app/task_server.py`) |
+| `WORKER_LOOP` | `0` | `1` = executa em loop infinito |
+| `WORKER_TIMEOUT` | `3600` | Timeout por iteração/tarefa (s) |
+| `WORKER_RESTART_DELAY` | `120` | Pausa entre iterações (s) |
+| `TASK_SERVER_PORT` | `8080` | Porta do modo standby |
+| `TASK_AUTH_TOKEN` | — | Token Bearer do modo standby |
+| `CHROME_PROFILE_URL` | — | `.zip` de profile do Chrome; baixado no boot para `/usr/local/share/<nome>.zip`, caminho exportado em `CHROME_PROFILE_ZIP_PATH` |
+
+### Display e serviços
+
+| Variável | Padrão | Descrição |
+|---|---|---|
+| `USE_XVFB` | `0` | Display virtual (`DISPLAY=:99`) |
+| `USE_OPENBOX` | `0` | Window manager (requer Xvfb) — necessário para diálogos de certificado |
+| `USE_PJEOFFICE` | `0` | Inicia o PJeOffice Pro no boot |
+| `USE_VNC` / `VNC_PORT` | `0` / `5900` | Servidor VNC sem senha (requer Xvfb) |
+| `USE_NOVNC` / `NOVNC_PORT` | `0` / `6080` | VNC pelo navegador (requer VNC) |
+| `SCREEN_WIDTH` × `SCREEN_HEIGHT` | `1600` × `900` | Resolução do Xvfb |
+| `USE_SCREEN_RECORDING` | `0` | Grava a tela com FFmpeg (exige imagem com `ENABLE_FFMPEG=1`) |
+| `PJEOFFICE_EXECUTABLE` | `/opt/pjeoffice/pjeoffice-pro.sh` | Executável do PJeOffice |
+| `PJEOFFICE_CONFIG_DIR` | `/app/.pjeoffice-pro` | Configuração do PJeOffice |
+| `FIREFOX_PROFILE_DIR` | `/root/.mozilla/firefox/selenium.default-release` | Profile do Firefox com NSS |
+
+---
+
+## Tags e rollback
+
+Cada release publica três tags:
+
+| Tag | Uso |
+|---|---|
+| `latest` | produção |
+| `sha-<7 chars>` | imagem de um commit específico |
+| `YYYYMMDD-HHMMSS` | imagem de um momento específico (rollback) |
+
+Rollback: troque `:latest` pela tag anterior no seu compose/Kestra
+(`docker pull ghcr.io/nailtongomes/rpa-worker-selenium:<tag>`).
+
+---
+
+## Estrutura do repositório
+
+```
+Dockerfile.trixie        # a imagem de produção
+requirements.txt         # pacotes Python da imagem
+image/
+  app/                   # tudo que vai para /app dentro da imagem
+    entrypoint.sh        #   orquestra Xvfb/OpenBox/PJeOffice/VNC e executa SCRIPT_URL
+    script_downloader.py #   download de SCRIPT_URL e HELPER_URLS
+    task_server.py       #   modo standby (HTTP)
+    smoke_test.py ...    #   smoke tests usados no CI e como fallback
+    src/                 #   helpers de exemplo (/app/src)
+  patch_chromedriver.py  # usado só durante o build
+tests/
+  unit/                  # testes rápidos no host (sem Docker)
+  image/                 # testes que rodam DENTRO da imagem
+examples/
+  server/                # N workers em um servidor: docker-compose (4 workers) e workers.sh
+  compose/               # docker-compose de worker, standby, debug e Caddy
+  scripts/               # scripts Python de exemplo
+docs/                    # guias (worker, certificados A1/CA, VNC, testes) e baseline da imagem
+scripts/                 # ferramentas de desenvolvimento (snapshot, testes em Docker)
+.github/workflows/       # build-push-ghcr.yml (release) e smoke-test.yml (CI)
+```
+
+Só o que está em `image/` e o `requirements.txt` entram no contexto de build
+(o [`.dockerignore`](.dockerignore) é uma allowlist).
+
+---
+
+## Desenvolvimento
+
+### Testes unitários (segundos, sem Docker)
 
 ```bash
-# Set SCRIPT_URL and start worker
-export SCRIPT_URL=https://example.com/my_script.py
-docker compose -f docker-compose.worker.yml up -d
-
-# View logs
-docker compose -f docker-compose.worker.yml logs -f
+python -m venv .venv && . .venv/bin/activate
+pip install -r requirements-dev.txt
+pytest
 ```
 
-See [WORKER_README.md](WORKER_README.md) for complete setup guide.
-
-#### Option 5: HTTP Standby Mode ⭐ **NEW**
-
-Run a worker that waits for HTTP task requests instead of executing immediately:
+### Build local igual ao de produção
 
 ```bash
-# Start worker in standby mode
-docker run -d \
-  --name rpa-standby \
-  -p 8080:8080 \
-  -e WORKER_MODE=standby \
-  -e TASK_SERVER_PORT=8080 \
-  -e TASK_AUTH_TOKEN=your-secret-token \
-  -e USE_XVFB=1 \
-  --restart=always \
-  rpa-worker-selenium
-
-# Send a task via HTTP
-curl -X POST http://localhost:8080/task \
-  -H "Content-Type: application/json" \
-  -H "Authorization: Bearer your-secret-token" \
-  -d '{
-    "script_url": "https://example.com/script.py",
-    "script_name": "script.py",
-    "payload": {"foo": "bar"}
-  }'
-
-# Check health
-curl http://localhost:8080/health
+docker build -f Dockerfile.trixie \
+  --build-arg BUILD_PJEOFFICE=1 --build-arg ENABLE_PDF_TOOLS=1 \
+  --build-arg ENABLE_VNC=1 --build-arg ENABLE_NOVNC=1 \
+  -t rpa-worker:local .
 ```
 
-Features:
-- **REST API**: Send tasks via HTTP POST with JSON payload
-- **Authentication**: Optional Bearer token security
-- **Auto-restart**: Container restarts after each task to clear memory
-- **Status monitoring**: Health endpoint shows current state
-- **Custom payloads**: Pass JSON data to your scripts
-
-See [WORKER_README.md](WORKER_README.md) for complete API documentation and examples.
-
-## Writing Selenium Scripts
-
-Here's a minimal example of a Selenium script:
-
-```python
-from selenium import webdriver
-from selenium.webdriver.chrome.options import Options
-from selenium.webdriver.chrome.service import Service
-
-# Configure Chrome options
-chrome_options = Options()
-chrome_options.add_argument('--headless=new')
-chrome_options.add_argument('--no-sandbox')
-chrome_options.add_argument('--disable-dev-shm-usage')
-
-# Create service with explicit chromedriver path
-service = Service('/usr/local/bin/chromedriver')
-
-# Create driver
-driver = webdriver.Chrome(service=service, options=chrome_options)
-
-# Your automation code
-driver.get("https://example.com")
-print(driver.title)
-
-# Clean up
-driver.quit()
-```
-
-## Advanced Usage
-
-### Using Brave Browser
-
-When using the Brave browser Dockerfile, you need to specify the Brave binary location:
-
-```python
-from selenium import webdriver
-from selenium.webdriver.chrome.options import Options
-from selenium.webdriver.chrome.service import Service
-
-# Configure options for Brave
-chrome_options = Options()
-chrome_options.binary_location = "/usr/bin/brave-browser"
-chrome_options.add_argument('--headless=new')
-chrome_options.add_argument('--no-sandbox')
-chrome_options.add_argument('--disable-dev-shm-usage')
-
-# Create service
-service = Service('/usr/local/bin/chromedriver')
-
-# Create driver
-driver = webdriver.Chrome(service=service, options=chrome_options)
-driver.get("https://example.com")
-print(driver.title)
-driver.quit()
-```
-
-You can also provide the `BRAVE_BROWSER_PATH` environment variable when starting the container (or running the smoke tests) so that scripts know where the Brave binary lives.
-
-Or use the included example script:
+### Testes dentro da imagem
 
 ```bash
-docker run --rm rpa-worker-selenium-brave example_script_brave.py
+docker run --rm rpa-worker:local python /app/smoke_test.py
+docker run --rm rpa-worker:local python /app/test_browser_drivers.py
+scripts/test_trixie_docker.sh test     # suíte de integração (monta tests/ no container)
 ```
 
-### Using Firefox Browser
-
-When using the Firefox browser Dockerfile, configure Selenium for Firefox:
-
-```python
-from selenium import webdriver
-from selenium.webdriver.firefox.options import Options
-from selenium.webdriver.firefox.service import Service
-
-# Configure Firefox options
-firefox_options = Options()
-firefox_options.add_argument('--headless')
-firefox_options.add_argument('--no-sandbox')
-firefox_options.add_argument('--disable-dev-shm-usage')
-
-# Create service with explicit geckodriver path
-service = Service('/usr/local/bin/geckodriver')
-
-# Create driver
-driver = webdriver.Firefox(service=service, options=firefox_options)
-driver.get("https://example.com")
-print(driver.title)
-driver.quit()
-```
-
-Or use the included example script:
+### Comparar a imagem antes/depois de uma mudança
 
 ```bash
-docker run --rm rpa-worker-selenium-firefox example_script_firefox.py
+scripts/image-snapshot.sh ghcr.io/nailtongomes/rpa-worker-selenium:latest snapshots/latest
+scripts/image-snapshot.sh rpa-worker:local snapshots/local
+diff -ru snapshots/latest snapshots/local
 ```
 
-### Using Debian Trixie Version for PJeOffice and Enhanced GUI Support
+Mais detalhes em [`docs/TESTING.md`](docs/TESTING.md).
 
-The Debian Trixie-based Dockerfile is specifically designed for handling complex GUI interactions, including PJeOffice certificate dialogs and Java-based signers:
+---
 
-```bash
-# Build with PJeOffice support
-docker build -f Dockerfile.trixie --build-arg BUILD_PJEOFFICE=1 -t rpa-worker-selenium-debian-pje .
+## Documentação
 
-# Run with full GUI support
-docker run --rm \
-  -e USE_XVFB=1 \
-  -e USE_OPENBOX=1 \
-  -e USE_PJEOFFICE=1 \
-  rpa-worker-selenium-debian-pje my_script.py
-```
+- [docs/WORKER.md](docs/WORKER.md) — worker em loop e modo standby
+- [docs/A1_CERTIFICATE_GUIDE.md](docs/A1_CERTIFICATE_GUIDE.md) — certificados A1 (.pfx/.p12)
+- [docs/CA_RUNTIME_MANAGEMENT.md](docs/CA_RUNTIME_MANAGEMENT.md) — CAs em tempo de execução
+- [docs/VNC_QUICKSTART.md](docs/VNC_QUICKSTART.md) — debug visual com VNC/noVNC
+- [docs/VNC_CADDY_PROXY.md](docs/VNC_CADDY_PROXY.md) — VNC atrás de proxy reverso
+- [docs/FULL_SMOKE_TEST.md](docs/FULL_SMOKE_TEST.md) — smoke test completo
+- [docs/TESTING.md](docs/TESTING.md) — estratégia de testes
+- [AGENTS.md](AGENTS.md) — guia para agentes de IA trabalhando neste repositório
 
-This version includes:
-- Full Debian Trixie (13) base - more updated than Bookworm (12)
-- Comprehensive desktop environment libraries
-- Enhanced window management tools (wmctrl, xdotool, xautomation)
-- D-Bus and PolicyKit for authentication dialogs
-- AT-SPI accessibility support
-- PulseAudio for multimedia dialogs
-- Complete GTK2/GTK3 support
-- Java 21 runtime for PJeOffice and other Java-based signers
-- noVNC support for browser-based remote access
+## Licença
 
-Use this version when:
-- You need to handle PJeOffice certificate password dialogs
-- You need support for Java-based digital signers
-- You need the latest Debian testing packages (Trixie)
-- You need maximum GUI compatibility for complex window interactions
-- You want noVNC for browser-based remote debugging
-
-### Using SeleniumBase
-
-```python
-from seleniumbase import Driver
-
-# Create driver with undetected-chromedriver mode
-driver = Driver(uc=True, headless=True)
-driver.get("https://example.com")
-print(driver.title)
-driver.quit()
-```
-
-### Interactive Python Shell
-
-```bash
-docker run --rm -it rpa-worker-selenium
-```
-
-### Run with Environment Variables
-
-```bash
-docker run --rm \
-  -e SCREEN_WIDTH=1920 \
-  -e SCREEN_HEIGHT=1080 \
-  -e USE_XVFB=1 \
-  rpa-worker-selenium my_script.py
-```
-
-### Access Container Shell
-
-```bash
-docker run --rm -it --entrypoint bash rpa-worker-selenium
-```
-
-### Run as Root (if needed)
-
-Since version updates, the container runs as root by default for compatibility. The `rpauser` is still created for backward compatibility but not used by default.
-
-```bash
-docker run --rm -it rpa-worker-selenium bash
-```
-
-## Optional Services (PJeOffice, Xvfb, OpenBox)
-
-The image supports optional services that can be enabled at build time (PJeOffice) or runtime (Xvfb, OpenBox).
-
-### Building with PJeOffice Support
-
-To include PJeOffice (required for some Brazilian legal system automations), use the `BUILD_PJEOFFICE` build argument:
-
-```bash
-# Default Dockerfile
-docker build --build-arg BUILD_PJEOFFICE=1 -t rpa-worker-selenium-pje .
-
-# Chrome variant
-docker build -f Dockerfile.chrome --build-arg BUILD_PJEOFFICE=1 -t rpa-worker-selenium-pje .
-
-# Firefox variant
-docker build -f Dockerfile.firefox --build-arg BUILD_PJEOFFICE=1 -t rpa-worker-selenium-pje .
-
-# Brave variant
-docker build -f Dockerfile.brave --build-arg BUILD_PJEOFFICE=1 -t rpa-worker-selenium-pje .
-
-# Debian Trixie variant (recommended for PJeOffice certificate dialogs)
-docker build -f Dockerfile.trixie --build-arg BUILD_PJEOFFICE=1 -t rpa-worker-selenium-debian-pje .
-```
-
-**Note:** PJeOffice download requires access to `pje-office.pje.jus.br` during build.
-
-**Recommendation for PJeOffice:** If you're experiencing issues with certificate password dialogs, use the Debian Trixie variant (`Dockerfile.trixie`). It includes comprehensive GUI libraries and window management tools specifically designed to handle these types of interactions.
-
-### Running with Optional Services
-
-Enable services at runtime using environment variables:
-
-#### With Xvfb (Virtual Display)
-
-```bash
-docker run --rm \
-  -e USE_XVFB=1 \
-  rpa-worker-selenium my_script.py
-```
-
-#### With OpenBox Window Manager
-
-OpenBox requires Xvfb to be enabled:
-
-```bash
-docker run --rm \
-  -e USE_XVFB=1 \
-  -e USE_OPENBOX=1 \
-  rpa-worker-selenium my_script.py
-```
-
-#### With PJeOffice
-
-PJeOffice must be installed at build time (BUILD_PJEOFFICE=1):
-
-```bash
-docker run --rm \
-  -e USE_XVFB=1 \
-  -e USE_OPENBOX=1 \
-  -e USE_PJEOFFICE=1 \
-  rpa-worker-selenium-pje my_script.py
-```
-
-##### Using Custom PJeOffice Paths
-
-If PJeOffice is installed in a non-standard location, you can specify custom paths:
-
-```bash
-docker run --rm \
-  -e USE_XVFB=1 \
-  -e USE_OPENBOX=1 \
-  -e USE_PJEOFFICE=1 \
-  -e PJEOFFICE_EXECUTABLE=/custom/path/pjeoffice-pro.sh \
-  -e PJEOFFICE_CONFIG_DIR=/custom/config/dir \
-  -e PJEOFFICE_CONFIG_FILE=/custom/config/dir/pjeoffice-pro.config \
-  rpa-worker-selenium-pje my_script.py
-```
-
-The PJeOffice path environment variables allow you to:
-- Edit the configuration file at runtime using the `PJEOFFICE_CONFIG_FILE` path
-- Execute PJeOffice from a custom location using the `PJEOFFICE_EXECUTABLE` path
-- Store configuration in a custom directory using the `PJEOFFICE_CONFIG_DIR` path
-
-#### All Services Combined
-
-```bash
-docker run --rm \
-  -e USE_XVFB=1 \
-  -e USE_OPENBOX=1 \
-  -e USE_PJEOFFICE=1 \
-  -e SCREEN_WIDTH=1920 \
-  -e SCREEN_HEIGHT=1080 \
-  rpa-worker-selenium-pje my_script.py
-```
-
-### Remote Debugging with VNC
-
-The image supports VNC (Virtual Network Computing) for remote debugging, allowing you to connect to the container and visually observe the automation in real-time. This is particularly useful when video recording is not working as expected or when you need to see what's happening during execution.
-
-#### Enable VNC Server
-
-VNC requires Xvfb to be enabled. The VNC server allows read-only viewing - you can see the automation but cannot interact with it:
-
-```bash
-docker run --rm \
-  -e USE_XVFB=1 \
-  -e USE_VNC=1 \
-  -p 5900:5900 \
-  rpa-worker-selenium my_script.py
-```
-
-Then connect with any VNC client to `localhost:5900`:
-
-```bash
-# Using vncviewer (Linux/Mac)
-vncviewer localhost:5900
-
-# Using RealVNC Viewer (Windows/Mac/Linux)
-# Connect to: localhost:5900
-
-# Using TightVNC (Windows)
-# Connect to: localhost:5900
-```
-
-#### Browser-Based VNC with noVNC (New!)
-
-For easier access without installing a VNC client, you can use the built-in noVNC support to access VNC directly from your web browser:
-
-```bash
-docker run --rm \
-  -e USE_XVFB=1 \
-  -e USE_VNC=1 \
-  -e USE_NOVNC=1 \
-  -p 6080:6080 \
-  rpa-worker-selenium example_novnc_debug.py
-```
-
-Then open your browser and navigate to:
-```
-http://localhost:6080/vnc.html
-```
-
-Click "Connect" to view the automation in real-time. No VNC client installation required!
-
-**Example with Firefox:**
-```bash
-docker run --rm \
-  -e USE_XVFB=1 \
-  -e USE_VNC=1 \
-  -e USE_NOVNC=1 \
-  -p 6080:6080 \
-  rpa-worker-selenium-firefox example_script_firefox.py
-```
-
-**Note:** The noVNC feature is available in all Dockerfiles except `Dockerfile.alpine`.
-
-#### VNC with Custom Ports
-
-```bash
-docker run --rm \
-  -e USE_XVFB=1 \
-  -e USE_VNC=1 \
-  -e USE_NOVNC=1 \
-  -e VNC_PORT=5901 \
-  -e NOVNC_PORT=6081 \
-  -p 5901:5901 \
-  -p 6081:6081 \
-  rpa-worker-selenium my_script.py
-```
-
-#### VNC with PJeOffice and OpenBox
-
-To debug PJeOffice interactions with visual feedback:
-
-```bash
-docker run --rm \
-  -e USE_XVFB=1 \
-  -e USE_OPENBOX=1 \
-  -e USE_PJEOFFICE=1 \
-  -e USE_VNC=1 \
-  -e USE_NOVNC=1 \
-  -p 6080:6080 \
-  rpa-worker-selenium-pje my_script.py
-```
-
-Access via browser at `http://localhost:6080/vnc.html`
-
-#### VNC with Docker Compose
-
-Create a `docker-compose.yml` file:
-
-```yaml
-services:
-  rpa-worker:
-    image: rpa-worker-selenium:latest
-    ports:
-      - "6080:6080"  # noVNC browser access
-      - "5900:5900"  # Traditional VNC (optional)
-    environment:
-      - USE_XVFB=1
-      - USE_VNC=1
-      - USE_NOVNC=1
-      - SCREEN_WIDTH=1920
-      - SCREEN_HEIGHT=1080
-    volumes:
-      - ./scripts:/app/src
-    command: python /app/src/my_script.py
-```
-
-Then run:
-
-```bash
-docker-compose up
-```
-
-Access via browser at `http://localhost:6080/vnc.html`
-
-#### VNC Security Considerations
-
-**Important:** The default VNC configuration uses no password (`-nopw` flag) for simplicity in local development. This is suitable for:
-- Local development on your own machine
-- Trusted internal networks
-- Containers that are not exposed to the internet
-
-For production or untrusted networks, consider:
-- Using SSH tunneling to connect to VNC
-- Setting up a reverse proxy with authentication (see [VNC_CADDY_PROXY.md](VNC_CADDY_PROXY.md))
-- Running the container in a private network
-- Using the noVNC browser interface behind a firewall
-
-**Note:** Both VNC and noVNC require Xvfb to be running (`USE_XVFB=1`). If Xvfb is not enabled, they will be skipped with a warning message.
-
-#### VNC with Reverse Proxy (Production)
-
-For production deployments, use a reverse proxy with authentication and HTTPS. See the complete guide: **[VNC_CADDY_PROXY.md](VNC_CADDY_PROXY.md)**
-
-Quick example with Caddy:
-
-```bash
-# Start with Caddy reverse proxy
-docker-compose -f docker-compose.caddy.yml up -d
-
-# Access via browser (noVNC)
-open http://localhost:8080
-```
-
-The Caddy setup provides:
-- Basic authentication
-- HTTPS with automatic certificates (Let's Encrypt)
-- Browser-based VNC client (noVNC)
-- Centralized access control
-
-### Screen Recording for Debugging
-
-The image supports optional screen recording to help debug automation issues, especially when working with PJeOffice or visual interactions.
-
-#### Enable Screen Recording
-
-Screen recording requires Xvfb to be enabled:
-
-```bash
-docker run --rm \
-  -e USE_XVFB=1 \
-  -e USE_SCREEN_RECORDING=1 \
-  -v $(pwd)/recordings:/app/recordings \
-  rpa-worker-selenium my_script.py
-```
-
-The recording will be saved as an MP4 file in `/app/recordings` with a timestamp in the filename (e.g., `recording_20241110_120345.mp4`).
-
-#### Custom Recording Directory and Filename
-
-```bash
-docker run --rm \
-  -e USE_XVFB=1 \
-  -e USE_SCREEN_RECORDING=1 \
-  -e RECORDING_DIR=/data/recordings \
-  -e RECORDING_FILENAME=my_automation.mp4 \
-  -v $(pwd)/data:/data \
-  rpa-worker-selenium my_script.py
-```
-
-#### Recording with PJeOffice
-
-To debug PJeOffice interactions:
-
-```bash
-docker run --rm \
-  -e USE_XVFB=1 \
-  -e USE_OPENBOX=1 \
-  -e USE_PJEOFFICE=1 \
-  -e USE_SCREEN_RECORDING=1 \
-  -v $(pwd)/recordings:/app/recordings \
-  rpa-worker-selenium-pje my_script.py
-```
-
-**Recording Details:**
-- Format: MP4 (H.264 codec)
-- Frame rate: 15 fps (optimized for file size)
-- Resolution: Matches `SCREEN_WIDTH` and `SCREEN_HEIGHT`
-- The recording starts when the container starts and stops when the container exits
-
-**Note:** Screen recording requires Xvfb to be running (`USE_XVFB=1`). If Xvfb is not enabled, recording will be skipped with a warning message.
-
-### Default Behavior (Lightweight Mode)
-
-By default, all optional services are disabled for lightweight, headless operation:
-- `USE_XVFB=0` - No virtual display
-- `USE_OPENBOX=0` - No window manager
-- `USE_PJEOFFICE=0` - PJeOffice not started (even if installed)
-- `USE_VNC=0` - No VNC server
-- `USE_SCREEN_RECORDING=0` - No screen recording
-
-This allows the container to run with minimal resources when these features are not needed.
-
-## Running Scripts from URLs
-
-The image supports downloading and executing scripts from URLs using environment variables:
-
-### Download and Execute a Script
-
-```bash
-docker run --rm \
-  -e SCRIPT_URL=https://example.com/my_script.py \
-  rpa-worker-selenium
-```
-
-### Download Script with Helper Scripts
-
-```bash
-docker run --rm \
-  -e SCRIPT_URL=https://example.com/main_script.py \
-  -e HELPER_URLS=https://example.com/helper1.py,https://example.com/helper2.py \
-  -v $(pwd)/data:/data \
-  rpa-worker-selenium
-```
-
-Helper scripts are downloaded to `/app/src/` and can be imported by the main script.
-
-### Run the Smoke Test
-
-A smoke test is included to verify the setup:
-
-```bash
-# Using default URL ([https://example.com/](https://example.com/))
-docker run --rm -v $(pwd)/data:/data rpa-worker-selenium python /app/smoke_test.py
-
-# Using custom URL
-docker run --rm \
-  -e TARGET_URL=https://example.com \
-  -v $(pwd)/data:/data \
-  rpa-worker-selenium python /app/smoke_test.py
-```
-
-The smoke test tries SeleniumBase first and falls back to requests if unavailable.
-
-#### Smoke Test with Process Checks
-
-The smoke test can verify that Xvfb and PJeOffice processes are running:
-
-```bash
-# Build image with PJeOffice
-docker build -f Dockerfile.chrome --build-arg BUILD_PJEOFFICE=1 -t rpa-worker-selenium-pje .
-
-# Run smoke test with all services and process checks
-docker run --rm \
-  -e USE_XVFB=1 \
-  -e USE_OPENBOX=1 \
-  -e USE_PJEOFFICE=1 \
-  -e CHECK_PROCESSES=1 \
-  -e TARGET_URL=https://example.com \
-  -v $(pwd)/data:/data \
-  rpa-worker-selenium-pje \
-  bash -c "sleep 5 && python /app/smoke_test.py"
-```
-
-The `CHECK_PROCESSES=1` flag enables verification that:
-- Xvfb is running (when `USE_XVFB=1`)
-- PJeOffice is running (when `USE_PJEOFFICE=1`)
-
-## Environment Variables
-
-| Variable | Default | Description |
-|----------|---------|-------------|
-| `SCRIPT_URL` | - | URL of the main Python script to download and execute |
-| `HELPER_URLS` | - | Comma-separated list of helper script URLs to download |
-| `SCRIPTS_DIR` | /app/src | Directory to save helper scripts |
-| `TARGET_URL` | https://example.com/ | URL for smoke test |
-| `CACHE_DIR` | /data | Directory for smoke test outputs |
-| `TEST_HELPERS` | 0 | Test helper scripts functionality (set to 1 to enable) |
-| `CHECK_PROCESSES` | 0 | Check if Xvfb and PJeOffice processes are alive (set to 1 to enable) |
-| `SCREEN_WIDTH` | 1366 | Virtual display width |
-| `SCREEN_HEIGHT` | 768 | Virtual display height |
-| `USE_XVFB` | 0 | Enable Xvfb virtual display (set to 1 to enable) |
-| `USE_OPENBOX` | 0 | Enable OpenBox window manager (set to 1 to enable) |
-| `USE_PJEOFFICE` | 0 | Enable PJeOffice (set to 1 to enable, requires BUILD_PJEOFFICE=1 at build time) |
-| `USE_VNC` | 0 | Enable VNC server (set to 1 to enable) |
-| `USE_NOVNC` | 0 | Enable noVNC browser-based VNC (set to 1 to enable, requires USE_VNC=1) |
-| `USE_SCREEN_RECORDING` | 0 | Enable screen recording (set to 1 to enable, requires USE_XVFB=1) |
-| `VNC_PORT` | 5900 | VNC server port |
-| `NOVNC_PORT` | 6080 | noVNC WebSocket port for browser access |
-| `DISPLAY` | :99 | X11 display number |
-| `RECORDING_DIR` | /app/recordings | Directory to save screen recordings |
-| `RECORDING_FILENAME` | recording_YYYYMMDD_HHMMSS.mp4 | Filename for screen recording (auto-generated with timestamp if not specified) |
-| `PJEOFFICE_CONFIG_DIR` | /app/.pjeoffice-pro | Directory for PJeOffice configuration files |
-| `PJEOFFICE_CONFIG_FILE` | /app/.pjeoffice-pro/pjeoffice-pro.config | Full path to PJeOffice configuration file |
-| `PJEOFFICE_EXECUTABLE` | /opt/pjeoffice/pjeoffice-pro.sh | Path to PJeOffice executable script |
-
-## Installed Python Packages
-
-### Core Automation
-- selenium >= 4.25.0
-- seleniumbase
-- pyvirtualdisplay
-
-### Web Scraping
-- beautifulsoup4 == 4.13.3
-- lxml == 5.3.0
-- requests == 2.32.3
-
-### Data Processing
-- pandas == 2.2.3
-- openpyxl == 3.1.5
-- PyPDF2 == 3.0.1
-
-### Image Processing & GUI Automation
-- opencv-python == 4.10.0.84
-- pillow >= 10.1.0
-- PyAutoGUI
-- pyperclip == 1.9.0
-
-### Utilities
-- filelock == 3.18.0
-- psutil == 6.1.0
-- pytz == 2024.2
-- tinydb == 4.8.2
-- PyJWT == 2.10.1
-- pyotp == 2.9.0
-
-## Architecture
-
-This image uses a **multi-stage build**:
-
-1. **Builder stage**: Downloads Chrome and ChromeDriver
-2. **Runtime stage**: Installs system dependencies and Python packages
-
-This approach minimizes the final image size while ensuring all necessary components are included.
-
-## Customization
-
-### Adding More Python Packages
-
-Edit `requirements.txt` and rebuild the image:
-
-```bash
-echo "your-package==1.0.0" >> requirements.txt
-docker build -t rpa-worker-selenium .
-```
-
-### Chrome Version
-
-The Dockerfile automatically downloads the latest stable version of Google Chrome and its matching ChromeDriver. This ensures you always have the most recent stable release with security updates and bug fixes.
-
-If you need a specific Chrome version instead:
-
-1. Modify the builder stage to download a specific .deb version from Google's archive
-2. Or switch back to Chrome for Testing by specifying a version:
-
-```dockerfile
-# In builder stage, replace the stable download with:
-ARG CHROME_VERSION=142.0.7444.162
-RUN curl -Lo "chrome-linux64.zip" "https://storage.googleapis.com/chrome-for-testing-public/${CHROME_VERSION}/linux64/chrome-linux64.zip" \
- && unzip chrome-linux64.zip
-# And adjust the runtime stage to extract and link accordingly
-```
-
-### Using a Different Python Version
-
-Edit the first line of the Dockerfile:
-
-```dockerfile
-FROM python:3.12-slim-bookworm  # or any other version
-```
-
-## Testing
-
-The repository includes multiple test suites to validate the functionality:
-
-### Quick Test Suite
-
-```bash
-# Run the quick test suite
-python test_features.py
-```
-
-The quick test suite validates:
-- Script downloader URL parsing and filename extraction
-- Smoke test title extraction logic
-- Environment variable handling
-- Brave browser example script structure
-
-### Full Smoke Test
-
-```bash
-# Run the comprehensive smoke test
-python full_smoke_test.py
-```
-
-The full smoke test performs extensive validation:
-- Python version compatibility
-- Core package imports (selenium, seleniumbase, requests, beautifulsoup4, pandas, etc.)
-- Browser drivers availability (ChromeDriver, GeckoDriver)
-- Selenium functionality with different browsers (Chrome, Firefox, Brave - optional)
-- SeleniumBase functionality
-- Requests library as fallback
-- Script downloader functionality
-- Helper scripts integration
-- Environment variables configuration
-- Process health checks (Xvfb, PJeOffice, screen recording - when enabled)
-- Filesystem operations
-- Network connectivity
-
-#### Full Smoke Test Options
-
-Environment variables for customizing the full smoke test:
-
-| Variable | Default | Description |
-|----------|---------|-------------|
-| `TARGET_URL` | https://example.com | URL to test during browser validation |
-| `CACHE_DIR` | /data | Directory to save test outputs and reports |
-| `TEST_ALL_BROWSERS` | 0 | Test all available browsers (set to 1 to enable) |
-| `BRAVE_BROWSER_PATH` | /usr/bin/brave-browser | Absolute path to the Brave browser binary (required for Brave tests) |
-| `CHECK_PROCESSES` | 0 | Check if Xvfb and PJeOffice processes are alive (set to 1 to enable) |
-| `VERBOSE` | 0 | Enable verbose output (set to 1 to enable) |
-
-**Examples:**
-
-```bash
-# Run with custom URL and verbose output
-TARGET_URL=https://example.com VERBOSE=1 python full_smoke_test.py
-
-# Run with all browsers and process checks
-TEST_ALL_BROWSERS=1 CHECK_PROCESSES=1 python full_smoke_test.py
-
-# Run in Docker container with all features
-docker run --rm \
-  -e USE_XVFB=1 \
-  -e CHECK_PROCESSES=1 \
-  -e TARGET_URL=https://example.com \
-  -e CACHE_DIR=/data \
-  -v $(pwd)/data:/data \
-  rpa-worker-selenium \
-  python /app/full_smoke_test.py
-```
-
-The full smoke test generates detailed JSON reports with test results, timestamps, and success rates.
-
-> **Note:** The Brave browser portion of the smoke test is only required for images built from `Dockerfile.brave`. Enable it by setting `TEST_ALL_BROWSERS=1` and pointing `BRAVE_BROWSER_PATH` to a valid Brave binary; other images will report the Brave test as skipped.
-
-## Troubleshooting
-
-### Chrome/ChromeDriver Version Mismatch
-
-The Dockerfile automatically downloads the latest stable Chrome version and matching ChromeDriver, so version mismatches should not occur. Both are synchronized to use the same stable release version.
-
-If you experience issues, rebuild the image to get the latest versions:
-
-```bash
-docker build -t rpa-worker-selenium .
-```
-
-For a specific version, see the "Chrome Version" section under Customization.
-
-### Memory Issues
-
-If you encounter memory issues, increase Docker's memory limit or ensure these options are in your Chrome configuration:
-
-```python
-chrome_options.add_argument('--disable-dev-shm-usage')
-chrome_options.add_argument('--no-sandbox')
-```
-
-### Permission Issues
-
-The container runs as root by default for maximum compatibility. The non-root user `rpauser` (UID 1000) is still created for backward compatibility. If you need to run as the non-root user:
-
-```bash
-docker run --rm -it --user rpauser rpa-worker-selenium bash
-```
-
-### SSL Certificate Issues
-
-If you encounter SSL certificate issues, the image includes proper CA certificates. You may need to update them:
-
-```bash
-docker run --rm rpa-worker-selenium apt-get update && apt-get install -y ca-certificates
-```
-
-### Runtime CA Certificate Management
-
-All images include tools for managing CA certificates at runtime. This is essential for corporate environments with custom Certificate Authorities or systems requiring specific CA authentication.
-
-#### Installing CA Certificates at Runtime
-
-You can install custom CA certificates dynamically using the included tools:
-
-```bash
-# Using the example script
-docker run --rm \
-  -v /path/to/custom-ca.crt:/tmp/ca.crt:ro \
-  rpa-worker-selenium \
-  python /app/example_ca_runtime.py --install /tmp/ca.crt --name my-custom-ca
-
-# Or manually
-docker run --rm \
-  -v /path/to/custom-ca.crt:/tmp/ca.crt:ro \
-  rpa-worker-selenium \
-  bash -c "
-    cp /tmp/ca.crt /usr/local/share/ca-certificates/my-custom-ca.crt && \
-    update-ca-certificates && \
-    python your_script.py
-  "
-```
-
-#### Listing CA Certificates
-
-```bash
-# List installed custom CA certificates
-docker run --rm rpa-worker-selenium \
-  python /app/example_ca_runtime.py --list
-
-# List with detailed information
-docker run --rm rpa-worker-selenium \
-  python /app/example_ca_runtime.py --list --verbose
-```
-
-#### Removing CA Certificates
-
-```bash
-# Remove a CA certificate
-docker run --rm rpa-worker-selenium \
-  python /app/example_ca_runtime.py --remove my-custom-ca
-```
-
-For more details and Python API examples, see:
-- **[CA Runtime Management Guide](CA_RUNTIME_MANAGEMENT.md)** - Complete CA certificate management documentation
-- **[example_ca_runtime.py](example_ca_runtime.py)** - CA certificate management example script
-
-### Client Certificate Authentication (.pfx/.p12 files)
-
-The image includes support for client certificate authentication using .pfx (PKCS#12) files, commonly used for CA certificates or A1 digital tokens in Brazil. The NSS certificate database is pre-initialized for both the default app user and root user.
-
-#### Using .pfx certificates with Chrome
-
-To import a .pfx certificate into Chrome's certificate store:
-
-```bash
-# Import certificate into NSS database (run inside container)
-pk12util -i /path/to/certificate.pfx -d sql:/app/.pki/nssdb
-
-# Or for root user:
-pk12util -i /path/to/certificate.pfx -d sql:/root/.pki/nssdb
-```
-
-You can also mount your certificate file when running the container:
-
-```bash
-docker run --rm \
-  -v /path/to/your/certificate.pfx:/app/certs/certificate.pfx \
-  rpa-worker-selenium \
-  bash -c "pk12util -i /app/certs/certificate.pfx -d sql:/app/.pki/nssdb && python your_script.py"
-```
-
-#### Listing installed certificates
-
-```bash
-# List certificates in the database
-certutil -L -d sql:/app/.pki/nssdb
-
-# Or for root user:
-certutil -L -d sql:/root/.pki/nssdb
-```
-
-**Note**: The NSS database password is empty by default for simplified automation. Chrome will automatically use certificates from the NSS database when accessing websites that require client authentication.
-
-For personal certificate management (A1 tokens), see:
-- **[A1 Certificate Guide](A1_CERTIFICATE_GUIDE.md)** - Complete A1 personal certificate documentation
-- **[example_cert_management.py](example_cert_management.py)** - Personal certificate management example
-
-## Security Features
-
-- ✅ Root user by default for compatibility (non-root user `rpauser` available if needed)
-- ✅ Minimal base image (slim-bookworm)
-- ✅ Multi-stage build reduces attack surface
-- ✅ No unnecessary packages in runtime image
-- ✅ Proper file permissions and ownership
-
-## License
-
-MIT License - see LICENSE file for details
-
-## Contributing
-
-Contributions are welcome! Please feel free to submit a Pull Request.
-
-## Support
-
-For issues and questions, please open an issue on the GitHub repository.
+[MIT](LICENSE)

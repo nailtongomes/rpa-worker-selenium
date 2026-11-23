@@ -1,80 +1,15 @@
-# Git
-.git
-.gitignore
-.gitattributes
+# =============================================================================
+# Build context = allowlist.
+# Only what Dockerfile.trixie actually COPYs is sent to the Docker daemon.
+# Anything new that must go into the image has to be added here explicitly.
+# =============================================================================
+*
 
-# Documentation
-*.md
-!README.md
-docs/
+!requirements.txt
+!image/
 
-# Environment
-.env
-.env.*
-
-# Python
-**/__pycache__/
-*.py[cod]
-*$py.class
-*.so
-.Python
-*.egg-info/
-build/
-dist/
-
-# Virtualenv
-venv/
-env/
-ENV/
-
-# Tests
-tests/
-test_*.py
-*_test.py
-!smoke_test.py
-!full_smoke_test.py
-!alpine_smoke_test.py
-!test_browser_drivers.py
-!smoke_test_clearcote.py
-!patch_chromedriver.py
-
-# Caches
-.pytest_cache/
-.mypy_cache/
-.ruff_cache/
-.cache/
-.coverage
-.coverage.*
-htmlcov/
-
-# IDE
-.vscode/
-.idea/
-*.swp
-*.swo
-
-# OS
-.DS_Store
-Thumbs.db
-
-# Logs
-logs/
-*.log
-
-# Temp
-tmp/
-temp/
-
-# Artifacts
-recordings/
-
-# Secrets
-*.pfx
-*.p12
-*.pem
-*.key
-secrets/
-
-# Database
-*.db
-*.sqlite3
+# Never ship local junk even if it lands inside image/
+**/__pycache__
+**/*.py[cod]
+**/.pytest_cache
+**/.DS_Store

@@ -1,0 +1,7 @@
+# Dependências para rodar os testes unitários no host (não vão para a imagem).
+#   python -m venv .venv && . .venv/bin/activate && pip install -r requirements-dev.txt && pytest
+pytest>=8.0
+pytest-timeout>=2.2
+pyyaml>=6.0
+requests>=2.32
+Flask>=3.0

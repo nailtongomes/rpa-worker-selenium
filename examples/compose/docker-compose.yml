@@ -1,0 +1,37 @@
+# =============================================================================
+# Uso básico da imagem de produção
+#
+#   docker compose run --rm rpa-worker python /app/smoke_test.py
+#   docker compose --profile debug up rpa-worker-vnc     # VNC em localhost:5900
+# =============================================================================
+
+services:
+  rpa-worker:
+    image: ghcr.io/nailtongomes/rpa-worker-selenium:latest
+    shm_size: 2gb
+    volumes:
+      - ../scripts:/app/examples:ro   # scripts de exemplo deste repositório
+    environment:
+      USE_XVFB: "1"
+    # command: python /app/examples/example_script.py
+
+  # Mesmo container com VNC habilitado para inspeção visual
+  rpa-worker-vnc:
+    image: ghcr.io/nailtongomes/rpa-worker-selenium:latest
+    shm_size: 2gb
+    ports:
+      - "5900:5900"   # VNC
+      - "6080:6080"   # noVNC: http://localhost:6080/vnc.html
+    volumes:
+      - ../scripts:/app/examples:ro
+      - ./recordings:/app/recordings
+    environment:
+      USE_XVFB: "1"
+      USE_OPENBOX: "1"
+      USE_VNC: "1"
+      USE_NOVNC: "1"
+      SCREEN_WIDTH: "1920"
+      SCREEN_HEIGHT: "1080"
+    command: python /app/examples/example_vnc_debug.py
+    profiles:
+      - debug

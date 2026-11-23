@@ -8,7 +8,36 @@ on:
   workflow_dispatch:
 
 jobs:
-  
+
+  # ============================================================
+  # Job 0: Unit tests – host only, no Docker build (~1 min)
+  # Validates: entrypoint.sh (syntax, shellcheck, contract),
+  # Dockerfile COPY sources vs .dockerignore, release build-args,
+  # script_downloader, task_server, compose examples
+  # ============================================================
+  unit-tests:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      contents: read
+
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+
+    - name: Set up Python
+      uses: actions/setup-python@v5
+      with:
+        python-version: '3.13'
+        cache: pip
+        cache-dependency-path: requirements-dev.txt
+
+    - name: Install test dependencies
+      run: pip install -r requirements-dev.txt
+
+    - name: Run unit tests
+      run: pytest
+
   # ============================================================
   # Job 1: Basic smoke test – Dockerfile.trixie (no extras)
   # Validates: Chrome, Firefox, SeleniumBase, browser drivers
@@ -37,7 +66,7 @@ jobs:
     - name: Run smoke test in container
       run: |
         docker run --rm \
-          -e TARGET_URL=https://example.com \
+          -e TARGET_URL=https://github.com/nailtongomes/rpa-worker-selenium/ \
           -e CACHE_DIR=/data \
           -v $(pwd)/data:/data \
           rpa-worker-trixie:base \
@@ -138,7 +167,7 @@ jobs:
           -e USE_OPENBOX=1 \
           -e USE_PJEOFFICE=1 \
           -e CHECK_PROCESSES=1 \
-          -e TARGET_URL=https://example.com \
+          -e TARGET_URL=https://github.com/nailtongomes/rpa-worker-selenium/ \
           -e CACHE_DIR=/data \
           -v $(pwd)/data:/data \
           rpa-worker-trixie:pjeoffice \
@@ -195,7 +224,7 @@ jobs:
           -e USE_VNC=1 \
           -e USE_NOVNC=1 \
           -e CHECK_PROCESSES=1 \
-          -e TARGET_URL=https://example.com \
+          -e TARGET_URL=https://github.com/nailtongomes/rpa-worker-selenium/ \
           -e CACHE_DIR=/data \
           -v $(pwd)/data:/data \
           rpa-worker-trixie:novnc \
@@ -252,7 +281,7 @@ jobs:
           -e USE_XVFB=1 \
           -e USE_SCREEN_RECORDING=1 \
           -e CHECK_PROCESSES=1 \
-          -e TARGET_URL=https://example.com \
+          -e TARGET_URL=https://github.com/nailtongomes/rpa-worker-selenium/ \
           -e CACHE_DIR=/data \
           -e RECORDING_DIR=/recordings \
           -v $(pwd)/data:/data \
@@ -297,11 +326,13 @@ jobs:
     - name: Set up Docker Buildx
       uses: docker/setup-buildx-action@v3
 
-    - name: Build Trixie image with full dependencies
+    - name: Build Trixie image (same build-args as the release)
       run: |
         docker build -f Dockerfile.trixie \
           --build-arg BUILD_PJEOFFICE=1 \
           --build-arg ENABLE_PDF_TOOLS=1 \
+          --build-arg ENABLE_VNC=1 \
+          --build-arg ENABLE_NOVNC=1 \
           --load \
           -t rpa-worker-trixie:full .
 
@@ -326,14 +357,26 @@ jobs:
         mkdir -p data test-results
         chmod 777 data test-results
 
+    # Blocking: real browsers must open the project page (no '|| exit 0')
+    - name: Visit project page with every browser (blocking)
+      run: |
+        docker run --rm --shm-size=2g \
+          -e USE_XVFB=1 \
+          -e USE_OPENBOX=1 \
+          -v $(pwd)/test-results:/test-results \
+          -v $(pwd):/repo:ro -w /tmp \
+          rpa-worker-trixie:full \
+          bash -c "sleep 5 && pytest -p no:cacheprovider -p no:seleniumbase -v -rA --timeout=300 --junitxml=/test-results/junit-project-page.xml /repo/tests/image/test_project_page.py"
+
     - name: Run integration tests (no display)
       run: |
         docker run --rm \
           -e CACHE_DIR=/data \
           -v $(pwd)/data:/data \
           -v $(pwd)/test-results:/test-results \
+          -v $(pwd):/repo:ro -w /tmp \
           rpa-worker-trixie:full \
-          bash -c "pytest -v --timeout=180 --junitxml=/test-results/junit-no-display.xml -m 'trixie and integration and not requires_display' tests/trixie_integration_test.py || exit 0"
+          bash -c "pytest -p no:cacheprovider -p no:seleniumbase -v --timeout=180 --junitxml=/test-results/junit-no-display.xml -m 'trixie and integration and not requires_display' /repo/tests/image/trixie_integration_test.py || exit 0"
 
     - name: Run integration tests (with Xvfb)
       run: |
@@ -343,8 +386,9 @@ jobs:
           -e CACHE_DIR=/data \
           -v $(pwd)/data:/data \
           -v $(pwd)/test-results:/test-results \
+          -v $(pwd):/repo:ro -w /tmp \
           rpa-worker-trixie:full \
-          bash -c "sleep 3 && pytest -v --timeout=180 --junitxml=/test-results/junit-xvfb.xml -m 'trixie and integration' tests/trixie_integration_test.py::TestDisplay || exit 0"
+          bash -c "sleep 3 && pytest -p no:cacheprovider -p no:seleniumbase -v --timeout=180 --junitxml=/test-results/junit-xvfb.xml -m 'trixie and integration' /repo/tests/image/trixie_integration_test.py::TestDisplay || exit 0"
 
     - name: Run integration tests (with Xvfb + Openbox)
       run: |
@@ -355,8 +399,9 @@ jobs:
           -e CACHE_DIR=/data \
           -v $(pwd)/data:/data \
           -v $(pwd)/test-results:/test-results \
+          -v $(pwd):/repo:ro -w /tmp \
           rpa-worker-trixie:full \
-          bash -c "sleep 5 && pytest -v --timeout=180 --junitxml=/test-results/junit-full.xml -m 'trixie and integration' tests/trixie_integration_test.py || exit 0"
+          bash -c "sleep 5 && pytest -p no:cacheprovider -p no:seleniumbase -v --timeout=180 --junitxml=/test-results/junit-full.xml -m 'trixie and integration' /repo/tests/image/trixie_integration_test.py || exit 0"
 
     - name: Display test results summary
       if: always()

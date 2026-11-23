@@ -29,6 +29,8 @@ build_image() {
     docker build -f Dockerfile.trixie \
         --build-arg BUILD_PJEOFFICE=1 \
         --build-arg ENABLE_PDF_TOOLS=1 \
+        --build-arg ENABLE_VNC=1 \
+        --build-arg ENABLE_NOVNC=1 \
         -t "$IMAGE_NAME" .
     
     echo -e "${GREEN}✓ Image built successfully${NC}"
@@ -64,8 +66,9 @@ run_tests() {
         -e CACHE_DIR=/data \
         -v "$(pwd)/data:/data" \
         -v "$(pwd)/test-results:/test-results" \
+        -v "$PROJECT_DIR:/repo:ro" -w /tmp \
         "$IMAGE_NAME" \
-        bash -c "pytest -v --timeout=180 --junitxml=/test-results/junit-no-display.xml -m 'trixie and integration' tests/trixie_integration_test.py -k 'not (xvfb or openbox or display or screenshot)'" || true
+        bash -c "pytest -p no:cacheprovider -p no:seleniumbase -v --timeout=180 --junitxml=/test-results/junit-no-display.xml -m 'trixie and integration' /repo/tests/image/trixie_integration_test.py -k 'not (xvfb or openbox or display or screenshot)'" || true
     
     echo ""
     echo -e "${BLUE}Running tests with Xvfb...${NC}"
@@ -75,8 +78,9 @@ run_tests() {
         -e CACHE_DIR=/data \
         -v "$(pwd)/data:/data" \
         -v "$(pwd)/test-results:/test-results" \
+        -v "$PROJECT_DIR:/repo:ro" -w /tmp \
         "$IMAGE_NAME" \
-        bash -c "sleep 3 && pytest -v --timeout=180 --junitxml=/test-results/junit-xvfb.xml -m 'trixie and integration' tests/trixie_integration_test.py::TestDisplay" || true
+        bash -c "sleep 3 && pytest -p no:cacheprovider -p no:seleniumbase -v --timeout=180 --junitxml=/test-results/junit-xvfb.xml -m 'trixie and integration' /repo/tests/image/trixie_integration_test.py::TestDisplay" || true
     
     echo ""
     echo -e "${BLUE}Running tests with Xvfb + Openbox...${NC}"
@@ -87,8 +91,9 @@ run_tests() {
         -e CACHE_DIR=/data \
         -v "$(pwd)/data:/data" \
         -v "$(pwd)/test-results:/test-results" \
+        -v "$PROJECT_DIR:/repo:ro" -w /tmp \
         "$IMAGE_NAME" \
-        bash -c "sleep 5 && pytest -v --timeout=180 --junitxml=/test-results/junit-full.xml -m 'trixie and integration' tests/trixie_integration_test.py" || true
+        bash -c "sleep 5 && pytest -p no:cacheprovider -p no:seleniumbase -v --timeout=180 --junitxml=/test-results/junit-full.xml -m 'trixie and integration' /repo/tests/image/trixie_integration_test.py" || true
 }
 
 display_results() {

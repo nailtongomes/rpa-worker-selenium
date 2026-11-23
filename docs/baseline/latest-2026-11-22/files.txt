@@ -1,0 +1,108 @@
+## /app (maxdepth 2)
+drwx------ rpauser:rpauser /app
+-rwxr-xr-x root:root /app/alpine_smoke_test.py
+drwxr-xr-x root:root /app/app
+drwxr-xr-x root:root /app/app/src
+-rw-r--r-- rpauser:rpauser /app/.bash_logout
+-rw-r--r-- rpauser:rpauser /app/.bashrc
+-rw-r--r-- root:root /app/Caddyfile
+drwxr-xr-x rpauser:rpauser /app/.config
+-rw-r--r-- root:root /app/docker-compose.caddy.yml
+-rw-r--r-- root:root /app/docker-compose.standby.yml
+-rw-r--r-- root:root /app/docker-compose.worker.yml
+-rw-r--r-- root:root /app/docker-compose.yml
+-rw-r--r-- root:root /app/Dockerfile
+-rw-r--r-- root:root /app/Dockerfile.alpine
+-rw-r--r-- root:root /app/Dockerfile.brave
+-rw-r--r-- root:root /app/Dockerfile.chrome
+-rw-r--r-- root:root /app/Dockerfile.firefox
+-rw-r--r-- root:root /app/Dockerfile.slim
+-rw-r--r-- root:root /app/Dockerfile.trixie
+-rw-r--r-- root:root /app/.dockerignore
+drwxr-xr-x root:root /app/downloaded_files
+-rw-rw-rw- root:root /app/downloaded_files/driver_fixing.lock
+-rw-rw-rw- root:root /app/downloaded_files/pyautogui.lock
+-rwxr-xr-x root:root /app/entrypoint.sh
+-rwxr-xr-x root:root /app/example_ca_runtime.py
+-rwxr-xr-x root:root /app/example_cert_management.py
+-rw-r--r-- root:root /app/example_download_script.py
+-rwxr-xr-x root:root /app/example_novnc_debug.py
+-rwxr-xr-x root:root /app/example_script_brave.py
+-rwxr-xr-x root:root /app/example_script_firefox.py
+-rw-r--r-- root:root /app/example_script.py
+-rw-r--r-- root:root /app/example_standby_client.py
+-rw-r--r-- root:root /app/example_vnc_debug.py
+-rwxr-xr-x root:root /app/full_smoke_test.py
+drwxr-xr-x root:root /app/.github
+-rw-r--r-- root:root /app/.github/TEST_EXPECTATIONS.md
+drwxr-xr-x root:root /app/.github/workflows
+-rw-r--r-- root:root /app/LICENSE
+drwxr-xr-x rpauser:rpauser /app/.local
+drwxr-xr-x rpauser:rpauser /app/.local/share
+drwxr-xr-x rpauser:rpauser /app/logs
+-rw-r--r-- root:root /app/patch_chromedriver.py
+drwxr-xr-x rpauser:rpauser /app/.pjeoffice-pro
+drwxr-xr-x rpauser:rpauser /app/.pki
+drwx------ rpauser:rpauser /app/.pki/nssdb
+-rw-r--r-- rpauser:rpauser /app/.profile
+-rw-r--r-- root:root /app/pytest.ini
+-rw-r--r-- root:root /app/README.md
+drwxrwxrwx rpauser:rpauser /app/recordings
+-rw-r--r-- root:root /app/requirements.txt
+-rwxr-xr-x root:root /app/run_script.sh
+-rwxr-xr-x root:root /app/script_downloader.py
+drwxr-xr-x root:root /app/scripts
+-rwxr-xr-x root:root /app/scripts/test_trixie_docker.sh
+-rwxr-xr-x root:root /app/scripts/test_trixie_local.sh
+-rw-r--r-- root:root /app/smoke_test_clearcote.py
+-rwxr-xr-x root:root /app/smoke_test.py
+drwxr-xr-x root:root /app/src
+-rw-r--r-- root:root /app/src/default_script.py
+-rw-r--r-- root:root /app/src/helper1.py
+-rw-r--r-- root:root /app/src/helper2.py
+-rwxr-xr-x root:root /app/task_server.py
+-rwxr-xr-x root:root /app/test_browser_drivers.py
+-rwxr-xr-x root:root /app/test_standby_manual.sh
+drwxrwxrwt rpauser:rpauser /app/tmp
+
+## /opt (maxdepth 1)
+drwxr-xr-x root:root /opt
+drwxr-xr-x root:root /opt/chrome
+drwxr-xr-x root:root /opt/firefox
+drwxr-xr-x root:root /opt/novnc
+drwxr-xr-x rpauser:rpauser /opt/pjeoffice
+drwxr-xr-x rpauser:rpauser /opt/venv
+
+## /usr/local/bin
+drwxr-xr-x root:root /usr/local/bin
+lrwxrwxrwx root:root /usr/local/bin/chrome
+-rwxr-xr-x root:root /usr/local/bin/chromedriver
+lrwxrwxrwx root:root /usr/local/bin/firefox
+-rwxr-xr-x rpauser:rpauser /usr/local/bin/geckodriver
+lrwxrwxrwx root:root /usr/local/bin/google-chrome
+lrwxrwxrwx root:root /usr/local/bin/websockify
+
+## Chrome policies
+drwxr-xr-x root:root /etc/opt
+drwxr-xr-x root:root /etc/opt/chrome
+drwxr-xr-x root:root /etc/opt/chrome_for_testing
+drwxr-xr-x root:root /etc/opt/chrome_for_testing/policies
+drwxr-xr-x rpauser:rpauser /etc/opt/chrome_for_testing/policies/managed
+drwxr-xr-x root:root /etc/opt/chrome/policies
+drwxr-xr-x rpauser:rpauser /etc/opt/chrome/policies/managed
+
+## Firefox profile
+drwxr-xr-x root:root /root/.mozilla
+drwxr-xr-x root:root /root/.mozilla/firefox
+drwxr-xr-x root:root /root/.mozilla/firefox/Crash Reports
+-rw-r--r-- root:root /root/.mozilla/firefox/Crash Reports/crash_helper_server.log
+drwx------ root:root /root/.mozilla/firefox/Crash Reports/events
+drwx------ root:root /root/.mozilla/firefox/Pending Pings
+-rw-r--r-- root:root /root/.mozilla/firefox/profiles.ini
+drwx------ root:root /root/.mozilla/firefox/selenium.default-release
+-rw------- root:root /root/.mozilla/firefox/selenium.default-release/cert9.db
+-rw------- root:root /root/.mozilla/firefox/selenium.default-release/key4.db
+-rw------- root:root /root/.mozilla/firefox/selenium.default-release/pkcs11.txt
+-rwx------ root:root /root/.mozilla/firefox/selenium.default-release/times.json
+
+## Chrome profile (build time)

@@ -59,10 +59,17 @@ recordings/
 # Selenium artifacts
 downloaded_files/
 
-# Docker Compose Worker directories (runtime data, not in repo)
-app/db/
-app/tmp/
-app/logs/
+# Runtime data of the compose examples (not in repo)
+examples/compose/data/
+examples/compose/recordings/
+examples/compose/logs/
+examples/server/data/
+examples/server/workers/*.env
+
+# Local image snapshots (scripts/image-snapshot.sh); the committed baseline lives in docs/baseline/
+snapshots/
 
 # Environment configuration (contains sensitive data)
 .env
+.env.*
+!.env.example

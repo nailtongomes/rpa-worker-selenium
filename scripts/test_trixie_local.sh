@@ -26,7 +26,7 @@ if ! python -m pytest --version &>/dev/null; then
 fi
 
 # Default test pattern
-TEST_PATTERN="${1:-tests/trixie_integration_test.py}"
+TEST_PATTERN="${1:-tests/image/trixie_integration_test.py}"
 
 echo ""
 echo -e "${GREEN}Running tests matching: ${TEST_PATTERN}${NC}"

@@ -1,0 +1,74 @@
+# =============================================================================
+# RPA Worker em loop (produção)
+#
+# Baixa o script de SCRIPT_URL e executa em loop, com timeout por iteração e
+# reinício automático.
+#
+# Uso:
+#   cp ../../.env.example .env      # preencha os segredos
+#   docker compose -f docker-compose.worker.yml up -d
+#   docker compose -f docker-compose.worker.yml logs -f
+#
+# Dados persistentes ficam em ./data/{db,src,tmp,logs} (ao lado deste arquivo).
+# =============================================================================
+
+services:
+  rpa-worker:
+    image: ghcr.io/nailtongomes/rpa-worker-selenium:latest
+
+    # Para testar uma imagem construída localmente, descomente:
+    # build:
+    #   context: ../..
+    #   dockerfile: Dockerfile.trixie
+    #   args:
+    #     BUILD_PJEOFFICE: "1"
+    #     ENABLE_PDF_TOOLS: "1"
+
+    user: "0"
+    init: true
+    restart: always
+    stop_grace_period: 30s
+    shm_size: 2gb
+    mem_limit: 2g
+    mem_reservation: 1g
+    cpus: 1.0
+
+    environment:
+      # Script a executar (defina no .env)
+      SCRIPT_URL: "${SCRIPT_URL:?defina SCRIPT_URL no .env}"
+      HELPER_URLS: "${HELPER_URLS:-}"
+      CHROME_PROFILE_URL: "${CHROME_PROFILE_URL:-}"
+
+      # Loop do worker
+      WORKER_LOOP: "1"
+      WORKER_TIMEOUT: "3600"        # 1 hora por iteração
+      WORKER_RESTART_DELAY: "120"   # 2 minutos entre iterações
+
+      # Display e PJeOffice
+      USE_XVFB: "1"
+      USE_OPENBOX: "1"
+      USE_PJEOFFICE: "1"
+      USE_VNC: "0"
+      USE_NOVNC: "0"
+      USE_SCREEN_RECORDING: "0"
+
+      # Segredos (vêm do .env, nunca commitar)
+      N3_API_BASE_URL: "${N3_API_BASE_URL:-}"
+      N3_TOKEN: "${N3_TOKEN:-}"
+      SENHA_TOKEN_A1: "${SENHA_TOKEN_A1:-}"
+      SECRET_2FA_CNJ: "${SECRET_2FA_CNJ:-}"
+
+      WORKER_ID: "${WORKER_ID:-rpa-worker-01}"
+      TZ: "America/Fortaleza"
+
+    volumes:
+      - ./data/db:/app/db
+      - ./data/src:/app/src
+      - ./data/tmp:/app/tmp
+      - ./data/logs:/app/logs
+
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "3"

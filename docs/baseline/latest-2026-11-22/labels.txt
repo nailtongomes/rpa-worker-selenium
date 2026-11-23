@@ -1,0 +1,4 @@
+description=Debian Trixie (13) Selenium with comprehensive GUI/window management for PJeOffice and RPA
+maintainer=nailtongsilva@gmail.com
+org.opencontainers.image.source=https://github.com/nailtongomes/rpa-worker-selenium
+version=3.0

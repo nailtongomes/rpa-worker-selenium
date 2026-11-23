@@ -1,0 +1,122 @@
+# =============================================================================
+# Vários workers RPA em um servidor Linux (padrão: 4)
+#
+# Cada worker é um container independente: Xvfb/OpenBox/PJeOffice próprios,
+# WORKER_ID próprio e pasta de dados própria em ./data/<worker>/.
+#
+# Uso (nesta pasta):
+#   cp ../../.env.example .env           # preencha SCRIPT_URL e os segredos
+#   docker compose up -d                 # sobe os 4 workers
+#   docker compose ps                    # status
+#   docker compose logs -f rpa-worker-02 # logs de um worker
+#   docker compose pull && docker compose up -d   # atualiza para a :latest
+#   docker compose down                  # para tudo
+#
+# Mais/menos workers: copie/apague um bloco "rpa-worker-NN" abaixo.
+# Script/profile diferente por worker: defina SCRIPT_URL_NN / CHROME_PROFILE_URL_NN no .env.
+# Recursos: cada worker usa até WORKER_MEM_LIMIT (2g) e WORKER_CPUS (1.0);
+# 4 workers => servidor com ~8 GB de RAM livre e 4 vCPUs.
+# =============================================================================
+
+name: rpa-workers
+
+# --- Configuração comum a todos os workers ----------------------------------
+x-worker: &worker
+  image: ${RPA_IMAGE:-ghcr.io/nailtongomes/rpa-worker-selenium:latest}
+  user: "0"
+  init: true
+  restart: always
+  stop_grace_period: 30s
+  shm_size: 2gb
+  mem_limit: ${WORKER_MEM_LIMIT:-2g}
+  cpus: ${WORKER_CPUS:-1.0}
+  logging:
+    driver: json-file
+    options:
+      max-size: "10m"
+      max-file: "3"
+
+x-worker-env: &worker-env
+  HELPER_URLS: ${HELPER_URLS:-}
+
+  # Loop do worker
+  WORKER_LOOP: "1"
+  WORKER_TIMEOUT: ${WORKER_TIMEOUT:-3600}              # 1 h por iteração
+  WORKER_RESTART_DELAY: ${WORKER_RESTART_DELAY:-120}   # 2 min entre iterações
+
+  # Display e PJeOffice
+  USE_XVFB: "1"
+  USE_OPENBOX: "1"
+  USE_PJEOFFICE: ${USE_PJEOFFICE:-1}
+  USE_VNC: "0"
+  USE_NOVNC: "0"
+
+  # Segredos (vêm do .env, nunca commitar)
+  N3_API_BASE_URL: ${N3_API_BASE_URL:-}
+  N3_TOKEN: ${N3_TOKEN:-}
+  SENHA_TOKEN_A1: ${SENHA_TOKEN_A1:-}
+  SECRET_2FA_CNJ: ${SECRET_2FA_CNJ:-}
+
+  TZ: ${TZ:-America/Fortaleza}
+
+# --- Workers ----------------------------------------------------------------
+services:
+  rpa-worker-01:
+    <<: *worker
+    container_name: rpa-worker-01
+    hostname: rpa-worker-01
+    environment:
+      <<: *worker-env
+      WORKER_ID: rpa-worker-01
+      SCRIPT_URL: ${SCRIPT_URL_01:-${SCRIPT_URL:?defina SCRIPT_URL no .env}}
+      CHROME_PROFILE_URL: ${CHROME_PROFILE_URL_01:-${CHROME_PROFILE_URL:-}}
+    volumes:
+      - ./data/rpa-worker-01/db:/app/db
+      - ./data/rpa-worker-01/src:/app/src
+      - ./data/rpa-worker-01/tmp:/app/tmp
+      - ./data/rpa-worker-01/logs:/app/logs
+
+  rpa-worker-02:
+    <<: *worker
+    container_name: rpa-worker-02
+    hostname: rpa-worker-02
+    environment:
+      <<: *worker-env
+      WORKER_ID: rpa-worker-02
+      SCRIPT_URL: ${SCRIPT_URL_02:-${SCRIPT_URL:?defina SCRIPT_URL no .env}}
+      CHROME_PROFILE_URL: ${CHROME_PROFILE_URL_02:-${CHROME_PROFILE_URL:-}}
+    volumes:
+      - ./data/rpa-worker-02/db:/app/db
+      - ./data/rpa-worker-02/src:/app/src
+      - ./data/rpa-worker-02/tmp:/app/tmp
+      - ./data/rpa-worker-02/logs:/app/logs
+
+  rpa-worker-03:
+    <<: *worker
+    container_name: rpa-worker-03
+    hostname: rpa-worker-03
+    environment:
+      <<: *worker-env
+      WORKER_ID: rpa-worker-03
+      SCRIPT_URL: ${SCRIPT_URL_03:-${SCRIPT_URL:?defina SCRIPT_URL no .env}}
+      CHROME_PROFILE_URL: ${CHROME_PROFILE_URL_03:-${CHROME_PROFILE_URL:-}}
+    volumes:
+      - ./data/rpa-worker-03/db:/app/db
+      - ./data/rpa-worker-03/src:/app/src
+      - ./data/rpa-worker-03/tmp:/app/tmp
+      - ./data/rpa-worker-03/logs:/app/logs
+
+  rpa-worker-04:
+    <<: *worker
+    container_name: rpa-worker-04
+    hostname: rpa-worker-04
+    environment:
+      <<: *worker-env
+      WORKER_ID: rpa-worker-04
+      SCRIPT_URL: ${SCRIPT_URL_04:-${SCRIPT_URL:?defina SCRIPT_URL no .env}}
+      CHROME_PROFILE_URL: ${CHROME_PROFILE_URL_04:-${CHROME_PROFILE_URL:-}}
+    volumes:
+      - ./data/rpa-worker-04/db:/app/db
+      - ./data/rpa-worker-04/src:/app/src
+      - ./data/rpa-worker-04/tmp:/app/tmp
+      - ./data/rpa-worker-04/logs:/app/logs
