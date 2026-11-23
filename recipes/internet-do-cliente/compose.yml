@@ -1,0 +1,42 @@
+# Receita: worker na sua VPS saindo pela internet do PC do cliente
+# (shutup-and-run `internet on` no PC + relay do shutup-and-run aqui). Passo a passo: README.md.
+#
+#   echo "RELAY_TOKEN=$(head -c 24 /dev/urandom | base64 | tr -d '/+=')" > .env
+#   mkdir -p segredos && printf '%s' 'http://ID:SENHA@relay:8080' > segredos/egress-url
+#   docker compose up -d relay
+#   docker compose run --rm worker python /app/egress_check.py --url https://pje.tjrn.jus.br/
+#
+# Só a porta 7000 (onde os PCs se conectam, com o token) fica na internet. O proxy 8080 do relay
+# só é alcançado pelos containers deste compose.
+services:
+  relay:
+    image: ghcr.io/nailtongomes/shutup-and-run-relay:latest
+    environment:
+      SHUTUP_AND_RUN_RELAY_TOKEN: ${RELAY_TOKEN:?coloque RELAY_TOKEN no .env}
+    ports:
+      - "7000:7000"
+    restart: unless-stopped
+    read_only: true
+    mem_limit: 128m
+
+  worker:
+    image: ghcr.io/nailtongomes/rpa-worker-selenium:latest
+    depends_on: [relay]
+    init: true
+    shm_size: 1g
+    mem_limit: 2g
+    environment:
+      SCRIPT_URL: "${SCRIPT_URL:-}"
+      WORKER_ID: "${WORKER_ID:-vps-01}"
+      USE_XVFB: "1"
+      USE_OPENBOX: "1"
+      USE_PJEOFFICE: "1"
+      # Todo o tráfego (Python, Chrome, Firefox, Java/PJeOffice, DNS) sai pelo PC do cliente.
+      # A senha do PC fica no arquivo, nunca numa variável visível em `docker inspect`.
+      EGRESS_PROXY_URL_FILE: /run/secrets/egress_url
+    secrets:
+      - egress_url
+
+secrets:
+  egress_url:
+    file: ./segredos/egress-url

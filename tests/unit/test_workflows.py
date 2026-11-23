@@ -242,3 +242,15 @@ def test_release_notes_script(tmp_path):
     out = subprocess.run([str(REPO_ROOT / "scripts" / "release-notes.sh")], cwd=repo, env=env,
                          capture_output=True, text=True, check=True).stdout
     assert "Sem informação da versão anterior" in out and "- #99 Mascarar tokens" in out
+
+
+def test_gate_scenario_titles_have_no_colon():
+    """test-image.sh separa título e função no primeiro ':' (um ':' no título corta o nome)."""
+    text = (REPO_ROOT / "scripts" / "test-image.sh").read_text(encoding="utf-8")
+    block = text[text.index("SCENARIOS=("):]
+    block = block[:block.index("\n)")]
+    entries = re.findall(r'^\s*"([^"]+)"', block, re.M)
+    assert len(entries) >= 14
+    for entry in entries:
+        assert entry.count(":") == 1, entry
+        assert entry.split(":")[1].startswith("scenario_"), entry

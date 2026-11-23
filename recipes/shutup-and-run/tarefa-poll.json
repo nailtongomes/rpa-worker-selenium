@@ -1,0 +1,21 @@
+{
+  "task": {
+    "image": "ghcr.io/nailtongomes/rpa-worker-selenium:latest",
+    "job_key": "tarefa-0001-tentativa-1",
+    "env": {
+      "SCRIPT_URL": "https://api.example.com/scripts/tarefa-0001.py?token=REPLACE_WITH_SHORT_LIVED_TOKEN",
+      "RESULT_URL": "https://api.example.com/tarefas/tarefa-0001/resultado",
+      "USE_XVFB": "1",
+      "USE_OPENBOX": "1",
+      "USE_PJEOFFICE": "1",
+      "A1_PFX_PATH": "/run/shutup-and-run/certificate/client.pfx",
+      "A1_PFX_PASSWORD_FILE": "/run/shutup-and-run/secrets/certificate-password",
+      "WORKER_ID": "tarefa-0001"
+    },
+    "timeout_secs": 1800,
+    "cpu": 1,
+    "memory": "2g",
+    "shm": "1g",
+    "callback_url": "https://api.example.com/webhooks/shutup-and-run/REPLACE_WITH_CALLBACK_SECRET"
+  }
+}

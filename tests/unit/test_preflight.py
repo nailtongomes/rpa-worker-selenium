@@ -64,3 +64,38 @@ def test_failed_part_fails_preflight(tmp_path, monkeypatch):
     assert preflight.main(["--browsers", "none", "--json", str(report)]) == 1
     data = json.loads(report.read_text())
     assert data["ok"] is False and data["falhas"] == 2
+
+
+def test_attempt_ok_first_try():
+    step = preflight.attempt("abre", lambda: "aberta")
+    assert step["status"] == "ok"
+    assert step["detalhe"].startswith("aberta [")
+
+
+def test_attempt_second_try_is_warning():
+    calls = []
+
+    def flaky():
+        calls.append(1)
+        if len(calls) == 1:
+            raise TimeoutError("Timed out receiving message from renderer")
+        return "aberta"
+
+    step = preflight.attempt("abre", flaky)
+    assert len(calls) == 2
+    assert step["status"] == "aviso"
+    assert "tentativa 2" in step["detalhe"] and "renderer" in step["detalhe"]
+
+
+def test_attempt_fails_every_try_and_masks_urls():
+    url = "https://pje.example/x?token=SEGREDO-PREFLIGHT"
+    calls = []
+
+    def broken():
+        calls.append(1)
+        raise RuntimeError(f"falhou em {url}")
+
+    step = preflight.attempt("abre", broken, [url])
+    assert len(calls) == preflight.BROWSER_TRIES
+    assert step["status"] == "erro"
+    assert "SEGREDO" not in step["detalhe"]

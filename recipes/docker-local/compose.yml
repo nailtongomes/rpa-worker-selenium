@@ -1,0 +1,47 @@
+# Receita: worker no seu próprio computador (Docker Desktop no Windows/macOS ou Docker no Linux).
+# Passo a passo em README.md desta pasta. Nada aqui vai para o GitHub além deste arquivo:
+# a pasta segredos/ e o .env estão no .gitignore.
+services:
+  worker:
+    image: ghcr.io/nailtongomes/rpa-worker-selenium:latest
+    init: true
+    shm_size: 1g
+    mem_limit: 2g          # pico medido com PJeOffice ligado: ~1,1 GB
+    memswap_limit: 2g      # sem swap extra, como o shutup-and-run num PC compartilhado
+    cpus: 1.0
+
+    environment:
+      # Com SCRIPT_URL o worker baixa e roda o script; sem ele, roda o comando do `docker compose run`
+      SCRIPT_URL: "${SCRIPT_URL:-}"
+      HELPER_URLS: "${HELPER_URLS:-}"
+      WORKER_ID: "${WORKER_ID:-meu-pc}"
+      TZ: "${TZ:-America/Sao_Paulo}"
+
+      # Tela virtual (furtividade: browser em janela, não headless) + PJeOffice
+      USE_XVFB: "1"
+      USE_OPENBOX: "1"
+      USE_PJEOFFICE: "1"
+      # Ver o browser em http://127.0.0.1:6080/vnc.html (sem senha: só na sua máquina)
+      USE_VNC: "${USE_VNC:-1}"
+      USE_NOVNC: "${USE_NOVNC:-1}"
+
+      # Certificado A1: arquivo + senha em arquivo (nunca a senha numa variável)
+      A1_PFX_PATH: /run/secrets/a1_pfx
+      A1_PFX_PASSWORD_FILE: /run/secrets/a1_senha
+
+    secrets:
+      - a1_pfx
+      - a1_senha
+
+    volumes:
+      - ./scripts:/scripts:ro     # seus scripts locais: python /scripts/meu_script.py
+      - ./saida:/saida            # o que o script gravar aqui fica no seu computador
+
+    ports:
+      - "127.0.0.1:6080:6080"     # noVNC, só neste computador
+
+secrets:
+  a1_pfx:
+    file: ./segredos/a1.pfx
+  a1_senha:
+    file: ./segredos/a1-senha.txt

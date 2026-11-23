@@ -30,7 +30,7 @@ def test_preflight_all_ok_with_a1_self_test(tmp_path):
     checks = data["verificacoes"]
     assert {s["passo"] for s in checks["browsers"]["passos"]} == {
         "Chrome (Selenium) abre página local", "Chrome (SeleniumBase UC) abre página local", "Firefox abre página local"}
-    assert all(s["status"] == "ok" for s in checks["browsers"]["passos"])
+    assert all(s["status"] != "erro" for s in checks["browsers"]["passos"])
     assert checks["a1"]["ok"] is True and not checks["a1"].get("pulado")
     assert any("apresenta o certificado" in s["passo"] for s in checks["a1"]["passos"])
     assert checks["egress"].get("pulado") is True  # sem EGRESS_PROXY_URL

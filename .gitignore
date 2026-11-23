@@ -73,3 +73,9 @@ snapshots/
 .env
 .env.*
 !.env.example
+
+# Certificados e dados locais das receitas (nunca commitar)
+*.pfx
+*.p12
+recipes/**/segredos/
+recipes/**/saida/

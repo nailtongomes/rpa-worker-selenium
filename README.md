@@ -11,6 +11,11 @@ docker pull ghcr.io/nailtongomes/rpa-worker-selenium:latest
 A imagem é construída a partir de [`Dockerfile.trixie`](Dockerfile.trixie) (Debian 13 "Trixie")
 e publicada no GHCR pelo GitHub Actions a cada mudança na `main`.
 
+> **Começando?** As [receitas plug and play](recipes/README.md) têm arquivos prontos para copiar:
+> testar o seu certificado A1 no PC com o [shutup-and-run](https://github.com/nailtongomes/shutup-and-run),
+> rotinas no PC sem orquestrador, tarefas cadastradas na nuvem (ou por uma IA) e executadas no PC,
+> desenvolvimento vendo o browser e worker na VPS saindo pela internet do cliente.
+
 ---
 
 ## O que vem na imagem
@@ -143,7 +148,8 @@ docker exec worker-01 python /app/preflight.py --json /data/preflight.json
 Um comando, um JSON. Confere se Chrome, SeleniumBase UC e Firefox abrem. Se houver
 `A1_PFX_URL`, roda o `a1_check.py`; se houver `EGRESS_PROXY_URL`, roda o
 `egress_check.py`. `--url https://sistema...` confere se o worker alcança os sistemas.
-Termina com exit 0 se nada falhou.
+Termina com exit 0 se nada falhou. Um browser que só abre na segunda tentativa (máquina com
+pouca CPU) vira aviso, não falha.
 
 ### Tokens nas URLs
 
@@ -240,6 +246,7 @@ image/
     src/                 #   helpers de exemplo (/app/src)
   icp-brasil/            # raízes + ACs oficiais da ICP-Brasil (ITI) -> /opt/icp-brasil
   patch_chromedriver.py  # usado só durante o build
+recipes/                 # receitas plug and play (shutup-and-run, Docker local, internet do cliente)
 tests/
   unit/                  # testes rápidos no host (sem Docker)
   image/                 # testes que rodam DENTRO da imagem
@@ -248,7 +255,7 @@ examples/
   compose/               # docker-compose de worker, standby, debug e Caddy
   scripts/               # scripts Python de exemplo
 docs/                    # guias (worker, certificados A1/CA, VNC, testes) e baseline da imagem
-scripts/                 # test-image.sh (portão), image-snapshot.sh, release-notes.sh, update-icp-brasil.py
+scripts/                 # test-image.sh (portão), run-recipe.py, image-snapshot.sh, release-notes.sh, update-icp-brasil.py
 .github/workflows/       # ci.yml (PR), build-push-ghcr.yml (release com testes), nightly.yml
 ```
 
@@ -303,6 +310,7 @@ Mais detalhes em [`docs/TESTING.md`](docs/TESTING.md).
 
 ## Documentação
 
+- [recipes/](recipes/README.md) — receitas plug and play (PC com shutup-and-run, Docker local, internet do cliente)
 - [docs/WORKER.md](docs/WORKER.md) — worker em loop e modo standby
 - [docs/EGRESS_RELAY.md](docs/EGRESS_RELAY.md) — relay de saída (internet do cliente): variáveis, requisitos do relay e rotina de teste
 - [docs/A1_CERTIFICATE_GUIDE.md](docs/A1_CERTIFICATE_GUIDE.md) — certificado A1: `a1cert`, `.p7s`, PAdES, `a1_check.py` e problemas conhecidos
