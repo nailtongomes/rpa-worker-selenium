@@ -15,7 +15,9 @@ import pathlib
 import requests
 import hashlib
 import re
-from urllib.parse import urlparse, parse_qs, unquote
+from urllib.parse import urlparse, urlsplit, urlunsplit, parse_qs, unquote
+
+MASK = "***"
 
 _CONTENT_DISP_RE = re.compile(r'filename\*?=(?:UTF-8\'\')?"?([^";]+)"?', re.IGNORECASE)
 
@@ -45,6 +47,53 @@ def _from_content_disposition(headers: dict | None) -> str | None:
         return None
     return _sanitize(unquote(m.group(1)))
 
+def mask_url(url: str) -> str:
+    """URL segura para log: esconde usuário/senha e o valor de todo parâmetro da query.
+
+    ``https://user:tok@host/a.py?token=abc&ref=main`` →
+    ``https://***@host/a.py?token=***&ref=***``. O caminho continua visível (é o que
+    ajuda a depurar); tokens em query (GitHub raw, S3/GCS pré-assinadas, SAS do Azure)
+    e em userinfo nunca vão para o log.
+    """
+    if not url:
+        return url
+    try:
+        parts = urlsplit(url)
+    except ValueError:
+        return MASK
+    netloc = parts.netloc
+    if "@" in netloc:
+        netloc = f"{MASK}@{netloc.rsplit('@', 1)[1]}"
+    query = "&".join(
+        f"{pair.split('=', 1)[0]}={MASK}" if "=" in pair else MASK
+        for pair in parts.query.split("&") if pair
+    )
+    fragment = MASK if parts.fragment else ""
+    return urlunsplit((parts.scheme, netloc, parts.path, query, fragment))
+
+
+def mask_text(text: str, *urls: str) -> str:
+    """Troca cada URL de ``urls`` (e qualquer outra http(s) no texto) pela versão mascarada.
+
+    Mensagens de erro do ``requests`` repetem a URL inteira ("... for url: ...").
+    """
+    text = str(text)
+    for url in urls:
+        if not url:
+            continue
+        text = text.replace(url, mask_url(url))
+        # urllib3 repete só o caminho + query ("Max retries exceeded with url: /x.py?k=...")
+        try:
+            parts = urlsplit(url)
+        except ValueError:
+            continue
+        if parts.query:
+            text = text.replace(parts.query, urlsplit(mask_url(url)).query)
+        if "@" in parts.netloc:
+            text = text.replace(parts.netloc.rsplit("@", 1)[0], MASK)
+    return re.sub(r"https?://[^\s'\"<>]+", lambda m: mask_url(m.group(0)), text)
+
+
 def download_file(url, destination_path):
     """
     Download a file from a URL to a destination path.
@@ -57,7 +106,7 @@ def download_file(url, destination_path):
         bool: True if successful, False otherwise
     """
     try:
-        print(f"[downloader] Downloading from: {url}")
+        print(f"[downloader] Downloading from: {mask_url(url)}")
         response = requests.get(url, timeout=30)
         response.raise_for_status()
         
@@ -68,7 +117,7 @@ def download_file(url, destination_path):
         return True
         
     except requests.RequestException as e:
-        print(f"[downloader] ERROR downloading {url}: {e}")
+        print(f"[downloader] ERROR downloading {mask_url(url)}: {mask_text(e, url)}")
         return False
     except IOError as e:
         print(f"[downloader] ERROR saving to {destination_path}: {e}")
@@ -183,25 +232,32 @@ def download_helper_scripts(helper_urls, scripts_dir="/app/src"):
             os.chmod(destination, 0o644)
             downloaded.append(str(destination))
         else:
-            print(f"[downloader] WARNING: Failed to download helper: {url}")
+            print(f"[downloader] WARNING: Failed to download helper: {mask_url(url)}")
     
     print(f"[downloader] Successfully downloaded {len(downloaded)}/{len(urls)} helper script(s)")
     return downloaded
 
 
-def main():
+def main(argv=None):
     """
     Main function to handle script downloading.
     Downloads main script and optional helper scripts based on environment variables.
     """
+    argv = sys.argv[1:] if argv is None else argv
+    if argv[:1] == ["--mask"]:
+        # entrypoint.sh: URL lida do stdin (não aparece no argv/ps), sai mascarada
+        print(mask_url(sys.stdin.read().strip()))
+        return 0
+
     # Get environment variables
     script_url = os.getenv("SCRIPT_URL")
     helper_urls = os.getenv("HELPER_URLS")
     scripts_dir = os.getenv("SCRIPTS_DIR", "/app/src")
     
     print("[downloader] Script Downloader starting...")
-    print(f"[downloader] SCRIPT_URL: {script_url or 'Not set'}")
-    print(f"[downloader] HELPER_URLS: {helper_urls or 'Not set'}")
+    print(f"[downloader] SCRIPT_URL: {mask_url(script_url) if script_url else 'Not set'}")
+    helpers = ", ".join(mask_url(u.strip()) for u in (helper_urls or "").split(",") if u.strip())
+    print(f"[downloader] HELPER_URLS: {helpers or 'Not set'}")
     print(f"[downloader] SCRIPTS_DIR: {scripts_dir}")
     
     # Download helper scripts first (if any)

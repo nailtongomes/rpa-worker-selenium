@@ -54,6 +54,8 @@ CHROME_POLICY_DIRS = (
 )
 CHROME_POLICY_FILE = "auto_select_certificate.json"
 WORK_DIR = Path(os.getenv("A1_WORK_DIR", "/tmp/a1"))
+# Raízes e ACs oficiais da ICP-Brasil (ITI), empacotadas na imagem: raizes.pem + acs.pem
+ICP_BRASIL_DIR = Path(os.getenv("ICP_BRASIL_DIR", "/opt/icp-brasil"))
 
 # OIDs ICP-Brasil no SubjectAltName (otherName)
 OID_PF_DADOS = "2.16.76.1.3.1"   # nascimento(8) + CPF(11) + NIS(11) + RG...
@@ -232,8 +234,74 @@ def usage_findings(cert: A1Certificate) -> list:
     orgs = {a.value for c in [cert.certificate, *cert.chain]
             for a in c.issuer.get_attributes_for_oid(x509.NameOID.ORGANIZATION_NAME)}
     if "ICP-Brasil" in orgs:
-        found.append(("ok", "ICP-Brasil", "emitido na hierarquia ICP-Brasil"))
+        if not (ICP_BRASIL_DIR / "raizes.pem").exists():
+            found.append(("aviso", "ICP-Brasil", f"emitido na ICP-Brasil; cadeia não validada ({ICP_BRASIL_DIR} ausente)"))
+        else:
+            try:
+                found.append(("ok", "ICP-Brasil", f"cadeia válida até a {verify_chain(cert)} (raízes do ITI)"))
+            except A1Error as exc:
+                if "unable to get" in str(exc) and "issuer" in str(exc):
+                    # AC fora do pacote do ITI: AC criada depois do pacote, ou certificado falso
+                    found.append(("aviso", "ICP-Brasil", "a AC emissora não está entre as ACs oficiais empacotadas "
+                                  f"({ICP_BRASIL_DIR}): AC nova (atualize a imagem) ou certificado falso"))
+                else:
+                    found.append(("erro", "ICP-Brasil", f"diz ser ICP-Brasil mas a cadeia não fecha: {exc}"))
     return found
+
+
+# --- Cadeia ICP-Brasil --------------------------------------------------------
+
+def icp_brasil_certs(roots_only: bool = False, icp_dir: Optional[PathLike] = None) -> list:
+    """Raízes (e, sem ``roots_only``, as ACs intermediárias) oficiais da ICP-Brasil.
+
+    Útil como ``ca_certs`` de :func:`verify_p7s`/:func:`verify_pdf` para validar
+    documentos assinados por terceiros.
+    """
+    icp_dir = Path(icp_dir or ICP_BRASIL_DIR)
+    names = ["raizes.pem"] if roots_only else ["raizes.pem", "acs.pem"]
+    certs = []
+    for name in names:
+        try:
+            certs += x509.load_pem_x509_certificates((icp_dir / name).read_bytes())
+        except FileNotFoundError:
+            raise A1Error(f"{icp_dir / name} não encontrado (ACs da ICP-Brasil)") from None
+    return certs
+
+
+def verify_chain(cert: A1Certificate, icp_dir: Optional[PathLike] = None, at: Optional[_dt.datetime] = None) -> str:
+    """Valida a cadeia do certificado até uma raiz da ICP-Brasil (``openssl verify``).
+
+    Usa as ACs do próprio .pfx e as ACs oficiais empacotadas na imagem (o .pfx
+    pode vir sem a cadeia). Devolve o nome da raiz; levanta :class:`A1Error` se
+    a cadeia não fechar (AC desconhecida, assinatura inválida, vencida...).
+    ``at`` valida numa data específica (padrão: agora).
+    """
+    icp_dir = Path(icp_dir or ICP_BRASIL_DIR)
+    roots = icp_dir / "raizes.pem"
+    if not roots.exists():
+        raise A1Error(f"{roots} não encontrado (ACs da ICP-Brasil)")
+    pem = serialization.Encoding.PEM
+    with tempfile.TemporaryDirectory(dir=_tmp_root()) as tmp:
+        leaf = Path(tmp) / "leaf.pem"
+        leaf.write_bytes(cert.certificate.public_bytes(pem))
+        cmd = ["openssl", "verify", "-show_chain", "-purpose", "any", "-CAfile", str(roots)]
+        extra = (icp_dir / "acs.pem").read_bytes() if (icp_dir / "acs.pem").exists() else b""
+        untrusted = b"".join(c.public_bytes(pem) for c in cert.chain) + extra
+        if untrusted:  # openssl recusa arquivo -untrusted vazio
+            (Path(tmp) / "untrusted.pem").write_bytes(untrusted)
+            cmd += ["-untrusted", str(Path(tmp) / "untrusted.pem")]
+        if at is not None:
+            cmd += ["-attime", str(int(at.timestamp()))]
+        res = subprocess.run(cmd + [str(leaf)], capture_output=True, text=True)
+    if res.returncode != 0:
+        errors = [ln.split(":", 1)[-1].strip() for ln in (res.stdout + res.stderr).splitlines()
+                  if ln.startswith("error") or "verification failed" in ln]
+        raise A1Error("; ".join(dict.fromkeys(errors)) or "openssl verify falhou")
+    # última linha de -show_chain: "depth=N: <subject da raiz>"
+    chain_lines = [ln for ln in res.stdout.splitlines() if ln.startswith("depth=")]
+    root = chain_lines[-1].split(":", 1)[-1].strip() if chain_lines else "raiz ICP-Brasil"
+    match = re.search(r"CN\s*=\s*([^,]+)", root)
+    return match.group(1).strip() if match else root
 
 
 # --- Carregar -----------------------------------------------------------------

@@ -75,7 +75,8 @@ run_in_image() {
 
 # Sobe um servidor HTTP com tests/image/fixtures dentro do container e então
 # executa o entrypoint normal da imagem (como em produção).
-WITH_FIXTURES='python3 -m http.server '"$FIXTURE_PORT"' -d /repo/tests/image/fixtures >/dev/null 2>&1 & sleep 1; exec /app/entrypoint.sh "$@"'
+FIXTURE_SERVER='python3 -m http.server '"$FIXTURE_PORT"' -d /repo/tests/image/fixtures >/dev/null 2>&1 & '
+WITH_FIXTURES="${FIXTURE_SERVER}"'sleep 1; exec /app/entrypoint.sh "$@"'
 
 marker_filter() {
     local extra="$1"
@@ -114,8 +115,10 @@ scenario_a1_certificate() {
     # Certificado A1 com ICP de teste gerada na hora: .pfx por URL + senha, formatos
     # legados, .p7s attached, PAdES, Java (PJeOffice), NSS e Chrome/UC/Firefox
     # apresentando o certificado a um servidor HTTPS local que exige certificado de cliente
+    # + /app/preflight.py (browsers + A1 num JSON só)
     run_in_image -e USE_XVFB=1 -e USE_OPENBOX=1 \
-        "$IMAGE" bash -c "sleep 6 && $PYTEST --junitxml=/results/junit-a1.xml /repo/tests/image/test_a1_certificate.py"
+        "$IMAGE" bash -c "sleep 6 && $PYTEST --junitxml=/results/junit-a1.xml /repo/tests/image/test_a1_certificate.py \
+            /repo/tests/image/test_preflight.py"
 }
 
 # Relay de teste dentro do container ("internet falsa": responde a qualquer host com o
@@ -190,11 +193,13 @@ scenario_smoke_test() {
 }
 
 scenario_worker_loop() {
-    # WORKER_LOOP=1: baixa SCRIPT_URL + HELPER_URLS e executa ao menos 2 iterações
+    # WORKER_LOOP=1: baixa SCRIPT_URL + HELPER_URLS e executa ao menos 2 iterações.
+    # As URLs levam usuário/senha e tokens na query: nenhum deles pode aparecer no log.
     local name="rpa-test-loop-$$" log="$RESULTS/logs/worker-loop.log" ok=1
+    local script_url="http://rpa:SEGREDO-USER-1@127.0.0.1:${FIXTURE_PORT}/job_ok.py?token=SEGREDO-QUERY-2&ref=main"
     docker rm -f "$name" >/dev/null 2>&1
     docker run -d --name "$name" --shm-size=2g -v "$REPO:/repo:ro" "${EXTRA_ARGS[@]}" \
-        -e SCRIPT_URL="$FIXTURE_URL/job_ok.py" -e HELPER_URLS="$FIXTURE_URL/helper_mod.py" \
+        -e SCRIPT_URL="$script_url" -e HELPER_URLS="$FIXTURE_URL/helper_mod.py?sig=SEGREDO-HELPER-3" \
         -e WORKER_ID=loop-test -e WORKER_LOOP=1 -e WORKER_RESTART_DELAY=2 -e WORKER_TIMEOUT=60 \
         --entrypoint bash "$IMAGE" -c "$WITH_FIXTURES" _ >/dev/null || return 1
     for _ in $(seq 1 60); do
@@ -206,7 +211,67 @@ scenario_worker_loop() {
     done
     docker logs "$name" > "$log" 2>&1
     docker rm -f "$name" >/dev/null 2>&1
-    grep -E "iteration|JOB-OK" "$log" | head -6
+    grep -E "iteration|JOB-OK|Downloading" "$log" | head -8
+    if grep -q "SEGREDO-" "$log"; then
+        echo "token/senha das URLs apareceu no log:"
+        grep "SEGREDO-" "$log" | head -3
+        ok=1
+    fi
+    return "$ok"
+}
+
+scenario_egress_loop() {
+    # WORKER_LOOP=1 com relay: se o relay cair, a iteração é pulada (o script não roda
+    # sem a saída certa) e o worker volta sozinho quando o relay volta
+    local name="rpa-test-egress-loop-$$" log="$RESULTS/logs/egress-loop.log" ok=1 jobs_down jobs_now
+    count_jobs() { docker logs "$name" 2>&1 | grep -c 'JOB-OK worker=egress-loop'; }
+    count_skips() { docker logs "$name" 2>&1 | grep -c 'Egress relay unavailable, skipping'; }
+    docker rm -f "$name" >/dev/null 2>&1
+    docker run -d --name "$name" --shm-size=2g -v "$REPO:/repo:ro" "${EXTRA_ARGS[@]}" \
+        -e EGRESS_PROXY_URL='socks5://rpa:S3nh%40-relay@127.0.0.1:1080' \
+        -e EGRESS_CHECK_URL=http://check.egress-test.invalid/ip -e EGRESS_EXPECTED_IP="$RELAY_FAKE_IP" \
+        -e SCRIPT_URL="$FIXTURE_URL/job_ok.py" -e HELPER_URLS="$FIXTURE_URL/helper_mod.py" \
+        -e WORKER_ID=egress-loop -e WORKER_LOOP=1 -e WORKER_RESTART_DELAY=2 -e WORKER_TIMEOUT=60 \
+        --entrypoint bash "$IMAGE" -c "${FIXTURE_SERVER}$(with_relay socks5 1080)" _ >/dev/null || return 1
+
+    wait_for() {  # $1 = condição (função), $2 = segundos
+        local _
+        for _ in $(seq 1 "$2"); do "$1" && return 0; sleep 1; done
+        return 1
+    }
+    has_job() { [ "$(count_jobs)" -ge 1 ]; }
+    has_two_skips() { [ "$(count_skips)" -ge 2 ]; }
+    job_after_recovery() { [ "$(count_jobs)" -gt "$jobs_down" ]; }
+
+    if wait_for has_job 90; then
+        echo "relay no ar: $(count_jobs) iteração(ões); derrubando o relay"
+        docker exec "$name" pkill -f "egress_testkit.py relay"
+        if wait_for has_two_skips 90; then
+            jobs_down="$(count_jobs)"
+            sleep 12
+            jobs_now="$(count_jobs)"
+            if [ "$jobs_now" -ne "$jobs_down" ]; then
+                echo "o script rodou com o relay fora do ar ($jobs_down -> $jobs_now)"
+            else
+                echo "relay fora do ar: iterações puladas ($(count_skips)); religando o relay"
+                docker exec -d "$name" python /app/egress_testkit.py relay --protocol socks5 \
+                    --listen 127.0.0.1:1080 --user rpa --password "$RELAY_PASSWORD" --fake-ip "$RELAY_FAKE_IP"
+                if wait_for job_after_recovery 60; then
+                    echo "relay de volta: o worker retomou sozinho"
+                    ok=0
+                else
+                    echo "o worker não retomou depois que o relay voltou"
+                fi
+            fi
+        else
+            echo "o loop não detectou o relay fora do ar"
+        fi
+    else
+        echo "nenhuma iteração rodou com o relay no ar"
+    fi
+    docker logs "$name" > "$log" 2>&1
+    docker rm -f "$name" >/dev/null 2>&1
+    grep -E "iteration|JOB-OK|Egress relay" "$log" | tail -8
     return "$ok"
 }
 
@@ -267,7 +332,8 @@ SCENARIOS=(
     "relay de saída (EGRESS_PROXY_URL - todo o tráfego, DNS, WebRTC, A1):scenario_egress_relay"
     "relay de saída - proxy HTTP e falhas (relay fora do ar, senha errada):scenario_egress_failures"
     "smoke_test.py (falha se o browser falhar):scenario_smoke_test"
-    "worker em loop (SCRIPT_URL + HELPER_URLS):scenario_worker_loop"
+    "worker em loop (SCRIPT_URL + HELPER_URLS, tokens fora do log):scenario_worker_loop"
+    "worker em loop com relay - pula iteração com o relay fora do ar:scenario_egress_loop"
     "execução única com SCRIPT_URL:scenario_single_run_ok"
     "falha do script propaga exit code:scenario_single_run_failure_propagates"
     "comando direto (passthrough):scenario_passthrough_command"

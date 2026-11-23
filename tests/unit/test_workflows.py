@@ -168,3 +168,77 @@ def test_gate_scenario_titles_have_no_colon():
     block = text[text.index("SCENARIOS=("):text.index(")", text.index("SCENARIOS=("))]
     for entry in re.findall(r'"([^"]+)"', block):
         assert entry.count(":") == 1, f"título com ':' em {entry!r}"
+
+
+# --- GitHub Release com notas e rollback -------------------------------------------------
+
+def test_release_publishes_notes_after_push():
+    workflow = _load(RELEASE)
+    job = workflow["jobs"]["build-and-push"]
+    assert job["permissions"]["contents"] == "write" and job["permissions"]["packages"] == "write"
+    steps = job["steps"]
+    checkout = steps[_index(steps, lambda s: "actions/checkout" in s.get("uses", ""), "checkout")]
+    assert checkout["with"]["fetch-depth"] == 0, "notas precisam do histórico (commits desde a versão anterior)"
+    gate = _index(steps, lambda s: GATE in s.get("run", ""), "portão")
+    prev = _index(steps, lambda s: s.get("id") == "prev", "versão anterior")
+    push = _index(steps, lambda s: "docker push" in s.get("run", ""), "docker push")
+    notes = _index(steps, lambda s: "scripts/release-notes.sh" in s.get("run", ""), "notas")
+    assert gate < prev < push < notes
+    # a imagem já foi publicada: falha nas notas não pode marcar o release como quebrado
+    assert steps[notes].get("continue-on-error") is True and steps[prev].get("continue-on-error") is True
+    assert "steps.push.outputs.digest" in steps[notes]["if"]
+    assert "gh release create" in steps[notes]["run"]
+
+
+def test_nightly_checks_icp_brasil_against_iti():
+    job = _load(NIGHTLY)["jobs"]["icp-brasil"]
+    run = " ".join(s.get("run", "") for s in job["steps"])
+    assert "scripts/update-icp-brasil.py --check" in run
+    assert not any(s.get("continue-on-error") for s in job["steps"]), "AC nova no ITI precisa avisar (falhar)"
+
+
+def _git(repo, *args):
+    import subprocess
+
+    return subprocess.run(["git", "-C", str(repo), *args], check=True, capture_output=True, text=True).stdout.strip()
+
+
+def test_release_notes_script(tmp_path):
+    import subprocess
+
+    repo = tmp_path / "repo"
+    repo.mkdir()
+    _git(repo, "init", "-q", "-b", "main")
+    _git(repo, "config", "user.email", "t@example.com")
+    _git(repo, "config", "user.name", "t")
+    _git(repo, "commit", "-q", "--allow-empty", "-m", "base")
+    prev = _git(repo, "rev-parse", "HEAD")
+    _git(repo, "checkout", "-q", "-b", "feature")
+    _git(repo, "commit", "-q", "--allow-empty", "-m", "detalhe interno do PR")
+    _git(repo, "checkout", "-q", "main")
+    _git(repo, "merge", "-q", "--no-ff", "feature", "-m", "Merge pull request #99 from o/feature\n\nMascarar tokens")
+    _git(repo, "commit", "-q", "--allow-empty", "-m", "commit direto na main")
+    snap_old, snap_new = tmp_path / "old", tmp_path / "new"
+    for snap, chrome in ((snap_old, "157"), (snap_new, "158")):
+        snap.mkdir()
+        (snap / "versions.txt").write_text(f"chrome {chrome}\n")
+        (snap / "pip-freeze.txt").write_text("selenium==4\n")
+        (snap / "dpkg.txt").write_text("libc 1\n")
+    env = {**os.environ, "IMAGE_NAME": "ghcr.io/o/r", "DIGEST": "sha256:new", "SHORT_SHA": "abcdef1",
+           "TIMESTAMP": "20260101-000000", "PREV_REVISION": prev, "PREV_DIGEST": "sha256:old",
+           "SNAP_CURRENT": str(snap_old), "SNAP_CANDIDATE": str(snap_new), "GITHUB_REPOSITORY": "o/r"}
+    out = subprocess.run([str(REPO_ROOT / "scripts" / "release-notes.sh")], cwd=repo, env=env,
+                         capture_output=True, text=True, check=True).stdout
+    assert "docker pull ghcr.io/o/r@sha256:new" in out
+    assert f"docker pull ghcr.io/o/r:sha-{prev[:7]}" in out  # rollback
+    assert f"imagetools create -t ghcr.io/o/r:latest ghcr.io/o/r:sha-{prev[:7]}" in out
+    assert "- #99 Mascarar tokens" in out
+    assert "commit direto na main" in out and "detalhe interno do PR" not in out
+    assert "-chrome 157" in out and "+chrome 158" in out
+    assert "base" not in out.split("## 📝 Mudanças")[1].split("## 🔍")[0]  # só desde a versão anterior
+
+    # sem versão anterior conhecida: ainda gera notas, sem rollback
+    env.pop("PREV_REVISION")
+    out = subprocess.run([str(REPO_ROOT / "scripts" / "release-notes.sh")], cwd=repo, env=env,
+                         capture_output=True, text=True, check=True).stdout
+    assert "Sem informação da versão anterior" in out and "- #99 Mascarar tokens" in out

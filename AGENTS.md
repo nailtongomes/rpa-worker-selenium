@@ -16,7 +16,8 @@ Usuários da imagem dependem do que está abaixo. Não mude nada disso sem pedid
   `/app/task_server.py`, `/app/test_browser_drivers.py`, `/app/src/`, `/opt/chrome`,
   `/opt/firefox`, `/opt/pjeoffice`, `/opt/venv`, `/opt/novnc`,
   `/root/.mozilla/firefox/selenium.default-release`, `/etc/opt/chrome*/policies/managed`,
-  `/app/a1cert.py` (API usada pelos scripts), `/app/a1_check.py`, `/app/egress_proxy.py`, `/app/egress_check.py`.
+  `/app/a1cert.py` (API usada pelos scripts), `/app/a1_check.py`, `/app/egress_proxy.py`, `/app/egress_check.py`,
+  `/app/preflight.py`, `/opt/icp-brasil/` (`raizes.pem`, `acs.pem`).
 - Variáveis de ambiente e seus defaults (`USE_*`, `WORKER_*`, `SCRIPT_URL`, `HELPER_URLS`,
   `CHROME_PROFILE_URL`, `TASK_*`, `SCREEN_*`, `PJEOFFICE_*`, `A1_PFX_*`, `EGRESS_*`).
   Sem `EGRESS_PROXY_URL` o container sai direto, como sempre (recurso opcional, só alguns clientes). Os defaults do entrypoint
@@ -37,6 +38,8 @@ Para conferir se uma mudança alterou o contrato, compare snapshots
 | `image/app/a1cert.py` | certificado A1: abrir `.pfx`, NSS do Chrome/Firefox, policy, `.p7s`, PAdES, limpeza |
 | `image/app/a1_check.py`, `a1_testkit.py` | verificador do A1 e ferramentas de teste (ICP de teste, servidor mTLS local) |
 | `image/app/egress_proxy.py`, `egress_check.py`, `egress_testkit.py` | relay de saída: repassador local + config de browsers/Python/Java, verificador e relay de referência/teste |
+| `image/app/preflight.py` | "o worker está pronto?": browsers + `a1_check` + `egress_check` num JSON |
+| `image/icp-brasil/` | raízes (fingerprint fixado) + ACs oficiais da ICP-Brasil (ITI) → `/opt/icp-brasil`; só para validar cadeia do A1, fora do trust store |
 | `image/patch_chromedriver.py` | usado só no build (aplicado e apagado na mesma camada) |
 | `.dockerignore` | **allowlist**: só `requirements.txt` e `image/` entram no contexto |
 | `tests/unit/` | testes rápidos no host (sem Docker) — rodam com `pytest` |
@@ -45,7 +48,7 @@ Para conferir se uma mudança alterou o contrato, compare snapshots
 | `examples/compose/` | compose de worker, standby, debug (VNC) e Caddy |
 | `examples/scripts/` | scripts de exemplo (não vão para a imagem) |
 | `docs/` | guias de uso; `docs/baseline/` tem a foto da imagem de produção |
-| `scripts/` | `test-image.sh` (portão de qualidade da imagem) e `image-snapshot.sh` |
+| `scripts/` | `test-image.sh` (portão), `image-snapshot.sh`, `release-notes.sh` (notas do GitHub Release) e `update-icp-brasil.py` |
 | `.github/workflows/ci.yml` | CI de PR: unit tests + build igual ao release + `test-image.sh` |
 | `.github/workflows/build-push-ghcr.yml` | release: build → `test-image.sh` → push para o GHCR |
 | `.github/workflows/nightly.yml` | build diário sem cache + `test-image.sh` + relatório de drift |
@@ -78,6 +81,13 @@ mudança precisa passar em `tests/image/test_a1_certificate.py` (Chrome, UC e Fi
 adicione downloads antes de `setup_egress_proxy` no `main()` do entrypoint, nem fallback direto no
 repassador. A senha do relay nunca vai para log, variáveis exportadas ou `repr`. Valide com
 `tests/image/test_egress.py` e os cenários de relay do `test-image.sh`.
+
+**Atualizar as ACs da ICP-Brasil:** `scripts/update-icp-brasil.py` (baixa do ITI, confere o SHA-512
+publicado, o fingerprint das raízes e a cadeia de cada AC). O nightly avisa quando o ITI muda. Raiz nova
+exige conferir o fingerprint e fixá-lo no script **e** em `tests/unit/test_a1cert.py`.
+
+**Logs com URL:** nunca registre `SCRIPT_URL`/`HELPER_URLS`/URLs de usuário cruas: use `mask_url`
+(bash, entrypoint) ou `script_downloader.mask_url`/`mask_text` (Python).
 
 **Mexer no entrypoint:** mantenha `set -e`, funções pequenas e o padrão de log
 `$(log_timestamp) <emoji> mensagem`. Serviços que dependem de outro (OpenBox → Xvfb,
@@ -117,7 +127,8 @@ noVNC → VNC) devem checar a dependência e pular com aviso, não falhar.
 - `build-push-ghcr.yml` (push na `main` que muda `Dockerfile.trixie`, `requirements.txt`,
   `image/**` ou o próprio workflow; ou manual): build com `load` e **sem push** →
   `scripts/test-image.sh` na mesma imagem → diff com a `:latest` atual → `docker push` das
-  tags `latest`, `sha-<7>`, `YYYYMMDD-HHMMSS`. Mantém as 5 tags mais recentes no GHCR.
+  tags `latest`, `sha-<7>`, `YYYYMMDD-HHMMSS` → GitHub Release com digest, PRs, diff da imagem e
+  comandos de rollback (`scripts/release-notes.sh`, informativo). Mantém as 5 tags mais recentes no GHCR.
 - `nightly.yml`: build diário sem cache + portão + relatório do que mudaria + variante FFmpeg.
 - Regras travadas em `tests/unit/test_workflows.py`: push só depois do portão, mesmas flags
   em CI/nightly/release, nenhum `|| exit 0`. Passos informativos usam `continue-on-error`.
@@ -159,5 +170,8 @@ noVNC → VNC) devem checar a dependência e pular com aviso, não falhar.
   `a1_testkit.py` (ICP de teste + servidor mTLS) e cenário no portão; Actions em Node 24 + Dependabot.
 - [x] **Relay de saída:** `EGRESS_PROXY_URL` (SOCKS5/HTTP com senha) para todo o tráfego, fail-closed,
   DNS no relay, WebRTC/QUIC bloqueados, `egress_check.py` e cenários no portão.
+- [x] **Quick wins:** URLs com token mascaradas nos logs; relay conferido antes de cada iteração do
+  loop; `/app/preflight.py`; ACs da ICP-Brasil em `/opt/icp-brasil` (`verify_chain`); GitHub Release
+  com notas e rollback; loop do entrypoint sem duplicação (usa as mesmas funções via `export -f`).
 - [ ] **Fase 3:** alinhar `requirements.txt` com o que de fato roda (`cryptography`, `psutil`,
-  `oscrypto`); revisar `set -e` x falha no download do profile; remover duplicação do loop no entrypoint.
+  `oscrypto`); revisar `set -e` x falha no download do profile.

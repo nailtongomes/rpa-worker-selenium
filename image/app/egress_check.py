@@ -44,6 +44,7 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 
 import egress_proxy as ep  # noqa: E402
+from script_downloader import mask_text, mask_url  # noqa: E402
 
 OK, WARN, FAIL = "✅", "⚠️ ", "❌"
 IP_RE = re.compile(r"\b(?:\d{1,3}\.){3}\d{1,3}\b|\b[0-9a-f]{1,4}(?::[0-9a-f]{0,4}){2,7}\b", re.I)
@@ -236,9 +237,9 @@ def main(argv=None) -> int:
         try:
             resp = requests.get(url, timeout=40, verify=verify, allow_redirects=True)
             status = FAIL if resp.status_code in (403, 407, 451) or resp.status_code >= 500 else OK
-            report.line(status, f"acesso a {url}", f"HTTP {resp.status_code}")
+            report.line(status, f"acesso a {mask_url(url)}", f"HTTP {resp.status_code}")
         except Exception as exc:  # noqa: BLE001
-            report.line(FAIL, f"acesso a {url}", str(exc)[:200])
+            report.line(FAIL, f"acesso a {mask_url(url)}", mask_text(exc, url)[:200])
 
     # 4. comparação com a saída direta
     if args.compare_direct:

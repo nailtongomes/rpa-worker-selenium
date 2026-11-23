@@ -53,6 +53,7 @@ def _requires(feature: str):
         ("/app/egress_proxy.py", True),
         ("/app/egress_check.py", True),
         ("/app/egress_testkit.py", True),
+        ("/app/preflight.py", True),
         ("/app/requirements.txt", False),
     ],
 )
@@ -194,6 +195,30 @@ def test_a1cert_importable_from_user_scripts():
     )
     assert result.returncode == 0, result.stderr
     assert result.stdout.strip() == "/app/a1cert.py"
+
+
+def test_icp_brasil_bundle():
+    """Raízes + ACs oficiais da ICP-Brasil em /opt/icp-brasil, legíveis pelo openssl da imagem."""
+    import sys
+
+    sys.path.insert(0, "/app")
+    import a1cert
+
+    roots = a1cert.icp_brasil_certs(roots_only=True)
+    every = a1cert.icp_brasil_certs()
+    assert len(roots) >= 8 and len(every) - len(roots) > 100
+    assert json.loads(Path("/opt/icp-brasil/manifest.json").read_text())["acs"] == len(every) - len(roots)
+    # amostra: uma AC intermediária fecha cadeia até uma raiz com o openssl da imagem
+    import types
+
+    root = a1cert.verify_chain(types.SimpleNamespace(certificate=every[-1], chain=[]))
+    assert root.startswith("Autoridade Certificadora Raiz Brasileira v")
+
+
+def test_icp_brasil_not_in_system_trust_store():
+    """As ACs servem só para validar o A1: TLS do sistema e dos browsers não muda."""
+    bundle = Path("/etc/ssl/certs/ca-certificates.crt").read_text()
+    assert "Raiz Brasileira" not in bundle
 
 
 def test_egress_relay_off_by_default():

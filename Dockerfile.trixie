@@ -497,6 +497,11 @@ ENV USE_XVFB=0 \
     XDG_CONFIG_HOME=/root/.config \
     XDG_DATA_HOME=/root/.local/share
 
+# ICP-Brasil roots + intermediate CAs from ITI, used to validate A1 chains
+# (a1cert.verify_chain). Not added to any trust store: browsers/TLS are unchanged.
+# Refresh with scripts/update-icp-brasil.py.
+COPY image/icp-brasil/ /opt/icp-brasil/
+
 # ============================================================================
 # VOLATILE LAYER — app code. Everything below rebuilds on each commit.
 # Keep this section as small as possible.

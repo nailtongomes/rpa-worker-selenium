@@ -46,10 +46,10 @@ def _key() -> rsa.RSAPrivateKey:
     return rsa.generate_private_key(public_exponent=65537, key_size=2048)
 
 
-def _name(cn: str) -> x509.Name:
+def _name(cn: str, organization: str = "ICP-Teste") -> x509.Name:
     return x509.Name([
         x509.NameAttribute(NameOID.COUNTRY_NAME, "BR"),
-        x509.NameAttribute(NameOID.ORGANIZATION_NAME, "ICP-Teste"),
+        x509.NameAttribute(NameOID.ORGANIZATION_NAME, organization),
         x509.NameAttribute(NameOID.COMMON_NAME, cn),
     ])
 
@@ -63,7 +63,7 @@ def _pem(cert: x509.Certificate) -> bytes:
     return cert.public_bytes(serialization.Encoding.PEM)
 
 
-def make_test_pki(out_dir: Path, password: str, days: int = 365) -> dict:
+def make_test_pki(out_dir: Path, password: str, days: int = 365, organization: str = "ICP-Teste") -> dict:
     """Gera a ICP de teste em ``out_dir``.
 
     Devolve caminhos: ``ca`` (PEM), ``pfx`` (AES/PBES2), ``pfx_3des`` (3DES),
@@ -77,7 +77,7 @@ def make_test_pki(out_dir: Path, password: str, days: int = 365) -> dict:
     ca_key = _key()
     ca = (
         x509.CertificateBuilder()
-        .subject_name(_name(TEST_CA_CN)).issuer_name(_name(TEST_CA_CN))
+        .subject_name(_name(TEST_CA_CN, organization)).issuer_name(_name(TEST_CA_CN, organization))
         .public_key(ca_key.public_key()).serial_number(x509.random_serial_number())
         .not_valid_before(now).not_valid_after(now + _dt.timedelta(days=days + 1))
         .add_extension(x509.BasicConstraints(ca=True, path_length=0), critical=True)
@@ -92,7 +92,7 @@ def make_test_pki(out_dir: Path, password: str, days: int = 365) -> dict:
         dados_pf = ("01011990" + TEST_CPF + "0" * 11 + "0" * 15 + "SSPRN ").encode()
         cert = (
             x509.CertificateBuilder()
-            .subject_name(_name(f"{TEST_HOLDER}:{TEST_CPF}")).issuer_name(ca.subject)
+            .subject_name(_name(f"{TEST_HOLDER}:{TEST_CPF}", organization)).issuer_name(ca.subject)
             .public_key(key.public_key()).serial_number(x509.random_serial_number())
             .not_valid_before(not_before).not_valid_after(not_after)
             .add_extension(x509.BasicConstraints(ca=False, path_length=None), critical=True)

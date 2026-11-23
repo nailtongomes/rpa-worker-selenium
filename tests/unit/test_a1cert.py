@@ -167,3 +167,98 @@ def test_usage_findings_detects_key_mismatch(cert, pki):
     other = a1cert.load_pfx(pki["expired"], PASSWORD)  # outra chave
     findings = a1cert.usage_findings(dataclasses.replace(cert, private_key=other.private_key))
     assert ("erro", "chave", "a chave privada não corresponde ao certificado") in findings
+
+
+# --- ACs da ICP-Brasil empacotadas (image/icp-brasil) ------------------------------------
+
+ICP_DIR = __import__("pathlib").Path(__file__).resolve().parents[2] / "image" / "icp-brasil"
+
+# Fixado aqui de forma independente de scripts/update-icp-brasil.py: trocar uma raiz
+# exige mudar os dois lugares (SHA-256 do DER, conferido no repositório do ITI).
+ICP_ROOTS = {
+    "CAA53FC6091C6951887C976E378F6EF89AA6377C55D97B6475422B71ED7E9B17",  # v5
+    "3BDB9B509352F1D3D71C2BF64D9A38A4E6CEBDA27809D77F7AC476CBDE6E314A",  # v6
+    "CD5406F61A8D5D08A3797DA044BE669C555C2D8B821D67577F0A2CE3A1A277E1",  # v8
+    "CDD1149DCFC137C4C34FA844CF592CFBFEA05CB13B770AD5E1F0C7FC8C9C43BF",  # v9
+    "6E0BFF069A26994C15DE2C4888CC54AF84882E5495B7FBF66BE9CCFFEC7489F6",  # v10
+    "1406710058180FA4081AAB3F246F1702429C552A11FA3143B84C88CB3AB8E5E7",  # v11
+    "D8478E37CE19C690CF657381E68FE600E4E1A042536830F06847E03E554C4B01",  # v12
+    "2B07D0BC02C4A6E0478ED22D0D99E8F97E1827B269097696A7FEB6AAD30C3AC8",  # v13
+}
+
+
+def test_icp_brasil_roots_are_the_pinned_ones():
+    from cryptography.hazmat.primitives import hashes
+
+    roots = a1cert.icp_brasil_certs(roots_only=True, icp_dir=ICP_DIR)
+    assert {r.fingerprint(hashes.SHA256()).hex().upper() for r in roots} == ICP_ROOTS
+    for root in roots:
+        assert root.subject == root.issuer
+        assert "Autoridade Certificadora Raiz Brasileira" in root.subject.rfc4514_string()
+
+
+def test_icp_brasil_intermediates_chain_to_pinned_roots(tmp_path, monkeypatch):
+    """Toda AC empacotada fecha cadeia até uma raiz fixada (nenhuma AC 'solta')."""
+    import types
+
+    monkeypatch.setattr(a1cert, "WORK_DIR", tmp_path)
+    roots = a1cert.icp_brasil_certs(roots_only=True, icp_dir=ICP_DIR)
+    cas = a1cert.icp_brasil_certs(icp_dir=ICP_DIR)[len(roots):]
+    assert len(cas) > 100
+    for ca in cas:
+        assert ca.subject != ca.issuer
+        root = a1cert.verify_chain(types.SimpleNamespace(certificate=ca, chain=[]), icp_dir=ICP_DIR)
+        assert root.startswith("Autoridade Certificadora Raiz Brasileira v"), ca.subject
+
+
+def test_verify_chain_with_test_pki(pki, cert, tmp_path, monkeypatch):
+    import dataclasses
+
+    monkeypatch.setattr(a1cert, "WORK_DIR", tmp_path / "work")
+    anchors = tmp_path / "icp"
+    anchors.mkdir()
+    (anchors / "raizes.pem").write_bytes(__import__("pathlib").Path(pki["ca"]).read_bytes())
+    assert a1cert.verify_chain(cert, icp_dir=anchors) == kit.TEST_CA_CN
+    # um .pfx de verdade não está na ICP-Brasil de teste, nem a ICP de teste na real
+    with pytest.raises(a1cert.A1Error, match="unable to get local issuer"):
+        a1cert.verify_chain(dataclasses.replace(cert, chain=[]), icp_dir=ICP_DIR)
+
+
+def test_usage_findings_flags_fake_icp_brasil(tmp_path, monkeypatch):
+    """Certificado que diz ser ICP-Brasil mas não fecha cadeia com as raízes do ITI: erro."""
+    monkeypatch.setattr(a1cert, "WORK_DIR", tmp_path / "work")
+    monkeypatch.setattr(a1cert, "ICP_BRASIL_DIR", ICP_DIR)
+    import dataclasses
+
+    fake = a1cert.load_pfx(kit.make_test_pki(tmp_path / "pki", PASSWORD, organization="ICP-Brasil")["pfx"], PASSWORD)
+    # .pfx com a cadeia: a raiz dele não é uma raiz do ITI -> erro
+    level, message = next((lv, msg) for lv, subj, msg in a1cert.usage_findings(fake) if subj == "ICP-Brasil")
+    assert level == "erro" and "self-signed" in message
+    # .pfx sem a cadeia: AC desconhecida (pode ser AC nova, posterior ao pacote) -> aviso
+    findings = a1cert.usage_findings(dataclasses.replace(fake, chain=[]))
+    level, message = next((lv, msg) for lv, subj, msg in findings if subj == "ICP-Brasil")
+    assert level == "aviso" and "AC emissora não está entre as ACs oficiais" in message
+
+
+def test_usage_findings_icp_brasil_expired_chain_is_error(tmp_path, monkeypatch):
+    """Cadeia conhecida mas inválida (aqui: certificado vencido) é erro, não aviso."""
+    monkeypatch.setattr(a1cert, "WORK_DIR", tmp_path / "work")
+    pki = kit.make_test_pki(tmp_path / "pki", PASSWORD, organization="ICP-Brasil")
+    anchors = tmp_path / "icp"
+    anchors.mkdir()
+    (anchors / "raizes.pem").write_bytes(__import__("pathlib").Path(pki["ca"]).read_bytes())
+    monkeypatch.setattr(a1cert, "ICP_BRASIL_DIR", anchors)
+    findings = a1cert.usage_findings(a1cert.load_pfx(pki["expired"], PASSWORD))
+    level, message = next((lv, msg) for lv, subj, msg in findings if subj == "ICP-Brasil")
+    assert level == "erro" and "expired" in message
+
+
+def test_usage_findings_icp_brasil_ok_with_its_anchor(tmp_path, monkeypatch):
+    monkeypatch.setattr(a1cert, "WORK_DIR", tmp_path / "work")
+    pki = kit.make_test_pki(tmp_path / "pki", PASSWORD, organization="ICP-Brasil")
+    anchors = tmp_path / "icp"
+    anchors.mkdir()
+    (anchors / "raizes.pem").write_bytes(__import__("pathlib").Path(pki["ca"]).read_bytes())
+    monkeypatch.setattr(a1cert, "ICP_BRASIL_DIR", anchors)
+    findings = a1cert.usage_findings(a1cert.load_pfx(pki["pfx"], PASSWORD))
+    assert ("ok", "ICP-Brasil", f"cadeia válida até a {kit.TEST_CA_CN} (raízes do ITI)") in findings

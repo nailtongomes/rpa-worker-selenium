@@ -201,7 +201,23 @@ python3 egress_testkit.py relay --protocol socks5 --listen 0.0.0.0:1080 --user r
 No servidor, aponte `EGRESS_PROXY_URL=socks5://rpa:troque-esta-senha@<ip-da-maquina>:1080` e
 repita os passos 2 e 3. Use-o só para teste: ele não tem limites nem lista de destinos.
 
-### 5. Em produção (vários workers)
+### 5. Relay caindo com o worker em loop
+
+Com `WORKER_LOOP=1`, antes de cada iteração o worker repete a mesma verificação do boot
+(`EGRESS_CHECK_URL`, e o IP de `EGRESS_EXPECTED_IP`). Se o relay estiver fora do ar, a
+iteração **é pulada**, ou seja, o script não roda sem a saída certa, e aparece no log:
+
+```
+⚠️  Egress relay unavailable, skipping this iteration: ...
+💤 Checking the egress relay again in 120s...
+```
+
+O intervalo é o `WORKER_RESTART_DELAY`, com no mínimo 10 s. Quando o relay volta, o worker
+retoma sozinho, sem reiniciar o container. Com `EGRESS_CHECK_URL=off`, a verificação só
+negocia com o relay (usuário/senha), sem buscar o IP. O mesmo diagnóstico, junto com
+browsers e A1, sai num JSON com `python /app/preflight.py`.
+
+### 6. Em produção (vários workers)
 
 No [`examples/server/docker-compose.yml`](../examples/server/docker-compose.yml), cada worker
 pode ter o seu relay (`EGRESS_PROXY_URL_01`…`04`, `EGRESS_EXPECTED_IP_NN`) ou herdar um

@@ -122,3 +122,37 @@ def test_egress_relay_is_off_without_url(entrypoint_text):
 def test_egress_failure_stops_container_when_required(entrypoint_text):
     body = _function_body(entrypoint_text, "egress_fail")
     assert 'if [ "${EGRESS_REQUIRED}" = "1" ]; then' in body and "exit 1" in body
+
+
+# --- quick wins: URLs mascaradas, loop sem duplicação, relay antes de cada iteração --------
+
+def test_download_functions_are_defined_once(entrypoint_text):
+    """O loop usa as mesmas funções da execução única (antes havia uma cópia num heredoc)."""
+    assert entrypoint_text.count("download_script_with_retry() {") == 1
+    assert "SCRIPT_EOF" not in entrypoint_text
+    loop = _function_body(entrypoint_text, "execute_with_loop")
+    assert "export -f" in loop and "download_and_execute" in loop
+    assert 'timeout "${WORKER_TIMEOUT}" bash -c download_and_execute' in loop
+
+
+def test_urls_are_masked_in_logs(entrypoint_text):
+    """Nenhum echo imprime SCRIPT_URL/url crus (tokens em query ou user:senha)."""
+    for line in entrypoint_text.splitlines():
+        if line.strip().startswith("echo"):
+            unmasked = re.sub(r'\$\(mask_url "[^"]*"\)', "", line)
+            assert not re.search(r'\$\{?(SCRIPT_URL|url|HELPER_URLS)\b', unmasked), line
+    assert "mask_url" in _function_body(entrypoint_text, "download_script_with_retry")
+    assert "mask_url" in _function_body(entrypoint_text, "download_and_execute")
+
+
+def test_mask_url_reads_from_stdin(entrypoint_text):
+    body = _function_body(entrypoint_text, "mask_url")
+    assert "--mask" in body and "printf" in body  # URL pelo stdin, nunca no argv (ps)
+
+
+def test_loop_checks_egress_before_each_iteration(entrypoint_text):
+    loop = _function_body(entrypoint_text, "execute_with_loop")
+    assert loop.index("egress_ready") < loop.index("Starting iteration")
+    ready = _function_body(entrypoint_text, "egress_ready")
+    assert '[ -n "${EGRESS_PID}" ] || return 0' in ready  # sem relay: não faz nada
+    assert "egress_proxy.py check" in ready
