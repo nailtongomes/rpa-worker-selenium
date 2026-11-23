@@ -177,6 +177,65 @@ def _icp_other_name(cert: x509.Certificate, oid: str) -> Optional[str]:
     return None
 
 
+# --- Diagnóstico ----------------------------------------------------------------
+
+def usage_findings(cert: A1Certificate) -> list:
+    """Problemas de uso conhecidos: [(nível, assunto, mensagem)], nível 'ok'|'aviso'|'erro'.
+
+    Não substitui a validação jurídica da assinatura; aponta o que costuma quebrar
+    login com certificado e assinatura em sistemas judiciais.
+    """
+    from cryptography.hazmat.primitives.asymmetric import ec, rsa
+
+    found = []
+    key = cert.private_key
+    if isinstance(key, rsa.RSAPrivateKey):
+        level = "ok" if key.key_size >= 2048 else "erro"
+        found.append((level, "chave", f"RSA {key.key_size} bits"))
+    elif isinstance(key, ec.EllipticCurvePrivateKey):
+        found.append(("aviso", "chave", f"EC {key.curve.name}: sistemas e o PJeOffice esperam RSA"))
+    else:
+        found.append(("aviso", "chave", f"tipo de chave incomum: {type(key).__name__}"))
+
+    if cert.certificate.public_key().public_numbers() != key.public_key().public_numbers():
+        found.append(("erro", "chave", "a chave privada não corresponde ao certificado"))
+
+    try:
+        ku = cert.certificate.extensions.get_extension_for_class(x509.KeyUsage).value
+        if not ku.digital_signature:
+            found.append(("erro", "uso da chave", "sem digitalSignature: não serve para login nem assinatura"))
+        elif not ku.content_commitment:
+            found.append(("aviso", "uso da chave", "sem nonRepudiation: assinaturas ICP-Brasil costumam exigir"))
+        else:
+            found.append(("ok", "uso da chave", "digitalSignature + nonRepudiation"))
+    except x509.ExtensionNotFound:
+        found.append(("aviso", "uso da chave", "extensão KeyUsage ausente"))
+
+    try:
+        eku = cert.certificate.extensions.get_extension_for_class(x509.ExtendedKeyUsage).value
+        if x509.oid.ExtendedKeyUsageOID.CLIENT_AUTH in eku:
+            found.append(("ok", "uso estendido", "clientAuth (login em sites com certificado)"))
+        else:
+            found.append(("aviso", "uso estendido", "sem clientAuth: o browser pode não oferecê-lo no login"))
+    except x509.ExtensionNotFound:
+        pass
+
+    if not cert.chain:
+        found.append(("aviso", "cadeia", "o .pfx não traz as ACs; exporte com a cadeia completa se um site recusar"))
+    else:
+        roots = [c for c in cert.chain if c.subject == c.issuer]
+        names = ", ".join(_name_attr(c.subject, x509.NameOID.COMMON_NAME) for c in cert.chain)
+        if roots:
+            found.append(("ok", "cadeia", f"{len(cert.chain)} AC(s) até a raiz: {names}"))
+        else:
+            found.append(("aviso", "cadeia", f"sem a AC raiz ({names}); ok para a maioria dos sites"))
+    orgs = {a.value for c in [cert.certificate, *cert.chain]
+            for a in c.issuer.get_attributes_for_oid(x509.NameOID.ORGANIZATION_NAME)}
+    if "ICP-Brasil" in orgs:
+        found.append(("ok", "ICP-Brasil", "emitido na hierarquia ICP-Brasil"))
+    return found
+
+
 # --- Carregar -----------------------------------------------------------------
 
 def password_from_env() -> str:

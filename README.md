@@ -111,6 +111,8 @@ Ele abre o `.pfx`, mostra titular/CPF/validade, assina um PDF (`.p7s` e PAdES), 
 Java/PJeOffice abre o arquivo e se Chrome, SeleniumBase UC e Firefox apresentam o certificado
 a um servidor HTTPS local. Senha com acento ou "ç" é recusada pelo Java/PJeOffice; o
 verificador avisa, e `a1cert.export_pfx()` regrava o arquivo com outra senha.
+Guia completo: [`docs/A1_CERTIFICATE_GUIDE.md`](docs/A1_CERTIFICATE_GUIDE.md); exemplo:
+[`examples/scripts/example_a1_certificate.py`](examples/scripts/example_a1_certificate.py).
 
 ### Sem `SCRIPT_URL`
 
@@ -254,7 +256,7 @@ Mais detalhes em [`docs/TESTING.md`](docs/TESTING.md).
 ## Documentação
 
 - [docs/WORKER.md](docs/WORKER.md) — worker em loop e modo standby
-- [docs/A1_CERTIFICATE_GUIDE.md](docs/A1_CERTIFICATE_GUIDE.md) — certificados A1 (.pfx/.p12)
+- [docs/A1_CERTIFICATE_GUIDE.md](docs/A1_CERTIFICATE_GUIDE.md) — certificado A1: `a1cert`, `.p7s`, PAdES, `a1_check.py` e problemas conhecidos
 - [docs/CA_RUNTIME_MANAGEMENT.md](docs/CA_RUNTIME_MANAGEMENT.md) — CAs em tempo de execução
 - [docs/VNC_QUICKSTART.md](docs/VNC_QUICKSTART.md) — debug visual com VNC/noVNC
 - [docs/VNC_CADDY_PROXY.md](docs/VNC_CADDY_PROXY.md) — VNC atrás de proxy reverso
