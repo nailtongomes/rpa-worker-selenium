@@ -65,8 +65,12 @@ def test_release_pushes_only_after_quality_gate():
     build_with = steps[build]["with"]
     assert build_with.get("push") is False, "o build não pode publicar antes dos testes"
     assert build_with.get("load") is True, "a imagem testada precisa ser a imagem publicada"
-    meta = steps[_index(steps, lambda s: s.get("id") == "meta", "meta")]["run"]
-    assert "rpa-worker:candidate" in meta, "a imagem candidata precisa de uma tag local"
+    assert build_with.get("tags") == "rpa-worker:candidate", \
+        "o build só pode criar a tag local; as tags públicas são aplicadas no push"
+    push_run = steps[push]["run"]
+    assert "docker tag rpa-worker:candidate" in push_run, "as tags públicas devem vir da imagem testada"
+    assert "imagetools inspect" in push_run, "o push precisa conferir o digest de cada tag no registro"
+    assert "--all-tags" not in push_run
     assert "rpa-worker:candidate" in steps[gate]["run"]
     for step in steps[gate:push + 1]:
         assert not step.get("continue-on-error") or "docker push" not in step.get("run", ""), \
@@ -114,3 +118,14 @@ def test_nightly_builds_without_cache():
     build = _build_step(_load(NIGHTLY), "production-image")
     assert build["with"].get("no-cache") is True
     assert "schedule" in _load(NIGHTLY)["on"]
+
+
+def test_no_step_between_gate_and_push_can_retag_latest():
+    """Regressão: um `docker pull :latest` antes do push sobrescrevia a tag local
+    `latest` e republicava a imagem antiga. Hoje o build não cria tags públicas."""
+    steps = _steps(_load(RELEASE), "build-and-push")
+    push = _index(steps, lambda s: "docker push" in s.get("run", ""), "docker push")
+    for step in steps[:push]:
+        assert "${IMAGE_NAME}:latest" not in str(step.get("run", "")) or "pull" in step.get("run", ""), step["name"]
+    build = steps[_index(steps, lambda s: "docker/build-push-action" in s.get("uses", ""), "build")]
+    assert ":latest" not in build["with"]["tags"]

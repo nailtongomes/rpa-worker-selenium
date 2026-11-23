@@ -65,12 +65,6 @@ jobs:
           IMAGE_NAME="ghcr.io/$(echo "$GITHUB_REPOSITORY" | tr '[:upper:]' '[:lower:]')"
 
           {
-            echo "tags<<EOF"
-            echo "${IMAGE_NAME}:latest${TAG_SUFFIX}"
-            echo "${IMAGE_NAME}:sha-${SHORT_SHA}${TAG_SUFFIX}"
-            echo "${IMAGE_NAME}:${TIMESTAMP}${TAG_SUFFIX}"
-            echo "rpa-worker:candidate"
-            echo "EOF"
             echo "image_name=${IMAGE_NAME}"
             echo "short_sha=${SHORT_SHA}"
             echo "timestamp=${TIMESTAMP}"
@@ -86,7 +80,10 @@ jobs:
           platforms: linux/amd64
           load: true
           push: false
-          tags: ${{ steps.meta.outputs.tags }}
+          # Only a local tag here: the public tags are applied to this exact image
+          # in the push step, after the quality gate (a `docker pull :latest` in
+          # between can never overwrite the candidate)
+          tags: rpa-worker:candidate
           build-args: |
             BUILD_PJEOFFICE=1
             ENABLE_PDF_TOOLS=1
@@ -124,10 +121,34 @@ jobs:
       # 4) Publish the tested image (same bits, just re-tagged)
       - name: 🚀 Push tested image
         id: push
+        env:
+          IMAGE_NAME: ${{ steps.meta.outputs.image_name }}
+          SHORT_SHA: ${{ steps.meta.outputs.short_sha }}
+          TIMESTAMP: ${{ steps.meta.outputs.timestamp }}
+          TAG_SUFFIX: ${{ steps.meta.outputs.tag_suffix }}
         run: |
-          docker push --all-tags "${{ steps.meta.outputs.image_name }}"
-          DIGEST="$(docker inspect --format '{{index .RepoDigests 0}}' "${{ steps.meta.outputs.image_name }}:latest${{ steps.meta.outputs.tag_suffix }}")"
-          echo "digest=${DIGEST}" >> "$GITHUB_OUTPUT"
+          set -euo pipefail
+          CANDIDATE_ID="$(docker image inspect --format '{{.Id}}' rpa-worker:candidate)"
+          TAGS=("sha-${SHORT_SHA}${TAG_SUFFIX}" "${TIMESTAMP}${TAG_SUFFIX}" "latest${TAG_SUFFIX}")
+
+          for tag in "${TAGS[@]}"; do
+            docker tag rpa-worker:candidate "${IMAGE_NAME}:${tag}"
+            # the tag must point at the tested image, nothing else
+            test "$(docker image inspect --format '{{.Id}}' "${IMAGE_NAME}:${tag}")" = "$CANDIDATE_ID"
+            docker push "${IMAGE_NAME}:${tag}"
+          done
+
+          # Verify on the registry: every tag must resolve to the same digest
+          DIGEST="$(docker buildx imagetools inspect "${IMAGE_NAME}:sha-${SHORT_SHA}${TAG_SUFFIX}" --format '{{json .Manifest.Digest}}' | tr -d '"')"
+          for tag in "${TAGS[@]}"; do
+            got="$(docker buildx imagetools inspect "${IMAGE_NAME}:${tag}" --format '{{json .Manifest.Digest}}' | tr -d '"')"
+            echo "${tag} -> ${got}"
+            if [ "$got" != "$DIGEST" ]; then
+              echo "::error::${tag} aponta para ${got}, esperado ${DIGEST}"
+              exit 1
+            fi
+          done
+          echo "digest=${IMAGE_NAME}@${DIGEST}" >> "$GITHUB_OUTPUT"
 
       - name: 📊 Build Summary
         if: always()
