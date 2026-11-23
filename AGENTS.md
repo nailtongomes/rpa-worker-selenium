@@ -35,14 +35,15 @@ Para conferir se uma mudança alterou o contrato, compare snapshots
 | `image/patch_chromedriver.py` | usado só no build (aplicado e apagado na mesma camada) |
 | `.dockerignore` | **allowlist**: só `requirements.txt` e `image/` entram no contexto |
 | `tests/unit/` | testes rápidos no host (sem Docker) — rodam com `pytest` |
-| `tests/image/` | testes que rodam dentro da imagem (montando o repo em `/repo`) |
+| `tests/image/` | testes que rodam dentro da imagem (contrato, serviços, browsers, integração) + `fixtures/` |
 | `examples/server/` | N workers num servidor: compose com 4 workers + `workers.sh` (docker run) |
 | `examples/compose/` | compose de worker, standby, debug (VNC) e Caddy |
 | `examples/scripts/` | scripts de exemplo (não vão para a imagem) |
 | `docs/` | guias de uso; `docs/baseline/` tem a foto da imagem de produção |
-| `scripts/` | ferramentas de dev: `image-snapshot.sh`, `test_trixie_*.sh` |
-| `.github/workflows/build-push-ghcr.yml` | release: build + push para o GHCR |
-| `.github/workflows/smoke-test.yml` | CI: testes unitários + builds de teste |
+| `scripts/` | `test-image.sh` (portão de qualidade da imagem) e `image-snapshot.sh` |
+| `.github/workflows/ci.yml` | CI de PR: unit tests + build igual ao release + `test-image.sh` |
+| `.github/workflows/build-push-ghcr.yml` | release: build → `test-image.sh` → push para o GHCR |
+| `.github/workflows/nightly.yml` | build diário sem cache + `test-image.sh` + relatório de drift |
 
 ## Como fazer mudanças comuns
 
@@ -78,15 +79,13 @@ noVNC → VNC) devem checar a dependência e pular com aviso, não falhar.
    docker build -f Dockerfile.trixie --build-arg BUILD_PJEOFFICE=1 --build-arg ENABLE_PDF_TOOLS=1 \
      --build-arg ENABLE_VNC=1 --build-arg ENABLE_NOVNC=1 -t rpa-worker:local .
    ```
-3. **Smoke tests na imagem:**
+3. **Portão de qualidade na imagem** (o mesmo do CI e do release):
    ```bash
-   docker run --rm rpa-worker:local python /app/test_browser_drivers.py
-   docker run --rm -e USE_XVFB=1 -e USE_OPENBOX=1 -e USE_PJEOFFICE=1 -e CHECK_PROCESSES=1 \
-     rpa-worker:local bash -c "sleep 5 && python /app/smoke_test.py"
-   scripts/test_trixie_docker.sh test   # suíte tests/image (repo montado em /repo)
+   scripts/test-image.sh rpa-worker:local
    ```
-   Dentro da imagem, rode pytest sempre com `-p no:seleniumbase` quando usar `--timeout`
-   (o plugin do SeleniumBase aborta com pytest-timeout) e com o diretório de trabalho gravável.
+   Para depurar um teste isolado, rode pytest dentro da imagem com `-p no:seleniumbase`
+   (o plugin do SeleniumBase aborta com pytest-timeout) e diretório de trabalho gravável
+   (`-w /tmp`). Veja `docs/TESTING.md`.
 4. **Contrato preservado:**
    ```bash
    scripts/image-snapshot.sh ghcr.io/nailtongomes/rpa-worker-selenium:latest snapshots/latest
@@ -98,13 +97,15 @@ noVNC → VNC) devem checar a dependência e pular com aviso, não falhar.
 
 ## CI e release
 
-- `smoke-test.yml` roda em push/PR para `main`: `unit-tests` (pytest) e cinco builds do
-  Trixie com combinações de flags.
-- `build-push-ghcr.yml` roda em push para `main` quando `Dockerfile.trixie` ou o próprio
-  workflow mudam (e manualmente via `workflow_dispatch`). Publica `latest`, `sha-<7>` e
-  `YYYYMMDD-HHMMSS`, e mantém as 5 tags mais recentes no GHCR.
-- **Atenção:** hoje o release não espera o CI e não dispara sozinho com mudanças em
-  `image/` ou `requirements.txt`. Isso será resolvido na Fase 2 (ver backlog).
+- `ci.yml` (todo PR): `unit-tests` → build com as mesmas flags do release →
+  `scripts/test-image.sh` (bloqueante) → ClearCote (informativo, `continue-on-error`).
+- `build-push-ghcr.yml` (push na `main` que muda `Dockerfile.trixie`, `requirements.txt`,
+  `image/**` ou o próprio workflow; ou manual): build com `load` e **sem push** →
+  `scripts/test-image.sh` na mesma imagem → diff com a `:latest` atual → `docker push` das
+  tags `latest`, `sha-<7>`, `YYYYMMDD-HHMMSS`. Mantém as 5 tags mais recentes no GHCR.
+- `nightly.yml`: build diário sem cache + portão + relatório do que mudaria + variante FFmpeg.
+- Regras travadas em `tests/unit/test_workflows.py`: push só depois do portão, mesmas flags
+  em CI/nightly/release, nenhum `|| exit 0`. Passos informativos usam `continue-on-error`.
 
 ## Convenções
 
@@ -130,8 +131,9 @@ noVNC → VNC) devem checar a dependência e pular com aviso, não falhar.
 - [x] **Fase 1:** remoção das imagens legadas, nova estrutura (`image/`, `tests/`, `examples/`, `docs/`),
   `.dockerignore` em allowlist, `COPY` explícito, SeleniumBase sempre na versão mais recente,
   compose de exemplo corrigidos, testes unitários consolidados e rodando no CI.
-- [ ] **Fase 2:** release só publica após testes na mesma imagem (`sha-*` → testes → promove `latest`);
-  gatilho do release inclui `image/**` e `requirements.txt`; um único build igual ao de produção
-  no CI; remover `|| exit 0`; testes de imagem sem depender de sites externos; build noturno.
+- [x] **Fase 2:** release só publica após `scripts/test-image.sh` na mesma imagem; gatilho inclui
+  `image/**` e `requirements.txt`; um único build igual ao de produção no CI; sem `|| exit 0`;
+  testes de browser offline (fixtures locais) + online (página do projeto); `smoke_test.py`
+  falha se o browser falhar; build noturno sem cache com relatório de drift.
 - [ ] **Fase 3:** alinhar `requirements.txt` com o que de fato roda (`cryptography`, `psutil`,
   `oscrypto`); revisar `set -e` x falha no download do profile; remover duplicação do loop no entrypoint.

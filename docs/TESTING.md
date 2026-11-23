@@ -1,84 +1,98 @@
 # Testes
 
-Os testes ficam em dois níveis, separados por onde rodam:
+A regra é simples: **nenhuma imagem chega à `:latest` sem passar pelo mesmo portão de
+qualidade** — `scripts/test-image.sh` — e nenhuma falha de teste é mascarada.
 
-| Pasta | Onde roda | Tempo | O que garante |
+| Nível | Onde roda | Tempo | Quando |
 |---|---|---|---|
-| `tests/unit/` | host, sem Docker | segundos | entrypoint (sintaxe, shellcheck, defaults, ordem dos serviços), Dockerfile x `.dockerignore`, build-args do release, `script_downloader`, `task_server`, compose de exemplo |
-| `tests/image/` | **dentro** da imagem | minutos | browsers, SeleniumBase, Xvfb/OpenBox, PDF/imagem, certificados |
+| `tests/unit/` | host, sem Docker | ~5 s | todo PR (`ci.yml` → `unit-tests`) |
+| `scripts/test-image.sh` | dentro da imagem | ~3–5 min | todo PR, **antes de todo release**, toda noite |
 
-Além deles, a imagem traz smoke tests próprios em `/app` (`smoke_test.py`,
-`test_browser_drivers.py`, `smoke_test_clearcote.py`, `full_smoke_test.py`), usados pelo CI.
-
-## Testes unitários
+## Testes unitários (`tests/unit/`)
 
 ```bash
 python -m venv .venv && . .venv/bin/activate
 pip install -r requirements-dev.txt
-pytest                       # usa testpaths = tests/unit (pytest.ini)
+pytest
 ```
 
-O `pytest.ini` coloca `image/app` no `PYTHONPATH`, então os testes importam
-`script_downloader`, `smoke_test`, `task_server` etc. direto do código que vai para a imagem.
-O teste de shellcheck é pulado se o `shellcheck` não estiver instalado (no CI ele está).
+Cobrem: entrypoint (sintaxe, shellcheck, defaults do contrato, ordem dos serviços,
+SIGTERM), Dockerfile x `.dockerignore` x build-args, `script_downloader` (com servidor
+HTTP local), `task_server`, `smoke_test`, exemplos de compose, scripts `.sh` e **as regras
+dos workflows** (`test_workflows.py`): o release só faz push depois do portão, CI/nightly
+constroem com as mesmas flags do release e não existe `|| exit 0` em nenhum workflow.
 
-## Testes dentro da imagem
-
-Os testes de `tests/` **não** são copiados para a imagem de produção. Para rodá-los,
-monte o repositório no container:
+## Portão da imagem (`scripts/test-image.sh`)
 
 ```bash
-docker run --rm --shm-size=2g -v "$PWD:/repo:ro" -w /tmp \
-  -e USE_XVFB=1 -e USE_OPENBOX=1 \
-  rpa-worker:local \
-  bash -c "sleep 5 && pytest -p no:cacheprovider -p no:seleniumbase --timeout=180 \
-           -m 'trixie and integration' /repo/tests/image/trixie_integration_test.py"
+docker build -f Dockerfile.trixie --build-arg BUILD_PJEOFFICE=1 --build-arg ENABLE_PDF_TOOLS=1 \
+  --build-arg ENABLE_VNC=1 --build-arg ENABLE_NOVNC=1 -t rpa-worker:local .
+
+scripts/test-image.sh rpa-worker:local                       # completo (precisa de internet)
+RUN_ONLINE_TESTS=0 scripts/test-image.sh rpa-worker:local    # só offline
 ```
 
-- `-p no:seleniumbase`: o plugin pytest do SeleniumBase aborta a sessão se `--timeout`
-  (pytest-timeout) for usado. Os testes usam `Driver`/`sb_cdp` diretamente, então o plugin
-  não é necessário.
-- `-w /tmp`: o SeleniumBase grava `downloaded_files/` no diretório atual; o repo está montado
-  como somente leitura.
+Cenários (cada um é um `docker run` separado; qualquer falha => exit 1):
 
-Ou use o script, que faz build + três rodadas (sem display, com Xvfb, com Xvfb + OpenBox):
+| Cenário | O que garante |
+|---|---|
+| contrato da imagem | `tests/image/test_contract.py`: arquivos de `/app`, Chrome = ChromeDriver, Firefox + profile com NSS, policies do Chrome graváveis, ferramentas (xdotool, certutil, ImageMagick, Java, x11vnc, noVNC...), módulos Python, defaults de ambiente |
+| browsers headless sem display | `tests/image/test_browsers.py` sem Xvfb |
+| serviços + browsers + integração | Xvfb + OpenBox + PJeOffice + VNC + noVNC ligados: `test_services.py`, `test_browsers.py` (inclui UC headful) e `trixie_integration_test.py` |
+| `smoke_test.py` | o script padrão da imagem agora **falha** se o browser falhar |
+| worker em loop | `WORKER_LOOP=1` baixa `SCRIPT_URL` + `HELPER_URLS` e executa ≥ 2 iterações |
+| execução única | `SCRIPT_URL` executa e o helper de `/app/src` é importável |
+| falha propaga exit code | script com `sys.exit(3)` => container termina com erro |
+| comando direto | `docker run <imagem> python --version` |
+| modo standby | `/health` = 200 e `/task` sem token = 401 |
 
-```bash
-scripts/test_trixie_docker.sh all     # build + testes
-scripts/test_trixie_docker.sh test    # só testes (imagem rpa-worker-trixie:test já construída)
-```
+Os cenários com script usam um servidor HTTP **dentro do container** servindo
+`tests/image/fixtures/` (página de teste, `job_ok.py`, `job_fail.py`, `helper_mod.py`),
+então não dependem de serviços externos.
 
-Certificado A1 (opcional): defina `A1_P12_PATH` e `A1_P12_PASSWORD` e monte o arquivo.
-Sem eles, os testes de certificado são pulados.
+Resultados em `test-results/`: `junit-*.xml`, `screenshots/` (cada browser salva a tela),
+`logs/` e `summary.md` (vai para o resumo do GitHub Actions).
 
-## Validação real dos browsers: `tests/image/test_project_page.py`
+### `tests/image/test_browsers.py`: online e offline
 
-Abre a página do próprio projeto (`https://github.com/nailtongomes/rpa-worker-selenium/`)
-e confere que o título contém `rpa-worker-selenium` com:
+Cada browser abre **dois alvos** e confere o título:
 
-- `requests` (isola problema de rede de problema de browser)
-- Selenium + Chrome headless (chromedriver da imagem)
-- SeleniumBase headless, UC headless e **UC headful no Xvfb/OpenBox** (modo de produção)
-- Firefox headless e headful com o profile `selenium.default-release`
+- `local`: página de `tests/image/fixtures` (sem internet)
+- `project`: `https://github.com/nailtongomes/rpa-worker-selenium/` (marker `online`)
 
-Cada caso tenta até 3 vezes e **falha** se o browser não carregar a página.
-No CI é um passo bloqueante. Localmente:
+Browsers: Selenium + Chrome headless, SeleniumBase headless, UC headless,
+**UC headful no Xvfb/OpenBox** (modo de produção), Firefox headless/headful com o profile
+`selenium.default-release` e SeleniumBase + Firefox. Há ainda um teste que digita e clica
+num formulário com o driver UC. Cada visita tenta 3 vezes e **falha** se o browser não
+carregar a página. Se só o alvo `project` falhar, o problema é rede/GitHub, não a imagem.
+
+Outra URL: `-e PROJECT_URL=... -e EXPECTED_TEXT=...` (via `DOCKER_RUN_ARGS`).
+
+### Rodando um teste isolado dentro da imagem
 
 ```bash
 docker run --rm --shm-size=2g -v "$PWD:/repo:ro" -w /tmp -e USE_XVFB=1 -e USE_OPENBOX=1 \
   rpa-worker:local bash -c "sleep 5 && pytest -p no:cacheprovider -p no:seleniumbase \
-  --timeout=300 -v /repo/tests/image/test_project_page.py"
+  --timeout=300 -v /repo/tests/image/test_browsers.py -k uc_headful"
 ```
 
-Outra URL/título: `-e PROJECT_URL=... -e EXPECTED_TEXT=...`.
-Os smoke tests da imagem (`smoke_test.py`, `full_smoke_test.py`, `test_browser_drivers.py`)
-também usam a página do projeto como URL padrão.
+- `-p no:seleniumbase`: o plugin pytest do SeleniumBase aborta a sessão com `--timeout`
+  (pytest-timeout); os testes usam `Driver`/`sb_cdp` diretamente.
+- `-w /tmp`: o SeleniumBase grava `downloaded_files/` no diretório atual.
+
+## Workflows
+
+| Workflow | Quando | O que faz |
+|---|---|---|
+| `ci.yml` | todo PR e push na `main` | `unit-tests` → build com as flags do release → `test-image.sh` → ClearCote (informativo) |
+| `build-push-ghcr.yml` | push na `main` que muda `Dockerfile.trixie`, `requirements.txt` ou `image/**` (ou manual) | build (sem push) → `test-image.sh` na **mesma** imagem → diff com a `:latest` atual → `docker push` das tags `latest`, `sha-<7>`, `YYYYMMDD-HHMMSS` |
+| `nightly.yml` | todo dia 04:17 (Brasília) e manual | build **sem cache** + `test-image.sh` + relatório do que mudaria (Debian/PyPI) + variante com FFmpeg (gravação de tela) |
+
+Se o portão falhar no release, **nada é publicado** e a `:latest` atual continua em
+produção. Falhas do nightly chegam por e-mail (notificação padrão do GitHub para workflows
+agendados).
 
 ## Comparando imagens (antes/depois)
-
-`scripts/image-snapshot.sh` gera uma "foto" determinística de uma imagem: versões de
-browsers e drivers, `pip freeze`, `dpkg`, variáveis de ambiente (segredos mascarados),
-entrypoint e arquivos de `/app`, `/opt` e `/usr/local/bin`.
 
 ```bash
 scripts/image-snapshot.sh ghcr.io/nailtongomes/rpa-worker-selenium:latest snapshots/latest
@@ -86,34 +100,13 @@ scripts/image-snapshot.sh rpa-worker:local snapshots/local
 diff -ru snapshots/latest snapshots/local
 ```
 
-A foto da imagem de produção usada como referência na reorganização está em
-[`docs/baseline/`](baseline/).
+A foto da imagem de produção usada como referência está em [`docs/baseline/`](baseline/).
 
-## CI (`.github/workflows/smoke-test.yml`)
+## Achados documentados
 
-| Job | O que faz |
-|---|---|
-| `unit-tests` | `pytest` no host (~1 min) |
-| `trixie-smoke-test` | build base + `smoke_test.py`, `test_browser_drivers.py`, ClearCote, profile do Firefox |
-| `trixie-pjeoffice-test` | build com PJeOffice + processos Xvfb/OpenBox/PJeOffice |
-| `trixie-novnc-test` | build com VNC/noVNC + processos |
-| `trixie-screen-recording-test` | build com FFmpeg + arquivo `.mp4` gerado |
-| `trixie-integration-test` | build **idêntico ao do release** + `tests/image/test_project_page.py` (**bloqueante**) + `tests/image/trixie_integration_test.py` (ainda não bloqueia, ver abaixo) |
-
-### Limitações conhecidas (tratadas na Fase 2)
-
-- Os passos de integração terminam com `|| exit 0`: falhas aparecem no log, mas não quebram o CI.
-  Até a Fase 1 a suíte **nem chegava a rodar**: os testes não estavam na imagem e o
-  `--timeout` derrubava o plugin do SeleniumBase.
-- Resultado atual da suíte (idêntico na `:latest` de produção e na imagem reorganizada):
-  14 passam, 3 pulados (A1 sem certificado, `xwd`) e 3 falham:
-  `test_chrome_cdp` (título `None`), `test_read_pdf_with_pymupdf` (documento usado após
-  `close()`) e `test_oscrypto_not_installed` (ver abaixo).
-- `smoke_test.py` retorna sucesso mesmo quando o SeleniumBase falha (cai no fallback com
-  `requests`), então não detecta Chrome quebrado. Selenium, SeleniumBase e UC funcionam
-  normalmente quando testados diretamente.
-- O release (`build-push-ghcr.yml`) não espera o CI: publica `:latest` mesmo com teste vermelho.
-- São 5 builds com combinações diferentes de flags; nenhum é idêntico ao de produção
-  (`BUILD_PJEOFFICE=1 ENABLE_PDF_TOOLS=1 ENABLE_VNC=1 ENABLE_NOVNC=1`).
-- `tests/image/trixie_integration_test.py` exige que `oscrypto` **não** esteja instalado,
-  mas o `requirements.txt` o instala explicitamente. Decidir qual dos dois está certo.
+- **SeleniumBase + Firefox precisa de servidor X mesmo em headless** (Selenium puro não).
+  Em produção há sempre Xvfb; os testes refletem isso.
+- **No modo UC do SeleniumBase, use `driver.get()`**: `driver.open()` desconecta o
+  chromedriver e a chamada seguinte falha (era o bug do antigo `smoke_test.py`).
+- `oscrypto` está no `requirements.txt` para os scripts de automação; o teste garante que
+  ele carrega o backend OpenSSL.
