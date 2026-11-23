@@ -49,6 +49,8 @@ def test_entrypoint_shellcheck_errors():
         ("TASK_SERVER_PORT", "8080"),
         ("DISPLAY", ":99"),
         ("PJEOFFICE_EXECUTABLE", "/opt/pjeoffice/pjeoffice-pro.sh"),
+        ("EGRESS_REQUIRED", "1"),
+        ("EGRESS_LOCAL_PORT", "3128"),
     ],
 )
 def test_entrypoint_env_defaults(entrypoint_text, var, default):
@@ -102,3 +104,21 @@ def test_entrypoint_references_only_files_shipped_in_image(entrypoint_text, app_
     assert referenced, "nenhuma referência a /app/*.py encontrada"
     missing = sorted(f for f in referenced if not (app_dir / f).is_file())
     assert not missing, f"arquivos referenciados mas ausentes em image/app/: {missing}"
+
+
+def test_egress_relay_is_set_up_before_any_download(entrypoint_text):
+    """Com relay ligado, nenhum download (profile do Chrome, SCRIPT_URL) pode sair direto."""
+    main = _function_body(entrypoint_text, "main")
+    assert main.index("setup_egress_proxy") < main.index("download_chrome_profile")
+    assert main.index("setup_egress_proxy") < main.index("execute_with_loop")
+
+
+def test_egress_relay_is_off_without_url(entrypoint_text):
+    body = _function_body(entrypoint_text, "setup_egress_proxy")
+    assert 'if [ -z "${EGRESS_PROXY_URL:-}" ] && [ -z "${EGRESS_PROXY_URL_FILE:-}" ]; then' in body
+    assert "egress_proxy.py unconfigure" in body
+
+
+def test_egress_failure_stops_container_when_required(entrypoint_text):
+    body = _function_body(entrypoint_text, "egress_fail")
+    assert 'if [ "${EGRESS_REQUIRED}" = "1" ]; then' in body and "exit 1" in body

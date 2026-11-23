@@ -622,7 +622,9 @@ def java_password_problem(cert: A1Certificate) -> Optional[str]:
 
 def java_can_read(cert: A1Certificate) -> bool:
     """O Java (usado pelo PJeOffice) abre o .pfx com a senha?"""
-    keytool = shutil.which("keytool")
+    # O PJeOffice roda no Java que vem com ele (/opt/pjeoffice/jre, Java 8); o do sistema é o reserva
+    bundled = Path("/opt/pjeoffice/jre/bin/keytool")
+    keytool = str(bundled) if os.access(bundled, os.X_OK) else shutil.which("keytool")
     if not keytool:
         raise A1Error("keytool (Java) não encontrado")
     with tempfile.TemporaryDirectory(dir=_tmp_root()) as tmp:

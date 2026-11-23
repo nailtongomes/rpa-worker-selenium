@@ -16,9 +16,10 @@ Usuários da imagem dependem do que está abaixo. Não mude nada disso sem pedid
   `/app/task_server.py`, `/app/test_browser_drivers.py`, `/app/src/`, `/opt/chrome`,
   `/opt/firefox`, `/opt/pjeoffice`, `/opt/venv`, `/opt/novnc`,
   `/root/.mozilla/firefox/selenium.default-release`, `/etc/opt/chrome*/policies/managed`,
-  `/app/a1cert.py` (API usada pelos scripts), `/app/a1_check.py`.
+  `/app/a1cert.py` (API usada pelos scripts), `/app/a1_check.py`, `/app/egress_proxy.py`, `/app/egress_check.py`.
 - Variáveis de ambiente e seus defaults (`USE_*`, `WORKER_*`, `SCRIPT_URL`, `HELPER_URLS`,
-  `CHROME_PROFILE_URL`, `TASK_*`, `SCREEN_*`, `PJEOFFICE_*`, `A1_PFX_*`). Os defaults do entrypoint
+  `CHROME_PROFILE_URL`, `TASK_*`, `SCREEN_*`, `PJEOFFICE_*`, `A1_PFX_*`, `EGRESS_*`).
+  Sem `EGRESS_PROXY_URL` o container sai direto, como sempre (recurso opcional, só alguns clientes). Os defaults do entrypoint
   estão travados em `tests/unit/test_entrypoint.py`.
 - Build-args usados pelo release: `BUILD_PJEOFFICE=1`, `ENABLE_PDF_TOOLS=1`,
   `ENABLE_VNC=1`, `ENABLE_NOVNC=1`, `CHROME_PROFILE_URL`, `SELENIUMBASE_REFRESH`.
@@ -35,6 +36,7 @@ Para conferir se uma mudança alterou o contrato, compare snapshots
 | `image/app/` | **tudo** que vai para `/app` na imagem (`COPY image/app/ /app/`) |
 | `image/app/a1cert.py` | certificado A1: abrir `.pfx`, NSS do Chrome/Firefox, policy, `.p7s`, PAdES, limpeza |
 | `image/app/a1_check.py`, `a1_testkit.py` | verificador do A1 e ferramentas de teste (ICP de teste, servidor mTLS local) |
+| `image/app/egress_proxy.py`, `egress_check.py`, `egress_testkit.py` | relay de saída: repassador local + config de browsers/Python/Java, verificador e relay de referência/teste |
 | `image/patch_chromedriver.py` | usado só no build (aplicado e apagado na mesma camada) |
 | `.dockerignore` | **allowlist**: só `requirements.txt` e `image/` entram no contexto |
 | `tests/unit/` | testes rápidos no host (sem Docker) — rodam com `pytest` |
@@ -71,6 +73,11 @@ do mesmo tipo e lembre que camadas mais acima invalidam o cache de tudo que vem 
 **Mexer no certificado A1:** a API pública é `image/app/a1cert.py` (scripts de produção importam).
 Mantenha as assinaturas das funções e a regra de nunca expor a senha (log, argv, repr). Qualquer
 mudança precisa passar em `tests/image/test_a1_certificate.py` (Chrome, UC e Firefox com mTLS).
+
+**Mexer no relay de saída:** com `EGRESS_PROXY_URL` definido, **nada** pode sair direto: não
+adicione downloads antes de `setup_egress_proxy` no `main()` do entrypoint, nem fallback direto no
+repassador. A senha do relay nunca vai para log, variáveis exportadas ou `repr`. Valide com
+`tests/image/test_egress.py` e os cenários de relay do `test-image.sh`.
 
 **Mexer no entrypoint:** mantenha `set -e`, funções pequenas e o padrão de log
 `$(log_timestamp) <emoji> mensagem`. Serviços que dependem de outro (OpenBox → Xvfb,
@@ -132,6 +139,8 @@ noVNC → VNC) devem checar a dependência e pular com aviso, não falhar.
 - Certificado A1 real **nunca** vai para o GitHub (nem em secrets): os testes usam a ICP de teste de
   `a1_testkit.py`; o A1 real é validado no servidor com `python /app/a1_check.py`. A senha
   nunca é registrada em log nem passada em linha de comando (`pk12util -w`, `keytool -storepass:file`).
+- `EGRESS_PROXY_URL` contém a senha do relay: prefira `EGRESS_PROXY_URL_FILE`; o repassador nunca
+  a registra (`Upstream.masked`).
 - VNC/noVNC não têm senha: só para debug em rede confiável ou atrás de proxy com auth
   (`docs/VNC_CADDY_PROXY.md`).
 - `CHROME_PROFILE_URL` vira `ENV` na imagem publicada. É uma decisão consciente do mantenedor.
@@ -148,5 +157,7 @@ noVNC → VNC) devem checar a dependência e pular com aviso, não falhar.
   falha se o browser falhar; build noturno sem cache com relatório de drift.
 - [x] **Certificado A1:** `a1cert.py` (API), `a1_check.py` (verificador para o A1 real, no servidor),
   `a1_testkit.py` (ICP de teste + servidor mTLS) e cenário no portão; Actions em Node 24 + Dependabot.
+- [x] **Relay de saída:** `EGRESS_PROXY_URL` (SOCKS5/HTTP com senha) para todo o tráfego, fail-closed,
+  DNS no relay, WebRTC/QUIC bloqueados, `egress_check.py` e cenários no portão.
 - [ ] **Fase 3:** alinhar `requirements.txt` com o que de fato roda (`cryptography`, `psutil`,
   `oscrypto`); revisar `set -e` x falha no download do profile; remover duplicação do loop no entrypoint.

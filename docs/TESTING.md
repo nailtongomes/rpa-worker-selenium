@@ -40,6 +40,8 @@ Cenários (cada um é um `docker run` separado; qualquer falha => exit 1):
 | browsers headless sem display | `tests/image/test_browsers.py` sem Xvfb |
 | serviços + browsers + integração | Xvfb + OpenBox + PJeOffice + VNC + noVNC ligados: `test_services.py`, `test_browsers.py` (inclui UC headful) e `trixie_integration_test.py` |
 | certificado A1 | `tests/image/test_a1_certificate.py` com uma ICP de teste gerada na hora: `.pfx` por URL + senha (AES, 3DES e RC2), senha errada/certificado vencido, PDF → `.p7s` attached (CAdES-BES) e detached, PDF assinado (PAdES), Java/PJeOffice lendo o `.pfx`, importação/limpeza no NSS, e Chrome, SeleniumBase UC e Firefox (headless e com janela) apresentando o certificado a um servidor HTTPS local que **exige** certificado de cliente; controles negativos sem o certificado; `/app/a1_check.py` de ponta a ponta |
+| relay de saída | `tests/image/test_egress.py` com relay SOCKS5 de teste ("internet falsa"): Python, curl, Java do PJeOffice, Chrome, UC e Firefox saem pelo relay; DNS resolvido no relay (hosts `.invalid`); WebRTC sem IP; policies em `chrome://policy`; localhost direto; A1 (mTLS) junto |
+| relay de saída: proxy HTTP e falhas | proxy HTTP com senha; relay fora do ar, senha errada e esquema inválido **param** o container; `EGRESS_REQUIRED=0` só avisa; senha fora do log |
 | `smoke_test.py` | o script padrão da imagem agora **falha** se o browser falhar |
 | worker em loop | `WORKER_LOOP=1` baixa `SCRIPT_URL` + `HELPER_URLS` e executa ≥ 2 iterações |
 | execução única | `SCRIPT_URL` executa e o helper de `/app/src` é importável |
