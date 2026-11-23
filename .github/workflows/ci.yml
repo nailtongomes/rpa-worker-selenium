@@ -89,7 +89,7 @@ jobs:
             -v "$(pwd)/test-results/clearcote:/app/downloaded_files" \
             rpa-worker:ci bash -c "sleep 3 && python /app/smoke_test_clearcote.py" \
             | tee test-results/clearcote/output.log
-          SCORE="$(grep -oE 'Score: *[0-9]+' test-results/clearcote/output.log | tail -1 | grep -oE '[0-9]+' || true)"
+          SCORE="$(grep -oE 'CLEARCOTE_SCORE=[0-9]+' test-results/clearcote/output.log | tail -1 | cut -d= -f2)"
           {
             echo "### 🕵️ ClearCote (informativo)"
             echo "- Score: **${SCORE:-n/d}/100**"
