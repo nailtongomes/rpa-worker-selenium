@@ -15,9 +15,10 @@ Usuários da imagem dependem do que está abaixo. Não mude nada disso sem pedid
 - Caminhos: `/app/entrypoint.sh`, `/app/script_downloader.py`, `/app/smoke_test.py`,
   `/app/task_server.py`, `/app/test_browser_drivers.py`, `/app/src/`, `/opt/chrome`,
   `/opt/firefox`, `/opt/pjeoffice`, `/opt/venv`, `/opt/novnc`,
-  `/root/.mozilla/firefox/selenium.default-release`, `/etc/opt/chrome*/policies/managed`.
+  `/root/.mozilla/firefox/selenium.default-release`, `/etc/opt/chrome*/policies/managed`,
+  `/app/a1cert.py` (API usada pelos scripts), `/app/a1_check.py`.
 - Variáveis de ambiente e seus defaults (`USE_*`, `WORKER_*`, `SCRIPT_URL`, `HELPER_URLS`,
-  `CHROME_PROFILE_URL`, `TASK_*`, `SCREEN_*`, `PJEOFFICE_*`). Os defaults do entrypoint
+  `CHROME_PROFILE_URL`, `TASK_*`, `SCREEN_*`, `PJEOFFICE_*`, `A1_PFX_*`). Os defaults do entrypoint
   estão travados em `tests/unit/test_entrypoint.py`.
 - Build-args usados pelo release: `BUILD_PJEOFFICE=1`, `ENABLE_PDF_TOOLS=1`,
   `ENABLE_VNC=1`, `ENABLE_NOVNC=1`, `CHROME_PROFILE_URL`, `SELENIUMBASE_REFRESH`.
@@ -32,6 +33,8 @@ Para conferir se uma mudança alterou o contrato, compare snapshots
 | `Dockerfile.trixie` | imagem de produção (multi-stage: downloads → runtime) |
 | `requirements.txt` | pacotes Python da imagem |
 | `image/app/` | **tudo** que vai para `/app` na imagem (`COPY image/app/ /app/`) |
+| `image/app/a1cert.py` | certificado A1: abrir `.pfx`, NSS do Chrome/Firefox, policy, `.p7s`, PAdES, limpeza |
+| `image/app/a1_check.py`, `a1_testkit.py` | verificador do A1 e ferramentas de teste (ICP de teste, servidor mTLS local) |
 | `image/patch_chromedriver.py` | usado só no build (aplicado e apagado na mesma camada) |
 | `.dockerignore` | **allowlist**: só `requirements.txt` e `image/` entram no contexto |
 | `tests/unit/` | testes rápidos no host (sem Docker) — rodam com `pytest` |
@@ -44,6 +47,7 @@ Para conferir se uma mudança alterou o contrato, compare snapshots
 | `.github/workflows/ci.yml` | CI de PR: unit tests + build igual ao release + `test-image.sh` |
 | `.github/workflows/build-push-ghcr.yml` | release: build → `test-image.sh` → push para o GHCR |
 | `.github/workflows/nightly.yml` | build diário sem cache + `test-image.sh` + relatório de drift |
+| `.github/dependabot.yml` | PR semanal agrupado atualizando as GitHub Actions |
 
 ## Como fazer mudanças comuns
 
@@ -121,6 +125,9 @@ noVNC → VNC) devem checar a dependência e pular com aviso, não falhar.
 ## Segurança
 
 - Nunca commitar segredos (`.env`, `.pfx`, `.p12`, `.pem`, `.key`). Use `.env.example`.
+- Certificado A1 real **nunca** vai para o GitHub (nem em secrets): os testes usam a ICP de teste de
+  `a1_testkit.py`; o A1 real é validado no servidor com `python /app/a1_check.py`. A senha
+  nunca é registrada em log nem passada em linha de comando (`pk12util -w`, `keytool -storepass:file`).
 - VNC/noVNC não têm senha: só para debug em rede confiável ou atrás de proxy com auth
   (`docs/VNC_CADDY_PROXY.md`).
 - `CHROME_PROFILE_URL` vira `ENV` na imagem publicada. É uma decisão consciente do mantenedor.

@@ -84,6 +84,34 @@ docker run --rm --shm-size=2g -p 6080:6080 \
 Veja [`examples/compose/docker-compose.standby.yml`](examples/compose/docker-compose.standby.yml)
 e a seção "Standby" de [`docs/WORKER.md`](docs/WORKER.md).
 
+### Certificado digital A1
+
+A imagem traz `/app/a1cert.py` para os scripts configurarem o A1 em Python:
+
+```python
+import a1cert
+
+cert = a1cert.load_from_env()                       # A1_PFX_URL + A1_PFX_PASSWORD(_FILE)
+a1cert.install_chrome(cert, ["https://pje.tjrn.jus.br"])  # NSS + AutoSelectCertificateForUrls
+a1cert.install_firefox(cert)                        # NSS do profile + seleção automática
+a1cert.sign_p7s(cert, "peticao.pdf")                # -> peticao.pdf.p7s (attached, CAdES-BES)
+a1cert.uninstall(cert)                              # limpeza ao final
+```
+
+Para conferir um certificado no servidor antes de usar em produção:
+
+```bash
+docker run --rm --shm-size=2g -e USE_XVFB=1 -e USE_OPENBOX=1 \
+  -e A1_PFX_URL="https://exemplo.com/certificado.pfx" \
+  -e A1_PFX_PASSWORD_FILE=/run/secrets/a1 -v "$PWD/a1-senha.txt:/run/secrets/a1:ro" \
+  ghcr.io/nailtongomes/rpa-worker-selenium:latest python /app/a1_check.py
+```
+
+Ele abre o `.pfx`, mostra titular/CPF/validade, assina um PDF (`.p7s` e PAdES), confere se o
+Java/PJeOffice abre o arquivo e se Chrome, SeleniumBase UC e Firefox apresentam o certificado
+a um servidor HTTPS local. Senha com acento ou "ç" é recusada pelo Java/PJeOffice; o
+verificador avisa, e `a1cert.export_pfx()` regrava o arquivo com outra senha.
+
 ### Sem `SCRIPT_URL`
 
 O container executa o comando passado (padrão: `python --version`). Com `WORKER_LOOP=1`
@@ -108,6 +136,8 @@ antigo (aceitar o fallback via `requests`).
 | `WORKER_RESTART_DELAY` | `120` | Pausa entre iterações (s) |
 | `TASK_SERVER_PORT` | `8080` | Porta do modo standby |
 | `TASK_AUTH_TOKEN` | — | Token Bearer do modo standby |
+| `A1_PFX_URL` / `A1_PFX_PATH` | — | Certificado A1 (`.pfx`) por URL ou arquivo montado; usado por `a1cert.load_from_env()` |
+| `A1_PFX_PASSWORD` / `A1_PFX_PASSWORD_FILE` | — | Senha do A1 (o arquivo, via Docker secret, tem prioridade e não aparece no `docker inspect`) |
 | `CHROME_PROFILE_URL` | — | `.zip` de profile do Chrome; baixado no boot para `/usr/local/share/<nome>.zip`, caminho exportado em `CHROME_PROFILE_ZIP_PATH` |
 
 ### Display e serviços
@@ -206,7 +236,7 @@ RUN_ONLINE_TESTS=0 scripts/test-image.sh rpa-worker:local  # sem internet
 ```
 
 Ele valida o contrato da imagem, todos os browsers (local e na página do projeto no
-GitHub), Xvfb/OpenBox/PJeOffice/VNC/noVNC, worker em loop, execução única, propagação de
+GitHub), certificado A1 (ICP de teste), Xvfb/OpenBox/PJeOffice/VNC/noVNC, worker em loop, execução única, propagação de
 erro e modo standby. Veja [`docs/TESTING.md`](docs/TESTING.md).
 
 ### Comparar a imagem antes/depois de uma mudança

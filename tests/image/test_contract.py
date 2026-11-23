@@ -47,6 +47,9 @@ def _requires(feature: str):
         ("/app/smoke_test.py", True),
         ("/app/task_server.py", True),
         ("/app/test_browser_drivers.py", False),
+        ("/app/a1cert.py", False),
+        ("/app/a1_testkit.py", False),
+        ("/app/a1_check.py", True),
         ("/app/requirements.txt", False),
     ],
 )
@@ -106,7 +109,8 @@ def test_chrome_policy_dir_writable(policy_dir, tmp_path):
 
 @pytest.mark.parametrize(
     "tool",
-    ["Xvfb", "openbox", "xdotool", "wmctrl", "xclip", "xdpyinfo", "certutil", "pk12util", "openssl", "unzip", "curl"],
+    ["Xvfb", "openbox", "xdotool", "wmctrl", "xclip", "xdpyinfo", "certutil", "pk12util", "openssl", "keytool",
+     "unzip", "curl"],
 )
 def test_system_tools(tool):
     assert shutil.which(tool), f"{tool} não encontrado no PATH"
@@ -140,7 +144,7 @@ def test_novnc_installed():
 # módulo importável -> pacote do requirements.txt
 PY_MODULES = [
     "selenium", "seleniumbase", "pyvirtualdisplay", "bs4", "lxml", "ftfy", "pandas", "openpyxl",
-    "PyPDF2", "fitz", "endesive", "cryptography", "oscrypto", "reportlab", "qrcode", "cv2", "PIL",
+    "PyPDF2", "fitz", "endesive", "asn1crypto", "cryptography", "oscrypto", "reportlab", "qrcode", "cv2", "PIL",
     "pyautogui", "pyperclip", "requests", "urllib3", "httpx", "flask", "jwt", "pyotp", "filelock",
     "twocaptcha", "psutil", "pytz", "tinydb", "pymongo", "typing_extensions", "boto3", "yaml",
 ]
@@ -177,3 +181,13 @@ def test_env_defaults(var, expected):
 
 def test_locale_available():
     assert "pt_BR.utf8" in _run("locale", "-a")
+
+
+def test_a1cert_importable_from_user_scripts():
+    """Scripts baixados de SCRIPT_URL rodam em /tmp: `import a1cert` vem do PYTHONPATH do entrypoint."""
+    result = subprocess.run(
+        ["python", "-c", "import a1cert, a1_testkit; print(a1cert.__file__)"],
+        capture_output=True, text=True, cwd="/tmp", timeout=60,
+    )
+    assert result.returncode == 0, result.stderr
+    assert result.stdout.strip() == "/app/a1cert.py"
