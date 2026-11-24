@@ -29,12 +29,22 @@ export WORKER_MODE=${WORKER_MODE:-pull}
 export WORKER_LOOP=${WORKER_LOOP:-0}
 export WORKER_TIMEOUT=${WORKER_TIMEOUT:-3600}  # 1 hour default
 export WORKER_RESTART_DELAY=${WORKER_RESTART_DELAY:-120}  # 2 minutes default
+# Loop mode: seconds between SIGTERM and SIGKILL when an iteration hits WORKER_TIMEOUT
+export WORKER_KILL_AFTER=${WORKER_KILL_AFTER:-30}
+# Loop mode: close browsers/drivers left behind by an iteration (0 keeps them)
+export WORKER_CLEANUP=${WORKER_CLEANUP:-1}
+
+# Run /app/preflight.py after the services start and stop the container if it fails
+# (off by default). PREFLIGHT_ARGS: extra options, e.g. "--browsers chrome --url https://...".
+export PREFLIGHT_ON_START=${PREFLIGHT_ON_START:-0}
+export PREFLIGHT_ARGS=${PREFLIGHT_ARGS:-}
 
 # Resource summary after each script run (CPU/memory average and peaks, for sizing).
 # See /app/resource_usage.py; RESOURCE_LOG="" keeps only the log lines.
 export RESOURCE_SUMMARY=${RESOURCE_SUMMARY:-1}
 export RESOURCE_SAMPLE_SECS=${RESOURCE_SAMPLE_SECS:-1}
 export RESOURCE_LOG=${RESOURCE_LOG:-/app/logs/resources.jsonl}
+export RESOURCE_PROCESSES=${RESOURCE_PROCESSES:-1}  # 0: no per-process breakdown
 
 # Task server configuration (for standby mode)
 export TASK_SERVER_PORT=${TASK_SERVER_PORT:-8080}
@@ -626,9 +636,71 @@ egress_ready() {
     return 1
 }
 
+# PIDs of browsers and drivers (Chrome, Firefox, chromedriver, uc_driver, geckodriver).
+# Matched by executable, so services (Xvfb, OpenBox, PJeOffice, VNC, relay) never match.
+browser_pids() {
+    local link exe pid
+    for link in /proc/[0-9]*/exe; do
+        exe="$(readlink "$link" 2>/dev/null)" || continue
+        case "$exe" in
+            /opt/chrome/*|/opt/firefox/*|*/chromedriver|*/chromedriver\ *|*/uc_driver|*/uc_driver\ *|*/geckodriver|*/geckodriver\ *) ;;
+            *) continue ;;
+        esac
+        pid="${link#/proc/}"
+        echo "${pid%/exe}"
+    done
+}
+
+# After each loop iteration: browsers/drivers the script left open (crash, timeout, no quit())
+# keep using CPU and memory in the next one. Close them (TERM, then KILL after 5s) and remove
+# their temporary profiles. WORKER_CLEANUP=0 skips this.
+cleanup_iteration() {
+    [ "${WORKER_CLEANUP}" = "1" ] || return 0
+    local pids count waited=0
+    pids="$(browser_pids)"
+    if [ -n "$pids" ]; then
+        count="$(echo "$pids" | wc -l)"
+        echo "$(log_timestamp) 🧹 Closing ${count} browser/driver process(es) left by the iteration..."
+        # shellcheck disable=SC2086
+        kill -TERM $pids 2>/dev/null || true
+        while [ -n "$(browser_pids)" ] && [ "$waited" -lt 5 ]; do
+            sleep 1
+            waited=$((waited + 1))
+        done
+        pids="$(browser_pids)"
+        if [ -n "$pids" ]; then
+            # shellcheck disable=SC2086
+            kill -KILL $pids 2>/dev/null || true
+            sleep 1
+        fi
+    fi
+    # Temporary profiles of browsers that are no longer running (chromedriver/geckodriver
+    # create them per session; killed browsers leave them behind, /dev/shm counts as memory)
+    if [ -z "$(browser_pids)" ]; then
+        rm -rf /tmp/.org.chromium.Chromium.* /tmp/.com.google.Chrome.* /tmp/rust_mozprofile* \
+            /dev/shm/.org.chromium.Chromium.* /dev/shm/.com.google.Chrome.* 2>/dev/null || true
+    fi
+    return 0
+}
+
+# PREFLIGHT_ON_START=1: is the worker ready (browsers, A1, relay, PJeOffice)? Runs once, after
+# the services start and before the first task; a failure stops the container (exit 1).
+preflight_on_start() {
+    [ "${PREFLIGHT_ON_START}" = "1" ] || return 0
+    local args=()
+    read -r -a args <<< "${PREFLIGHT_ARGS}"
+    echo "$(log_timestamp) 🩺 PREFLIGHT_ON_START=1: checking the worker before the first task..."
+    if python /app/preflight.py --json /app/logs/preflight.json "${args[@]}"; then
+        echo "$(log_timestamp) ✅ Preflight passed (report: /app/logs/preflight.json)"
+        return 0
+    fi
+    echo "$(log_timestamp) ❌ Preflight failed: stopping before the first task (report: /app/logs/preflight.json)"
+    exit 1
+}
+
 # Execute script in loop mode with restart
 execute_with_loop() {
-    echo "$(log_timestamp) 🔁 Worker loop mode enabled (timeout: ${WORKER_TIMEOUT}s, restart delay: ${WORKER_RESTART_DELAY}s)"
+    echo "$(log_timestamp) 🔁 Worker loop mode enabled (timeout: ${WORKER_TIMEOUT}s + ${WORKER_KILL_AFTER}s to stop, restart delay: ${WORKER_RESTART_DELAY}s)"
 
     # The iteration runs in a child bash (so `timeout` can kill it) using the same
     # functions as single-run mode
@@ -648,25 +720,29 @@ execute_with_loop() {
 
         echo "$(log_timestamp) 🚀 Starting iteration #${iteration}..."
 
-        # Execute script with timeout
-        if timeout "${WORKER_TIMEOUT}" bash -c download_and_execute; then
+        # Execute script with timeout: SIGTERM to the whole iteration at WORKER_TIMEOUT,
+        # SIGKILL WORKER_KILL_AFTER seconds later if it is still running. The child bash
+        # traps TERM so it waits for the script: if bash died first, timeout would return
+        # at once and a script that ignores SIGTERM would keep running into the next iteration.
+        if timeout --kill-after="${WORKER_KILL_AFTER}" "${WORKER_TIMEOUT}" bash -c 'trap : TERM; download_and_execute'; then
             echo "$(log_timestamp) ✅ Script completed successfully"
         else
             local exit_code=$?
             if [ $exit_code -eq 124 ]; then
-                echo "$(log_timestamp) ⏱️  Script timed out after ${WORKER_TIMEOUT}s (forcing cleanup)"
+                echo "$(log_timestamp) ⏱️  Script timed out after ${WORKER_TIMEOUT}s (stopped with SIGTERM)"
+            elif [ $exit_code -eq 137 ]; then
+                echo "$(log_timestamp) ⏱️  Script timed out after ${WORKER_TIMEOUT}s and ignored SIGTERM: killed after ${WORKER_KILL_AFTER}s more"
             else
                 echo "$(log_timestamp) ❌ Script failed with exit code: $exit_code"
             fi
         fi
 
+        cleanup_iteration
+
         iteration=$((iteration + 1))
 
         echo "$(log_timestamp) 💤 Waiting ${WORKER_RESTART_DELAY}s before next iteration..."
         sleep "${WORKER_RESTART_DELAY}"
-
-        echo "$(log_timestamp) 🧹 Cleaning up for next iteration..."
-        # Optional: Add cleanup tasks here (clear temp files, reset state, etc.)
     done
 }
 
@@ -692,6 +768,9 @@ main() {
     start_vnc
     start_novnc
     start_screen_recording
+
+    # Optional: stop here if the worker is not ready (PREFLIGHT_ON_START=1)
+    preflight_on_start
     
     # Check if we're in standby mode (HTTP server)
     if [ "${WORKER_MODE}" = "standby" ]; then

@@ -5,9 +5,11 @@ Não executam o entrypoint (ele cria diretórios em /app e /root); a execução
 real é validada pelos testes de imagem.
 """
 
+import pathlib
 import re
 import shutil
 import subprocess
+import time
 
 import pytest
 
@@ -54,6 +56,11 @@ def test_entrypoint_shellcheck_errors():
         ("RESOURCE_SUMMARY", "1"),
         ("RESOURCE_SAMPLE_SECS", "1"),
         ("RESOURCE_LOG", "/app/logs/resources.jsonl"),
+        ("RESOURCE_PROCESSES", "1"),
+        ("WORKER_KILL_AFTER", "30"),
+        ("WORKER_CLEANUP", "1"),
+        ("PREFLIGHT_ON_START", "0"),
+        ("PREFLIGHT_ARGS", ""),
     ],
 )
 def test_entrypoint_env_defaults(entrypoint_text, var, default):
@@ -135,7 +142,7 @@ def test_download_functions_are_defined_once(entrypoint_text):
     assert "SCRIPT_EOF" not in entrypoint_text
     loop = _function_body(entrypoint_text, "execute_with_loop")
     assert "export -f" in loop and "download_and_execute" in loop
-    assert 'timeout "${WORKER_TIMEOUT}" bash -c download_and_execute' in loop
+    assert "bash -c 'trap : TERM; download_and_execute'" in loop
 
 
 def test_urls_are_masked_in_logs(entrypoint_text):
@@ -193,3 +200,94 @@ def test_run_measured_keeps_exit_code(tmp_path):
     for value in ("0", "1"):
         result = subprocess.run(["bash", str(script)], env={"RESOURCE_SUMMARY": value, "PATH": "/usr/bin:/bin"})
         assert result.returncode == 7
+
+
+# --- limpeza entre iterações, timeout com SIGKILL, preflight na partida ---------------
+
+def test_loop_timeout_kills_a_script_that_ignores_sigterm(entrypoint_text):
+    """SIGTERM no WORKER_TIMEOUT e SIGKILL WORKER_KILL_AFTER depois. O bash da iteração segura o
+    TERM (trap) para esperar o script: se ele morresse antes, o timeout voltaria na hora e o script
+    seguiria rodando na próxima iteração."""
+    loop = _function_body(entrypoint_text, "execute_with_loop")
+    assert ('timeout --kill-after="${WORKER_KILL_AFTER}" "${WORKER_TIMEOUT}" '
+            "bash -c 'trap : TERM; download_and_execute'") in loop
+    assert "-eq 137" in loop
+
+
+def test_loop_cleans_up_right_after_each_iteration(entrypoint_text):
+    loop = _function_body(entrypoint_text, "execute_with_loop")
+    assert loop.index("timeout --kill-after") < loop.index("cleanup_iteration") < loop.index("sleep \"${WORKER_RESTART_DELAY}\"")
+    body = _function_body(entrypoint_text, "cleanup_iteration")
+    assert 'WORKER_CLEANUP}" = "1" ] || return 0' in body
+    assert "kill -TERM" in body and "kill -KILL" in body
+
+
+def test_cleanup_only_matches_browsers_and_drivers(entrypoint_text):
+    """Serviços (Xvfb, OpenBox, PJeOffice, VNC, relay) nunca entram na limpeza."""
+    body = _function_body(entrypoint_text, "browser_pids")
+    patterns = re.search(r"case \"\$exe\" in\n\s*(.*?)\)", body).group(1)
+    for wanted in ("/opt/chrome/*", "/opt/firefox/*", "*/chromedriver", "*/uc_driver", "*/geckodriver"):
+        assert wanted in patterns
+    for service in ("Xvfb", "openbox", "pjeoffice", "java", "vnc", "python"):
+        assert service not in patterns
+
+
+def _run_function(tmp_path, names, call, env=None, prelude=""):
+    text = ENTRYPOINT.read_text(encoding="utf-8")
+    script = tmp_path / "t.sh"
+    funcs = "".join(f"{n}() {{\n{_function_body(text, n)}}}\n" for n in names)
+    script.write_text("log_timestamp() { echo '[t]'; }\n" + prelude + funcs + call + "\n")
+    return subprocess.run(["bash", str(script)], capture_output=True, text=True, timeout=60,
+                          env={"PATH": "/usr/bin:/bin", **(env or {})})
+
+
+@pytest.mark.parametrize("cleanup, survives", [("1", False), ("0", True)])
+def test_cleanup_closes_leftover_driver(tmp_path, cleanup, survives):
+    """Um "chromedriver" esquecido pela iteração é fechado; com WORKER_CLEANUP=0 fica."""
+    fake = tmp_path / "bin" / "chromedriver"
+    fake.parent.mkdir()
+    fake.write_bytes(pathlib.Path(shutil.which("sleep")).read_bytes())
+    fake.chmod(0o755)
+    proc = subprocess.Popen([str(fake), "300"])
+    try:
+        # O teste roda no host: rm vira no-op (perfis temporários de verdade ficam) e o kill só
+        # alcança o processo falso (browsers/drivers de quem roda o pytest ficam)
+        prelude = ("rm() { :; }\n"
+                   f'kill() {{ local s="$1" p; shift; for p in "$@"; do [ "$p" = {proc.pid} ] && command kill "$s" "$p"; done; return 0; }}\n')
+        result = _run_function(tmp_path, ["browser_pids", "cleanup_iteration"], "cleanup_iteration",
+                               env={"WORKER_CLEANUP": cleanup}, prelude=prelude)
+        assert result.returncode == 0, result.stderr
+        time.sleep(0.2)
+        assert (proc.poll() is None) == survives
+        if not survives:
+            assert re.search(r"Closing \d+ browser/driver process\(es\)", result.stdout)
+    finally:
+        proc.kill()
+        proc.wait()
+
+
+def test_preflight_on_start_runs_after_services_and_before_any_task(entrypoint_text):
+    main = _function_body(entrypoint_text, "main")
+    assert main.index("start_screen_recording") < main.index("preflight_on_start") < main.index("WORKER_MODE")
+    body = _function_body(entrypoint_text, "preflight_on_start")
+    assert 'PREFLIGHT_ON_START}" = "1" ] || return 0' in body
+    assert "python /app/preflight.py --json /app/logs/preflight.json" in body
+
+
+@pytest.mark.parametrize("enabled, preflight_rc, rc, calls", [
+    ("0", 1, 0, ""),           # desligado (padrão): nem roda
+    ("1", 0, 0, "--json /app/logs/preflight.json --browsers chrome --url https://x.example.com/a?b=1"),
+    ("1", 1, 1, "--json /app/logs/preflight.json --browsers chrome --url https://x.example.com/a?b=1"),
+])
+def test_preflight_on_start_stops_the_container_when_it_fails(tmp_path, enabled, preflight_rc, rc, calls):
+    calls_file = tmp_path / "calls"
+    prelude = (f'python() {{ shift; echo "$*" > {calls_file}; return {preflight_rc}; }}\n')
+    result = _run_function(tmp_path, ["preflight_on_start"], "preflight_on_start; echo SEGUIU",
+                           env={"PREFLIGHT_ON_START": enabled,
+                                "PREFLIGHT_ARGS": "--browsers chrome --url https://x.example.com/a?b=1"},
+                           prelude=prelude)
+    assert result.returncode == rc, result.stdout + result.stderr
+    assert ("SEGUIU" in result.stdout) == (rc == 0)
+    assert (calls_file.read_text().strip() if calls_file.exists() else "") == calls
+    if rc:
+        assert "Preflight failed: stopping before the first task" in result.stdout

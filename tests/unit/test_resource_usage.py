@@ -2,6 +2,7 @@
 
 A medida no cgroup real do Docker roda no portão (cenário de limites do scripts/test-image.sh)."""
 
+import itertools
 import json
 import sys
 
@@ -172,3 +173,183 @@ def test_short_run_is_flagged():
     assert "execução curta" in "\n".join(ru.human_lines(summary))
     summary["duracao_s"] = 60
     assert "execução curta" not in "\n".join(ru.human_lines(summary))
+
+
+# --- divisão por processo (/proc falso) ---------------------------------------------
+
+@pytest.mark.parametrize("exe, comm, cmdline, in_script, group", [
+    ("/opt/chrome/chrome", "chrome", "/opt/chrome/chrome --type=renderer", True, "chrome"),
+    ("/opt/chrome/chrome_crashpad_handler", "chrome_crashpad", "", False, "chrome"),
+    ("/opt/firefox/firefox-bin", "Isolated Web Co", "", True, "firefox"),
+    ("/usr/local/bin/chromedriver", "chromedriver", "", True, "drivers"),
+    ("/opt/venv/lib/python3.13/site-packages/seleniumbase/drivers/uc_driver (deleted)", "uc_driver", "", True,
+     "drivers"),
+    ("/opt/pjeoffice/jre/bin/java", "java", "java -jar /opt/pjeoffice/pjeoffice-pro.jar", False, "pjeoffice"),
+    ("/usr/bin/bash", "pjeoffice-pro.s", "/bin/bash /opt/pjeoffice/pjeoffice-pro.sh", False, "pjeoffice"),
+    ("/usr/bin/Xvfb", "Xvfb", "Xvfb :99", False, "tela"),
+    ("/usr/bin/python3.13", "python", "python /usr/local/bin/websockify --web /opt/novnc", False, "tela"),
+    ("/usr/bin/python3.13", "python", "python /tmp/tarefa.py", True, "script"),
+    ("/usr/bin/bash", "bash", "/bin/bash /app/entrypoint.sh", False, "outros"),
+    ("", "kworker", "", False, "outros"),  # exe ilegível
+])
+def test_classify(exe, comm, cmdline, in_script, group):
+    assert ru.classify(exe, comm, cmdline, in_script) == group
+
+
+class FakeProc:
+    """Um /proc mínimo: stat (comm, ppid, utime+stime, starttime), exe, cmdline, smaps_rollup."""
+
+    def __init__(self, root):
+        self.root = root
+        root.mkdir(parents=True, exist_ok=True)
+
+    def add(self, pid, comm, ppid, ticks, exe="", cmdline="", pss_kb=0, start=100):
+        d = self.root / str(pid)
+        d.mkdir(exist_ok=True)
+        fields = ["S", str(ppid)] + ["0"] * 9 + [str(ticks), "0"] + ["0"] * 6 + [str(start)] + ["0"] * 10
+        (d / "stat").write_text(f"{pid} ({comm}) " + " ".join(fields) + "\n")
+        (d / "cmdline").write_bytes(cmdline.replace(" ", "\0").encode())
+        (d / "smaps_rollup").write_text(f"Rss: {pss_kb * 2} kB\nPss: {pss_kb} kB\n")
+        if exe and not (d / "exe").is_symlink():
+            (d / "exe").symlink_to(exe)
+
+    def remove(self, pid):
+        import shutil
+        shutil.rmtree(self.root / str(pid))
+
+
+def test_process_table_groups_cpu_and_memory(tmp_path):
+    proc = FakeProc(tmp_path / "proc")
+    proc.add(1, "bash", 0, 50, "/usr/bin/bash", "/bin/bash /app/entrypoint.sh", 3_000)
+    proc.add(20, "java", 1, 900, "/opt/pjeoffice/jre/bin/java", "java -jar /opt/pjeoffice/pjeoffice-pro.jar", 200_000)
+    proc.add(30, "Xvfb", 1, 400, "/usr/bin/Xvfb", "Xvfb :99", 40_000)
+    table = ru.ProcessTable(proc.root)
+    table.ticks = 100
+    proc.add(40, "python", 1, 10, "/usr/bin/python3.13", "python /tmp/tarefa.py", 50_000)
+    table.script_pid = 40
+    proc.add(41, "chromedriver", 40, 5, "/usr/local/bin/chromedriver", "chromedriver --port=1", 10_000)
+    proc.add(42, "chrome", 41, 150, "/opt/chrome/chrome", "/opt/chrome/chrome", 300_000)
+    proc.add(43, "chrome", 42, 50, "/opt/chrome/chrome", "/opt/chrome/chrome --type=renderer", 100_000)
+    proc.add(44, "sh", 40, 2, "/usr/bin/dash", "sh -c true", 500)  # filho do script que não é browser
+    proc.add(20, "java", 1, 920, pss_kb=210_000)  # PJeOffice: +20 ticks
+    sample = table.sample()
+    assert sample["chrome"][0] == pytest.approx(2.0)  # processos novos: todo o tempo deles conta
+    assert sample["chrome"][1] == 400_000 * 1024
+    assert sample["pjeoffice"][0] == pytest.approx(0.2)  # só o que gastou desde a base
+    assert sample["tela"][0] == 0 and sample["tela"][1] == 40_000 * 1024
+    assert sample["drivers"][0] == pytest.approx(0.05)
+    assert sample["script"][0] == pytest.approx(0.12)  # python + o sh filho dele
+    assert sample["outros"][0] == 0
+
+    # o script terminou: o Chrome que ficou órfão (ppid 1) continua contando como Chrome
+    proc.remove(40)
+    proc.remove(44)
+    proc.add(42, "chrome", 1, 250, pss_kb=300_000)
+    sample = table.sample()
+    assert sample["chrome"][0] == pytest.approx(1.0) and "script" not in sample
+
+
+def test_process_table_pid_reused_counts_from_zero(tmp_path):
+    proc = FakeProc(tmp_path / "proc")
+    proc.add(50, "python", 1, 500, "/usr/bin/python3.13", "python /tmp/a.py", start=100)
+    table = ru.ProcessTable(proc.root)
+    table.ticks, table.script_pid = 100, 50
+    proc.remove(50)
+    proc.add(50, "chrome", 1, 30, "/opt/chrome/chrome", start=900)  # mesmo pid, outro processo
+    assert table.sample()["chrome"][0] == pytest.approx(0.3)
+
+
+def test_process_table_skips_other_cgroups(tmp_path):
+    proc = FakeProc(tmp_path / "proc")
+    (proc.root / "self").mkdir()
+    (proc.root / "self" / "cgroup").write_text("0::/docker/abc\n")
+    proc.add(10, "chrome", 1, 0, "/opt/chrome/chrome", pss_kb=1_000)
+    proc.add(11, "chrome", 1, 0, "/opt/chrome/chrome", pss_kb=9_000)
+    (proc.root / "10" / "cgroup").write_text("0::/docker/abc\n")
+    (proc.root / "11" / "cgroup").write_text("0::/user.slice\n")  # outro container/host
+    assert ru.ProcessTable(proc.root).sample()["chrome"][1] == 1_000 * 1024
+
+
+def test_sampler_reports_processes_and_peak_times(tmp_path, monkeypatch):
+    root = _cgroup_v2(tmp_path / "cg", current=200 * MB, inactive=0, usage_usec=0)
+    proc = FakeProc(tmp_path / "proc")
+    proc.add(20, "java", 1, 0, "/opt/pjeoffice/jre/bin/java", "java /opt/pjeoffice/x.jar", 100 * 1024)
+    monkeypatch.setattr(ru, "PSS_REFRESH_SECS", 0)  # PSS relida a cada amostra
+    table = ru.ProcessTable(proc.root)
+    table.ticks, table.script_pid, table.clock, table._pss_at = 100, 40, lambda: 0.0, float("-inf")
+    clock = itertools.chain([0.0, 10.0, 20.0, 30.0], itertools.repeat(40.0))
+    monkeypatch.setattr(ru.time, "monotonic", lambda: next(clock))
+    sampler = ru.Sampler(ru.Cgroup.detect(root), interval=60, processes=table)  # started = 0
+    steps = [(400, 2_000_000, 100), (900, 12_000_000, 900), (500, 14_000_000, 950)]
+    for mem, usec, chrome_ticks in steps:
+        _cgroup_v2(root, current=mem * MB, inactive=0, usage_usec=usec)
+        proc.add(42, "chrome", 1, chrome_ticks, "/opt/chrome/chrome", pss_kb=mem * 1024 // 2)
+        sampler._sample()  # t = 10, 20, 30
+    sampler._stop_event.set()
+    result = sampler.stop()  # última amostra em t = 40 (sem mudança)
+    assert result["memoria"]["pico_em_s"] == 20 and result["cpu"]["pico_em_s"] == 20
+    chrome, pje = result["processos"]["chrome"], result["processos"]["pjeoffice"]
+    assert list(result["processos"]) == ["chrome", "pjeoffice"]  # maior CPU primeiro
+    assert chrome["cpu_media_nucleos"] == round(9.5 / 40, 2) and chrome["cpu_pct"] == round(9.5 / 14 * 100)
+    assert chrome["memoria_pico_mb"] == 450
+    assert pje["memoria_media_mb"] == 100 and pje["cpu_media_nucleos"] == 0
+
+    summary = ru.build_summary("x.py", 0, result, ru.Cgroup.detect(root), "agora", 40)
+    text = "\n".join(ru.human_lines(summary))
+    assert "picos: memória aos 20s · CPU aos 20s" in text
+    assert "por processo" in text and "Chrome" in text and "PJeOffice (Java)" in text
+    assert text.index("Chrome") < text.index("PJeOffice (Java)")
+
+
+def test_run_breaks_down_by_process(fake_cgroup, capsys, tmp_path, monkeypatch):
+    """Com o /proc real do host: o script medido aparece no grupo "script"."""
+    monkeypatch.setenv("RESOURCE_PROCESSES", "1")
+    rc = ru.main(["run", "--interval", "0.1", "--", sys.executable, "-c",
+                  "import time\nt = time.time()\nwhile time.time() - t < 0.5: pass"])
+    assert rc == 0
+    summary = json.loads(capsys.readouterr().out.split("RESOURCE_SUMMARY ", 1)[1].splitlines()[0])
+    assert summary["processos"]["script"]["cpu_media_nucleos"] > 0
+
+
+def test_run_without_process_breakdown(fake_cgroup, capsys, monkeypatch):
+    monkeypatch.setenv("RESOURCE_PROCESSES", "0")
+    assert ru.main(["run", "--", sys.executable, "-c", "pass"]) == 0
+    out = capsys.readouterr().out
+    assert "por processo" not in out and '"processos"' not in out
+
+
+def test_report_aggregates_processes(tmp_path, capsys):
+    log = tmp_path / "r.jsonl"
+    runs = [{"rotulo": "pje.py", "exit_code": 0, "duracao_s": 60,
+             "cpu": {"media_nucleos": 0.4, "p95_nucleos": 0.9, "pico_nucleos": 1.0},
+             "memoria": {"media_mb": 500, "pico_mb": 800},
+             "processos": {"chrome": {"cpu_media_nucleos": c, "cpu_pct": 60, "memoria_media_mb": 300,
+                                      "memoria_pico_mb": p},
+                           "pjeoffice": {"cpu_media_nucleos": 0.05, "cpu_pct": 10, "memoria_media_mb": 200,
+                                         "memoria_pico_mb": 220}}}
+            for c, p in ((0.2, 400), (0.3, 600))]
+    log.write_text("\n".join(json.dumps(r) for r in runs) + "\n")
+    assert ru.main(["report", str(log)]) == 0
+    out = capsys.readouterr().out
+    procs = json.loads(out.split("RESOURCE_REPORT ", 1)[1])["pje.py"]["processos"]
+    assert procs["chrome"] == {"cpu_media_nucleos": 0.25, "cpu_pct": 60, "memoria_media_mb": 300,
+                               "memoria_pico_max_mb": 600}
+    assert list(procs) == ["chrome", "pjeoffice"]
+    assert "por processo" in out and "600 MB" in out
+
+
+def test_pss_is_reread_only_every_few_seconds(tmp_path, monkeypatch):
+    """A PSS é cara (smaps_rollup): relida a cada PSS_REFRESH_SECS; processo novo é lido na hora."""
+    monkeypatch.setattr(ru, "PSS_REFRESH_SECS", 5)
+    proc = FakeProc(tmp_path / "proc")
+    proc.add(42, "chrome", 1, 0, "/opt/chrome/chrome", pss_kb=1_000)
+    now = [0.0]
+    table = ru.ProcessTable(proc.root)
+    table.clock = lambda: now[0]
+    table._pss_at = 0.0
+    proc.add(42, "chrome", 1, 0, pss_kb=5_000)
+    proc.add(43, "chrome", 42, 0, "/opt/chrome/chrome", pss_kb=2_000)
+    now[0] = 1.0
+    assert table.sample()["chrome"][1] == (1_000 + 2_000) * 1024  # 42 do cache, 43 novo
+    now[0] = 5.0
+    assert table.sample()["chrome"][1] == (5_000 + 2_000) * 1024  # releitura

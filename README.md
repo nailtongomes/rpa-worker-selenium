@@ -169,6 +169,13 @@ servidor HTTPS (`--clock-url`, `PREFLIGHT_CLOCK_URL`, `off` desliga), pela saíd
 com relay, passa pelo relay. O JSON traz também a imagem (`"imagem"`: revisão, tag, arquitetura,
 browsers).
 
+Para o worker conferir isso sozinho ao subir, use `PREFLIGHT_ON_START=1` (desligado por padrão). O
+preflight roda depois dos serviços (Xvfb, PJeOffice...) e antes da primeira tarefa. Se falhar, o
+container para com exit 1 e a mensagem diz o que falhou, em vez de quebrar no meio do primeiro
+processo. O relatório fica em `/app/logs/preflight.json`. `PREFLIGHT_ARGS` passa opções, por exemplo
+`PREFLIGHT_ARGS="--browsers chrome --url https://pje.tjxx.jus.br"` para conferir só o Chrome e o
+sistema que o worker usa.
+
 ### Qual imagem está rodando?
 
 A primeira linha do log diz a tag, a arquitetura, a data do build e os browsers:
@@ -189,12 +196,24 @@ a média, o p95 e o pico de CPU e de memória do container, e sugere quanto rese
 📊 Recursos de tarefa.py (exit 0, 2m31s; cgroup v2 (container inteiro), 151 amostras)
    CPU: média 0,62 núcleo · p95 0,90 núcleo · pico 1,00 núcleo (limite 1,00 núcleo)
    memória: início 410 MB · média 812 MB · pico 1,13 GB (limite 2,00 GB, 56%)
+   picos: memória aos 1m48s · CPU aos 12s
+   por processo (CPU média · memória média / pico; memória PSS, aproximada):
+     Chrome                   0,41 núcleo (66%) · 520 MB / 780 MB
+     PJeOffice (Java)         0,12 núcleo (20%) · 190 MB / 210 MB
+     script (Python)          0,04 núcleo (6%) · 60 MB / 75 MB
+     Xvfb/OpenBox/VNC         0,02 núcleo (3%) · 32 MB / 32 MB
+     chromedriver/geckodriver 0,01 núcleo (1%) · 14 MB / 15 MB
+     outros                   0,01 núcleo (2%) · 25 MB / 29 MB
    💡 reserva sugerida: memória 1,41 GB (pico + 25%) · CPU 1,00 núcleo (p95)
-RESOURCE_SUMMARY {"rotulo": "tarefa.py", "cpu": {...}, "memoria": {...}, "sugestao": {...}}
+RESOURCE_SUMMARY {"rotulo": "tarefa.py", "cpu": {...}, "memoria": {...}, "processos": {...}, "sugestao": {...}}
 ```
 
 - É o container inteiro (script, browsers, Xvfb, PJeOffice), medido pelo cgroup como no `docker stats`.
   É isso que conta para a reserva. O "início" mostra quanto já estava em uso antes do script.
+- "Por processo" diz quem consumiu, lido do `/proc` do container: CPU média de cada grupo (e a fatia
+  dela na CPU do container) e memória média/pico. A memória por processo é a PSS (páginas
+  compartilhadas divididas entre os processos), uma aproximação: a soma não bate exatamente com o total.
+  "Picos" diz em que momento da execução foram os picos do container. `RESOURCE_PROCESSES=0` desliga a divisão.
 - Avisa quando a CPU bateu no limite (`--cpus`) por 10% do tempo ou mais, porque aí a necessidade real
   é maior que a medida, e quando o kernel matou processos por falta de memória (OOM).
 - A linha `RESOURCE_SUMMARY` é JSON para o orquestrador. A mesma linha vai para `/app/logs/resources.jsonl`.
@@ -235,9 +254,13 @@ antigo (aceitar o fallback via `requests`).
 | `WORKER_MODE` | `pull` | `pull` (baixa e executa) ou `standby` (servidor HTTP em `/app/task_server.py`) |
 | `WORKER_LOOP` | `0` | `1` = executa em loop infinito |
 | `WORKER_TIMEOUT` | `3600` | Timeout por iteração/tarefa (s) |
+| `WORKER_KILL_AFTER` | `30` | Loop: segundos entre o SIGTERM do timeout e o SIGKILL, para o script que não para sozinho |
 | `WORKER_RESTART_DELAY` | `120` | Pausa entre iterações (s) |
+| `WORKER_CLEANUP` | `1` | Loop: depois de cada iteração fecha Chrome/Firefox/drivers que o script deixou abertos e apaga os perfis temporários deles; `0` mantém |
+| `PREFLIGHT_ON_START` / `PREFLIGHT_ARGS` | `0` / — | `1` roda o `preflight.py` ao subir e para o container (exit 1) se falhar; `PREFLIGHT_ARGS` passa opções a ele |
 | `RESOURCE_SUMMARY` | `1` | Resumo de CPU/memória (média, p95, pico) ao fim de cada execução; `0` desliga |
 | `RESOURCE_SAMPLE_SECS` / `RESOURCE_LOG` | `1` / `/app/logs/resources.jsonl` | Intervalo das amostras (s) / onde gravar os resumos (`""` não grava) |
+| `RESOURCE_PROCESSES` | `1` | Divisão do resumo por processo (Chrome, PJeOffice, Xvfb, script...); `0` desliga |
 | `TASK_SERVER_PORT` | `8080` | Porta do modo standby |
 | `TASK_AUTH_TOKEN` | — | Token Bearer do modo standby |
 | `A1_PFX_URL` / `A1_PFX_PATH` | — | Certificado A1 (`.pfx`) por URL ou arquivo montado; usado por `a1cert.load_from_env()` |
