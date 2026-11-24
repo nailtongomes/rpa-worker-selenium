@@ -57,6 +57,7 @@ jobs:
             ENABLE_VNC=1
             ENABLE_NOVNC=1
             SELENIUMBASE_REFRESH=${{ github.run_id }}
+            IMAGE_REVISION=${{ github.sha }}
 
       - name: Quality gate (scripts/test-image.sh)
         run: scripts/test-image.sh rpa-worker:nightly test-results

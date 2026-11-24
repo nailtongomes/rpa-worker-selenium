@@ -153,6 +153,53 @@ Um comando, um JSON. Confere se Chrome, SeleniumBase UC e Firefox abrem. Se houv
 Termina com exit 0 se nada falhou. Um browser que só abre na segunda tentativa (máquina com
 pouca CPU) vira aviso, não falha.
 
+Antes dos browsers, o preflight confere o ambiente do container e só avisa, sem reprovar:
+`/dev/shm` abaixo de 1 GB (o Chrome trava com "page crash"; use `--shm-size=1g`), disco livre
+abaixo de 2 GB, limite de memória abaixo do recomendado (2 GB com `USE_PJEOFFICE=1`, 1 GB sem),
+menos de 1 CPU e relógio com mais de 30 s de diferença. O relógio é comparado com o horário de um
+servidor HTTPS (`--clock-url`, `PREFLIGHT_CLOCK_URL`, `off` desliga), pela saída configurada:
+com relay, passa pelo relay. O JSON traz também a imagem (`"imagem"`: revisão, tag, arquitetura,
+browsers).
+
+### Qual imagem está rodando?
+
+A primeira linha do log diz a tag, a arquitetura, a data do build e os browsers:
+
+```text
+🏷️  Imagem sha-4eda8ad (arm64) · build 20261124-153000 · Chrome 158.0.8127.36 · Firefox 153.7.0esr
+```
+
+`python /app/image_info.py --json` mostra o mesmo em JSON (gravado no build em `/app/image_info.json`).
+Um build local, sem `IMAGE_REVISION`, aparece como `dev`.
+
+### Quanto o script consumiu (para dimensionar)
+
+Ao fim de cada execução (`SCRIPT_URL`, cada iteração do loop e cada tarefa do standby), o log mostra
+a média, o p95 e o pico de CPU e de memória do container, e sugere quanto reservar:
+
+```text
+📊 Recursos de tarefa.py (exit 0, 2m31s; cgroup v2 (container inteiro), 151 amostras)
+   CPU: média 0,62 núcleo · p95 0,90 núcleo · pico 1,00 núcleo (limite 1,00 núcleo)
+   memória: início 410 MB · média 812 MB · pico 1,13 GB (limite 2,00 GB, 56%)
+   💡 reserva sugerida: memória 1,41 GB (pico + 25%) · CPU 1,00 núcleo (p95)
+RESOURCE_SUMMARY {"rotulo": "tarefa.py", "cpu": {...}, "memoria": {...}, "sugestao": {...}}
+```
+
+- É o container inteiro (script, browsers, Xvfb, PJeOffice), medido pelo cgroup como no `docker stats`.
+  É isso que conta para a reserva. O "início" mostra quanto já estava em uso antes do script.
+- Avisa quando a CPU bateu no limite (`--cpus`) por 10% do tempo ou mais, porque aí a necessidade real
+  é maior que a medida, e quando o kernel matou processos por falta de memória (OOM).
+- A linha `RESOURCE_SUMMARY` é JSON para o orquestrador. A mesma linha vai para `/app/logs/resources.jsonl`.
+  Para juntar várias execuções (média, pico médio e pico máximo por script, com a reserva sugerida
+  para o pior caso):
+
+```bash
+docker exec worker-01 python /app/resource_usage.py report
+```
+
+Para medir um comando avulso: `python /app/resource_usage.py run -- python meu_script.py`.
+`RESOURCE_SUMMARY=0` desliga. O exit code do script não muda.
+
 ### Tokens nas URLs
 
 `SCRIPT_URL`/`HELPER_URLS` podem levar token (GitHub raw, S3/GCS pré-assinada, SAS do Azure,
@@ -181,6 +228,8 @@ antigo (aceitar o fallback via `requests`).
 | `WORKER_LOOP` | `0` | `1` = executa em loop infinito |
 | `WORKER_TIMEOUT` | `3600` | Timeout por iteração/tarefa (s) |
 | `WORKER_RESTART_DELAY` | `120` | Pausa entre iterações (s) |
+| `RESOURCE_SUMMARY` | `1` | Resumo de CPU/memória (média, p95, pico) ao fim de cada execução; `0` desliga |
+| `RESOURCE_SAMPLE_SECS` / `RESOURCE_LOG` | `1` / `/app/logs/resources.jsonl` | Intervalo das amostras (s) / onde gravar os resumos (`""` não grava) |
 | `TASK_SERVER_PORT` | `8080` | Porta do modo standby |
 | `TASK_AUTH_TOKEN` | — | Token Bearer do modo standby |
 | `A1_PFX_URL` / `A1_PFX_PATH` | — | Certificado A1 (`.pfx`) por URL ou arquivo montado; usado por `a1cert.load_from_env()` |
@@ -243,6 +292,8 @@ image/
     entrypoint.sh        #   orquestra Xvfb/OpenBox/PJeOffice/VNC e executa SCRIPT_URL
     preflight.py         #   "o worker está pronto?" (browsers + A1 + relay num JSON)
     pjeoffice_check.py   #   o PJeOffice assina? (botão "Testar" da página local dele)
+    resource_usage.py    #   CPU/memória de cada execução (média, p95, pico) e relatório
+    image_info.py        #   qual imagem é esta (revisão, arquitetura, browsers)
     a1cert.py ...        #   certificado A1 (a1_check.py) e relay de saída (egress_*.py)
     script_downloader.py #   download de SCRIPT_URL e HELPER_URLS
     task_server.py       #   modo standby (HTTP)

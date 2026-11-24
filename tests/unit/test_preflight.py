@@ -13,11 +13,13 @@ def test_everything_skipped_is_ok(tmp_path, monkeypatch, capsys):
     for name in ("A1_PFX_URL", "A1_PFX_PATH", "EGRESS_PROXY_URL", "EGRESS_PROXY_URL_FILE"):
         monkeypatch.delenv(name, raising=False)
     report = tmp_path / "p.json"
-    assert preflight.main(["--browsers", "none", "--json", str(report)]) == 0
+    assert preflight.main(["--browsers", "none", "--clock-url", "off", "--json", str(report)]) == 0
     data = json.loads(report.read_text())
     assert data["ok"] is True
-    assert all(c.get("pulado") for c in data["verificacoes"].values())
+    checks = data["verificacoes"]
+    assert all(c.get("pulado") for name, c in checks.items() if name != "ambiente")
     assert set(data["versoes"]) >= {"chrome", "firefox", "selenium", "seleniumbase", "python"}
+    assert data["imagem"]["arquitetura"] and "imagem" in checks["ambiente"]
 
 
 @pytest.mark.parametrize("mode, env, expected", [
@@ -99,3 +101,126 @@ def test_attempt_fails_every_try_and_masks_urls():
     assert len(calls) == preflight.BROWSER_TRIES
     assert step["status"] == "erro"
     assert "SEGREDO" not in step["detalhe"]
+
+
+# --- ambiente do container -------------------------------------------------------
+
+class _DateServer:
+    """Servidor HTTP local que responde com a hora deslocada em ``offset`` segundos."""
+
+    def __init__(self, offset: float, status: int = 204):
+        import email.utils
+        import http.server
+        import threading
+        import time
+
+        class Handler(http.server.BaseHTTPRequestHandler):
+            def do_HEAD(self):  # noqa: N802
+                self.send_response(status)
+                self.send_header("Date", email.utils.formatdate(time.time() + offset, usegmt=True))
+                self.end_headers()
+
+            def log_message(self, *args):
+                pass
+
+        # Date do servidor HTTP padrão é sobrescrito pelo nosso: send_response já o envia
+        Handler.date_time_string = lambda self, timestamp=None: email.utils.formatdate(time.time() + offset,
+                                                                                         usegmt=True)
+        self.server = http.server.ThreadingHTTPServer(("127.0.0.1", 0), Handler)
+        threading.Thread(target=self.server.serve_forever, daemon=True).start()
+        self.url = f"http://127.0.0.1:{self.server.server_address[1]}/"
+
+    def close(self):
+        self.server.shutdown()
+
+
+@pytest.fixture
+def no_egress(monkeypatch):
+    for name in ("EGRESS_PROXY_URL", "EGRESS_PROXY_URL_FILE", "HTTP_PROXY", "HTTPS_PROXY", "http_proxy",
+                 "https_proxy", "ALL_PROXY", "all_proxy"):
+        monkeypatch.delenv(name, raising=False)
+
+
+@pytest.mark.parametrize("offset, status", [(0, 204), (-120, 204), (300, 404)])
+def test_clock_offset(no_egress, offset, status):
+    server = _DateServer(offset, status)
+    try:
+        measured, rtt = preflight.clock_offset(server.url)
+    finally:
+        server.close()
+    assert abs(measured + offset) <= 2 and rtt < 5
+
+
+def _steps(result):
+    return {s["passo"]: s for s in result["passos"]}
+
+
+def test_environment_warns_about_clock(no_egress):
+    server = _DateServer(-120)  # servidor 2 min atrás = relógio local 2 min adiantado
+    try:
+        steps = _steps(preflight.check_environment(server.url))
+    finally:
+        server.close()
+    assert steps["relógio"]["status"] == "aviso" and "adiantado" in steps["relógio"]["detalhe"]
+
+
+def test_environment_clock_unreachable_is_skipped(no_egress):
+    steps = _steps(preflight.check_environment("http://127.0.0.1:9/"))
+    assert steps["relógio"]["status"] == "pulado"
+
+
+def test_clock_goes_through_relay_when_configured(monkeypatch):
+    """Com o relay configurado, a hora é pedida ao repassador local, nunca direto."""
+    import http.server
+    import threading
+
+    seen = []
+
+    class Proxy(http.server.BaseHTTPRequestHandler):
+        def do_HEAD(self):  # noqa: N802
+            seen.append(self.path)
+            self.send_response(204)
+            self.end_headers()
+
+        def log_message(self, *args):
+            pass
+
+    proxy = http.server.ThreadingHTTPServer(("127.0.0.1", 0), Proxy)
+    threading.Thread(target=proxy.serve_forever, daemon=True).start()
+    monkeypatch.setenv("EGRESS_PROXY_URL", "socks5://u:p@relay.invalid:1080")
+    monkeypatch.setenv("EGRESS_LOCAL_PORT", str(proxy.server_address[1]))
+    try:
+        preflight.clock_offset("http://hora.example.com/")
+    finally:
+        proxy.shutdown()
+    assert seen == ["http://hora.example.com/"]
+
+
+def test_environment_limits_from_cgroup(tmp_path, monkeypatch):
+    import resource_usage
+
+    cg = tmp_path / "cg"
+    cg.mkdir()
+    (cg / "memory.current").write_text(str(300 * 1024 * 1024))
+    (cg / "memory.stat").write_text("inactive_file 0\n")
+    (cg / "cpu.stat").write_text("usage_usec 1\n")
+    (cg / "memory.max").write_text(str(1024 * 1024 * 1024))
+    (cg / "cpu.max").write_text("50000 100000")
+    monkeypatch.setattr(resource_usage, "CGROUP_ROOT", cg)
+    monkeypatch.setenv("USE_PJEOFFICE", "1")
+
+    real_statvfs = preflight.os.statvfs
+
+    class SmallShm:
+        f_blocks, f_frsize, f_bavail = 16384, 4096, 16384  # 64 MB
+
+    monkeypatch.setattr(preflight.os, "statvfs",
+                        lambda path: SmallShm() if path == "/dev/shm" else real_statvfs(path))
+    result = preflight.check_environment("off")
+    steps = _steps(result)
+    assert result["ok"] is True and result["avisos"] >= 3  # só avisos: nunca reprova o worker
+    assert steps["/dev/shm"]["status"] == "aviso" and "--shm-size" in steps["/dev/shm"]["detalhe"]
+    assert steps["memória"]["status"] == "aviso" and "PJeOffice" in steps["memória"]["detalhe"]
+    assert steps["CPU"]["status"] == "aviso" and "0.5" in steps["CPU"]["detalhe"]
+    assert steps["relógio"]["status"] == "pulado"
+    assert result["limites"]["memoria_mb"] == 1024

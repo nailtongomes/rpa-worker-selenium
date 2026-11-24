@@ -117,3 +117,14 @@ def test_pjeoffice_arm64_jre_is_pinned(dockerfile_text):
     assert url.group(1).startswith("https://cdn.azul.com/zulu/bin/zulu8.") and "-fx-jre8" in url.group(1)
     assert url.group(1).endswith("-linux_aarch64.tar.gz")
     assert 'sha256sum -c -' in dockerfile_text
+
+
+def test_image_info_is_written_in_the_last_layer(dockerfile_text):
+    """A revisão muda a cada commit: o passo que a grava fica depois do código do /app, no fim,
+    para não invalidar o cache das camadas pesadas."""
+    copy_app = dockerfile_text.index("COPY image/app/ /app/")
+    arg = dockerfile_text.index("ARG IMAGE_REVISION=dev")
+    write = dockerfile_text.index("python /app/image_info.py write")
+    assert copy_app < arg < write
+    assert '--revision "${IMAGE_REVISION}" --created "${IMAGE_CREATED}"' in dockerfile_text
+    assert "RUN " not in dockerfile_text[write:].split("\n", 1)[1]

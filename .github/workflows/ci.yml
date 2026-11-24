@@ -81,6 +81,7 @@ jobs:
             ENABLE_PDF_TOOLS=1
             ENABLE_VNC=1
             ENABLE_NOVNC=1
+            IMAGE_REVISION=${{ github.event.pull_request.head.sha || github.sha }}
           cache-from: type=gha,scope=${{ matrix.cache }}
           cache-to: type=gha,mode=max,scope=${{ matrix.cache }}
 

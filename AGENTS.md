@@ -18,13 +18,15 @@ Usuários da imagem dependem do que está abaixo. Não mude nada disso sem pedid
   `/opt/firefox`, `/opt/pjeoffice`, `/opt/venv`, `/opt/novnc`,
   `/root/.mozilla/firefox/selenium.default-release`, `/etc/opt/chrome*/policies/managed`,
   `/app/a1cert.py` (API usada pelos scripts), `/app/a1_check.py`, `/app/egress_proxy.py`, `/app/egress_check.py`,
-  `/app/preflight.py`, `/app/pjeoffice_check.py`, `/opt/icp-brasil/` (`raizes.pem`, `acs.pem`).
+  `/app/preflight.py`, `/app/pjeoffice_check.py`, `/app/resource_usage.py`, `/app/image_info.py`
+  (+ `/app/image_info.json`, gravado no build), `/opt/icp-brasil/` (`raizes.pem`, `acs.pem`).
 - Variáveis de ambiente e seus defaults (`USE_*`, `WORKER_*`, `SCRIPT_URL`, `HELPER_URLS`,
-  `CHROME_PROFILE_URL`, `TASK_*`, `SCREEN_*`, `PJEOFFICE_*`, `A1_PFX_*`, `EGRESS_*`).
+  `CHROME_PROFILE_URL`, `TASK_*`, `SCREEN_*`, `PJEOFFICE_*`, `A1_PFX_*`, `EGRESS_*`, `RESOURCE_*`).
   Sem `EGRESS_PROXY_URL` o container sai direto, como sempre (recurso opcional, só alguns clientes). Os defaults do entrypoint
   estão travados em `tests/unit/test_entrypoint.py`.
 - Build-args usados pelo release: `BUILD_PJEOFFICE=1`, `ENABLE_PDF_TOOLS=1`,
-  `ENABLE_VNC=1`, `ENABLE_NOVNC=1`, `CHROME_PROFILE_URL`, `SELENIUMBASE_REFRESH`.
+  `ENABLE_VNC=1`, `ENABLE_NOVNC=1`, `CHROME_PROFILE_URL`, `SELENIUMBASE_REFRESH`,
+  `IMAGE_REVISION`/`IMAGE_CREATED` (só a identificação, na última camada).
 
 Para conferir se uma mudança alterou o contrato, compare snapshots
 (veja "Validação" abaixo).
@@ -40,6 +42,8 @@ Para conferir se uma mudança alterou o contrato, compare snapshots
 | `image/app/a1_check.py`, `a1_testkit.py` | verificador do A1 e ferramentas de teste (ICP de teste, servidor mTLS local) |
 | `image/app/egress_proxy.py`, `egress_check.py`, `egress_testkit.py` | relay de saída: repassador local + config de browsers/Python/Java, verificador e relay de referência/teste |
 | `image/app/preflight.py` | "o worker está pronto?": browsers + `a1_check` + `egress_check` num JSON |
+| `image/app/resource_usage.py` | CPU/memória de cada execução pelo cgroup (média, p95, pico, sugestão de reserva); o entrypoint e o standby rodam o script através dele (`RESOURCE_SUMMARY=1`); `report` junta `/app/logs/resources.jsonl` |
+| `image/app/image_info.py` | qual imagem é esta: grava `/app/image_info.json` no build (`IMAGE_REVISION`), primeira linha do log e `"imagem"` no preflight |
 | `image/app/pjeoffice_check.py` | o PJeOffice assina? Chrome clica em "Testar" na página local dele (127.0.0.1:8800), xdotool responde a senha; usado pelo `a1_check` com `USE_PJEOFFICE=1` |
 | `image/icp-brasil/` | raízes (fingerprint fixado) + ACs oficiais da ICP-Brasil (ITI) → `/opt/icp-brasil`; só para validar cadeia do A1, fora do trust store |
 | `image/patch_chromedriver.py` | usado só no build (aplicado e apagado na mesma camada) |
@@ -106,6 +110,12 @@ exige conferir o fingerprint e fixá-lo no script **e** em `tests/unit/test_a1ce
 contrato dele (campos aceitos, `cpu` ≤ 1 e `memory` ≤ 2g do perfil `shared-pc`, certificado nos caminhos fixos
 `/run/shutup-and-run/...`); `tests/unit/test_recipes.py` trava isso e o portão roda `teste-a1.json`. Segredos só
 como `secret_env: null` ou arquivo; URLs de exemplo em `example.com`; portas só em `127.0.0.1`.
+
+**Medidor de recursos (`resource_usage.py`):** fica entre o entrypoint/standby e o script. Ele nunca pode
+mudar o exit code (sinal vira 128+N, como no shell) nem segurar a saída do script (stdout/stderr herdados).
+O comando direto (`docker run imagem <comando>`) continua com `exec`, sem o medidor no meio.
+O preflight só avisa sobre o ambiente (shm, disco, memória, CPU, relógio); nada ali reprova o worker,
+e a conferência do relógio nunca sai direto quando há relay.
 
 **Mexer no entrypoint:** mantenha `set -e`, funções pequenas e o padrão de log
 `$(log_timestamp) <emoji> mensagem`. Serviços que dependem de outro (OpenBox → Xvfb,
@@ -199,5 +209,8 @@ noVNC → VNC) devem checar a dependência e pular com aviso, não falhar.
 - [x] **ARM64:** `:latest-arm64` (Chrome for Testing/Firefox ARM, PJeOffice com Zulu 8 FX aarch64), portão em
   runner ARM nativo no CI/release/nightly; teste de assinatura do PJeOffice pela página local
   (`pjeoffice_check.py`) no portão e no preflight; receita `recipes/servidor-arm/`.
+- [x] **Ambiente e dimensionamento:** preflight confere `/dev/shm`, disco, memória, CPU e relógio (avisos);
+  versão da imagem na primeira linha do log e no preflight (`image_info.py`); resumo de CPU/memória por
+  execução com sugestão de reserva e relatório de várias execuções (`resource_usage.py`).
 - [ ] **Fase 3:** alinhar `requirements.txt` com o que de fato roda (`cryptography`, `psutil`,
   `oscrypto`); revisar `set -e` x falha no download do profile.

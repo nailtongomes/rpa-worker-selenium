@@ -544,6 +544,13 @@ COPY image/app/ /app/
 
 RUN chmod +x /app/entrypoint.sh /app/script_downloader.py /app/smoke_test.py
 
+# Which image is this? Revision, build time, architecture and browser versions go to
+# /app/image_info.json, shown in the first log line and in the preflight JSON.
+# The release passes the commit and the tag timestamp; local builds say "dev".
+ARG IMAGE_REVISION=dev
+ARG IMAGE_CREATED=""
+RUN python /app/image_info.py write --revision "${IMAGE_REVISION}" --created "${IMAGE_CREATED}"
+
 # Health check to ensure browsers are available
 HEALTHCHECK --interval=30s --timeout=10s --start-period=15s --retries=3 \
     CMD chrome --version && firefox --version || exit 1

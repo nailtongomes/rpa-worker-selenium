@@ -30,6 +30,12 @@ export WORKER_LOOP=${WORKER_LOOP:-0}
 export WORKER_TIMEOUT=${WORKER_TIMEOUT:-3600}  # 1 hour default
 export WORKER_RESTART_DELAY=${WORKER_RESTART_DELAY:-120}  # 2 minutes default
 
+# Resource summary after each script run (CPU/memory average and peaks, for sizing).
+# See /app/resource_usage.py; RESOURCE_LOG="" keeps only the log lines.
+export RESOURCE_SUMMARY=${RESOURCE_SUMMARY:-1}
+export RESOURCE_SAMPLE_SECS=${RESOURCE_SAMPLE_SECS:-1}
+export RESOURCE_LOG=${RESOURCE_LOG:-/app/logs/resources.jsonl}
+
 # Task server configuration (for standby mode)
 export TASK_SERVER_PORT=${TASK_SERVER_PORT:-8080}
 export TASK_AUTH_TOKEN=${TASK_AUTH_TOKEN:-}
@@ -55,6 +61,13 @@ EGRESS_PID=""
 # Timestamp function for logging
 log_timestamp() {
     echo "[$(date '+%Y-%m-%d %H:%M:%S')]"
+}
+
+# Which image is running (revision, build, architecture, browsers): /app/image_info.json
+log_image_info() {
+    local info
+    info="$(python /app/image_info.py 2>/dev/null)" || info="🏷️  Imagem: versão desconhecida"
+    echo "$(log_timestamp) ${info}"
 }
 
 # Setup directories with proper permissions
@@ -540,6 +553,18 @@ download_script_with_retry() {
     done
 }
 
+# Runs "$@" and, with RESOURCE_SUMMARY=1, prints how much CPU/memory the container used
+# meanwhile (average, p95, peak). The exit code is the command's own.
+run_measured() {
+    local label="$1"
+    shift
+    if [ "${RESOURCE_SUMMARY}" = "1" ] && [ -f /app/resource_usage.py ]; then
+        python /app/resource_usage.py run --label "${label}" -- "$@"
+    else
+        "$@"
+    fi
+}
+
 # Function to download and execute a script
 download_and_execute() {
     echo "$(log_timestamp) 🔍 Checking for SCRIPT_URL environment variable..."
@@ -579,11 +604,11 @@ else:
         fi
 
         echo "$(log_timestamp) ▶️  Executing downloaded script: $SCRIPT_PATH"
-        python "$SCRIPT_PATH"
+        run_measured "$(basename "$SCRIPT_PATH")" python "$SCRIPT_PATH"
         return $?
     else
         echo "$(log_timestamp) ℹ️  SCRIPT_URL not set, running default smoke test..."
-        python /app/smoke_test.py
+        run_measured smoke_test.py python /app/smoke_test.py
         return $?
     fi
 }
@@ -607,7 +632,7 @@ execute_with_loop() {
 
     # The iteration runs in a child bash (so `timeout` can kill it) using the same
     # functions as single-run mode
-    export -f log_timestamp mask_url download_script_with_retry download_and_execute
+    export -f log_timestamp mask_url download_script_with_retry run_measured download_and_execute
 
     local iteration=1
 
@@ -648,6 +673,7 @@ execute_with_loop() {
 # Main execution
 main() {
     echo "$(log_timestamp) 🚀 Starting RPA Worker Selenium..."
+    log_image_info
     
     # Setup directories
     setup_directories
