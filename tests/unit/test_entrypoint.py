@@ -248,8 +248,11 @@ def test_cleanup_closes_leftover_driver(tmp_path, cleanup, survives):
     fake.parent.mkdir()
     fake.write_bytes(pathlib.Path(shutil.which("sleep")).read_bytes())
     fake.chmod(0o755)
-    proc = subprocess.Popen([str(fake), "300"])
+    # argv[0] = "sleep": em sistemas com coreutils multicall (uutils) o binário escolhe o comando por ele
+    proc = subprocess.Popen(["sleep", "300"], executable=str(fake))
     try:
+        time.sleep(0.2)
+        assert proc.poll() is None, "o chromedriver falso não ficou rodando"
         # O teste roda no host: rm vira no-op (perfis temporários de verdade ficam) e o kill só
         # alcança o processo falso (browsers/drivers de quem roda o pytest ficam)
         prelude = ("rm() { :; }\n"
