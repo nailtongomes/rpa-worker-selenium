@@ -96,5 +96,24 @@ def test_seleniumbase_tracks_latest(dockerfile_text):
 def test_chrome_and_chromedriver_share_version(dockerfile_text):
     """Chrome e ChromeDriver vêm do mesmo CHROME_VERSION (Chrome for Testing)."""
     assert re.search(r"^ARG CHROME_VERSION=\d+\.\d+\.\d+\.\d+$", dockerfile_text, re.MULTILINE)
-    assert "${CHROME_VERSION}/linux64/chromedriver-linux64.zip" in dockerfile_text
-    assert "${CHROME_VERSION}/linux64/chrome-linux64.zip" in dockerfile_text
+    assert "${CHROME_VERSION}/${cft}/chromedriver-${cft}.zip" in dockerfile_text
+    assert "${CHROME_VERSION}/${cft}/chrome-${cft}.zip" in dockerfile_text
+
+
+def test_downloads_cover_amd64_and_arm64(dockerfile_text):
+    """amd64 (:latest) e arm64 (:latest-arm64) baixam o binário certo; outra arquitetura falha no build."""
+    assert "ARG TARGETARCH" in dockerfile_text
+    for expected in ("amd64) cft=linux64", "arm64) cft=linux-arm64",
+                     "amd64) ff=linux-x86_64; gd=linux64", "arm64) ff=linux-aarch64; gd=linux-aarch64"):
+        assert expected in dockerfile_text
+    assert dockerfile_text.count('unsupported TARGETARCH') == 2
+
+
+def test_pjeoffice_arm64_jre_is_pinned(dockerfile_text):
+    """O PJeOffice só sai para x64: no arm64 o JRE embutido é trocado pelo Zulu 8 FX aarch64, com SHA-256."""
+    url = re.search(r"^ARG PJEOFFICE_JRE_ARM64_URL=(\S+)$", dockerfile_text, re.MULTILINE)
+    sha = re.search(r"^ARG PJEOFFICE_JRE_ARM64_SHA256=([0-9a-f]{64})$", dockerfile_text, re.MULTILINE)
+    assert url and sha
+    assert url.group(1).startswith("https://cdn.azul.com/zulu/bin/zulu8.") and "-fx-jre8" in url.group(1)
+    assert url.group(1).endswith("-linux_aarch64.tar.gz")
+    assert 'sha256sum -c -' in dockerfile_text

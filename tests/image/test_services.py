@@ -68,6 +68,30 @@ def test_pjeoffice_running():
     assert _wait_process("pjeoffice", timeout=30), "PJeOffice não está rodando"
 
 
+@_needs("USE_PJEOFFICE")
+@_needs("USE_XVFB")
+def test_pjeoffice_signs_from_its_test_page(tmp_path):
+    """Processo vivo não basta: o Chrome clica em "Testar" na página local do PJeOffice
+    (127.0.0.1:8800), o PJeOffice pede a senha, assina com o A1 de teste e devolve os dados."""
+    import sys
+
+    sys.path.insert(0, "/app")
+    import a1_testkit
+    import pjeoffice_check
+
+    assert pjeoffice_check.responding() or _wait_port(8800, timeout=30), "PJeOffice não escuta em 8800"
+    pki = a1_testkit.make_test_pki(tmp_path / "pki", "Senha-PJe-1")
+    result = pjeoffice_check.signature_test(pki["pfx"], pki["password"])
+    assert result["cpf"] == "12345678909" and "FULANO" in result["titular"], result
+    assert result["janelas_de_senha"] >= 1
+    # o teste devolve o PJeOffice como estava: rodando e sem o A1 de teste na configuração
+    assert pjeoffice_check.running_pids() and pjeoffice_check.responding()
+    assert str(pki["pfx"]) not in pjeoffice_check.config_file().read_text(encoding="utf-8")
+
+    with pytest.raises(pjeoffice_check.PJeOfficeError, match="recusou a senha"):
+        pjeoffice_check.signature_test(pki["pfx"], "senha-errada")
+
+
 @_needs("USE_VNC")
 def test_vnc_listening():
     port = int(os.getenv("VNC_PORT", "5900"))

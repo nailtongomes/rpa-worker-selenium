@@ -254,3 +254,40 @@ def test_gate_scenario_titles_have_no_colon():
     for entry in entries:
         assert entry.count(":") == 1, entry
         assert entry.split(":")[1].startswith("scenario_"), entry
+
+
+# --- ARM64 (:latest-arm64) ----------------------------------------------------------------
+
+@pytest.mark.parametrize("path, job", [(CI, "image"), (RELEASE, "build-and-push"), (NIGHTLY, "production-image")],
+                         ids=lambda v: getattr(v, "name", v))
+def test_amd64_and_arm64_are_built_natively_and_gated(path, job):
+    """Cada arquitetura no seu runner nativo (sem QEMU), com o mesmo build e o mesmo portão."""
+    workflow = _load(path)
+    spec = workflow["jobs"][job]
+    legs = {leg["arch"]: leg for leg in spec["strategy"]["matrix"]["include"]}
+    assert set(legs) == {"amd64", "arm64"}
+    assert legs["arm64"]["runner"] == "ubuntu-24.04-arm" and legs["amd64"]["runner"] == "ubuntu-latest"
+    assert spec["strategy"]["fail-fast"] is False, "uma arquitetura não cancela a outra"
+    assert spec["runs-on"] == "${{ matrix.runner }}"
+    build = _build_step(workflow, job)
+    assert build["with"]["platforms"] == "linux/${{ matrix.arch }}"
+    assert "setup-qemu" not in path.read_text()
+
+
+def test_arm64_never_takes_the_latest_tag():
+    """:latest continua sendo a imagem amd64 de produção; o arm64 sai como latest-arm64, sha-<7>-arm64."""
+    workflow = _load(RELEASE)
+    legs = {leg["arch"]: leg for leg in workflow["jobs"]["build-and-push"]["strategy"]["matrix"]["include"]}
+    assert legs["amd64"]["suffix"] == "" and legs["arm64"]["suffix"] == "-arm64"
+    steps = _steps(workflow, "build-and-push")
+    meta = steps[_index(steps, lambda s: s.get("id") == "meta", "tags")]
+    assert meta["env"]["TAG_SUFFIX"].endswith("${{ matrix.suffix }}")
+    # notas do GitHub Release e rollback seguem falando da :latest (amd64)
+    notes = steps[_index(steps, lambda s: "scripts/release-notes.sh" in s.get("run", ""), "notas")]
+    assert "tag_suffix == ''" in notes["if"]
+    # cache separado por arquitetura (o amd64 mantém o escopo de sempre)
+    build = _build_step(workflow, "build-and-push")
+    assert "scope=${{ matrix.cache }}" in build["with"]["cache-from"]
+    assert legs["amd64"]["cache"] == "buildkit" and legs["arm64"]["cache"] != "buildkit"
+    cleanup = workflow["jobs"]["cleanup"]["steps"][0]["with"]
+    assert "latest-arm64" in cleanup["exclude-tags"]

@@ -2,8 +2,9 @@
 # CI — roda em todo PR (e em push na main)
 #
 #   unit-tests  pytest no host, sem Docker (~1 min)
-#   image       build IDÊNTICO ao do release + scripts/test-image.sh (bloqueante)
-#               + auditoria ClearCote de fingerprint (informativa)
+#   image       build IDÊNTICO ao do release + scripts/test-image.sh (bloqueante),
+#               em amd64 (:latest) e arm64 (:latest-arm64, runner ARM nativo)
+#               + auditoria ClearCote de fingerprint (informativa, só amd64)
 #
 # O mesmo scripts/test-image.sh é o portão do release (build-push-ghcr.yml).
 # =============================================================================
@@ -45,8 +46,19 @@ jobs:
 
   image:
     needs: unit-tests
-    runs-on: ubuntu-latest
-    timeout-minutes: 60
+    name: image (${{ matrix.arch }})
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - arch: amd64
+            runner: ubuntu-latest
+            cache: buildkit          # escopo de cache de sempre (amd64)
+          - arch: arm64
+            runner: ubuntu-24.04-arm # ARM nativo, sem emulação
+            cache: buildkit-arm64
+    runs-on: ${{ matrix.runner }}
+    timeout-minutes: 75
     steps:
       - name: Checkout
         uses: actions/checkout@v7
@@ -60,7 +72,7 @@ jobs:
         with:
           context: .
           file: ./Dockerfile.trixie
-          platforms: linux/amd64
+          platforms: linux/${{ matrix.arch }}
           load: true
           push: false
           tags: rpa-worker:ci
@@ -69,8 +81,8 @@ jobs:
             ENABLE_PDF_TOOLS=1
             ENABLE_VNC=1
             ENABLE_NOVNC=1
-          cache-from: type=gha
-          cache-to: type=gha,mode=max
+          cache-from: type=gha,scope=${{ matrix.cache }}
+          cache-to: type=gha,mode=max,scope=${{ matrix.cache }}
 
       - name: Quality gate (scripts/test-image.sh)
         run: scripts/test-image.sh rpa-worker:ci test-results
@@ -81,7 +93,7 @@ jobs:
 
       # Informative only: depends on an external site and a score, never blocks
       - name: ClearCote fingerprint audit (informative)
-        if: success()
+        if: success() && matrix.arch == 'amd64'
         continue-on-error: true
         run: |
           mkdir -p test-results/clearcote && chmod 777 test-results/clearcote
@@ -99,6 +111,6 @@ jobs:
         if: always()
         uses: actions/upload-artifact@v7
         with:
-          name: ci-test-results
+          name: ci-test-results-${{ matrix.arch }}
           path: test-results/
           retention-days: 7

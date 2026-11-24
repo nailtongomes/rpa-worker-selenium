@@ -6,6 +6,11 @@
 # latest, sha-<7> e YYYYMMDD-HHMMSS e é enviada. Se um teste falhar, a :latest
 # atual continua intocada. Depois do push, um GitHub Release registra o digest,
 # como voltar para a versão anterior (rollback) e o que mudou (scripts/release-notes.sh).
+#
+# Duas arquiteturas, cada uma no seu runner nativo e com o seu portão:
+#   amd64 → latest, sha-<7>, YYYYMMDD-HHMMSS              (produção de sempre)
+#   arm64 → latest-arm64, sha-<7>-arm64, YYYYMMDD-HHMMSS-arm64  (Ampere/Graviton)
+# Uma não segura a outra: se o portão do arm64 falhar, o amd64 sai normalmente.
 # =============================================================================
 name: Release (build, test, push to GHCR)
 
@@ -39,7 +44,20 @@ permissions:
 
 jobs:
   build-and-push:
-    runs-on: ubuntu-latest
+    name: build-and-push (${{ matrix.arch }})
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - arch: amd64
+            runner: ubuntu-latest
+            cache: buildkit
+            suffix: ''
+          - arch: arm64
+            runner: ubuntu-24.04-arm
+            cache: buildkit-arm64
+            suffix: '-arm64'
+    runs-on: ${{ matrix.runner }}
     timeout-minutes: 90
     permissions:
       contents: write   # GitHub Release com as notas
@@ -65,7 +83,7 @@ jobs:
       - name: 🏷️ Generate tags and labels
         id: meta
         env:
-          TAG_SUFFIX: ${{ github.event.inputs.tag_suffix }}
+          TAG_SUFFIX: ${{ github.event.inputs.tag_suffix }}${{ matrix.suffix }}
         run: |
           SHORT_SHA="${GITHUB_SHA::7}"
           TIMESTAMP="$(date -u +"%Y%m%d-%H%M%S")"
@@ -84,7 +102,7 @@ jobs:
         with:
           context: .
           file: ./Dockerfile.trixie
-          platforms: linux/amd64
+          platforms: linux/${{ matrix.arch }}
           load: true
           push: false
           # Only a local tag here: the public tags are applied to this exact image
@@ -98,8 +116,8 @@ jobs:
             ENABLE_NOVNC=1
             CHROME_PROFILE_URL=${{ secrets.CHROME_PROFILE_URL || '' }}
             SELENIUMBASE_REFRESH=${{ github.run_id }}
-          cache-from: type=gha
-          cache-to: type=gha,mode=max
+          cache-from: type=gha,scope=${{ matrix.cache }}
+          cache-to: type=gha,mode=max,scope=${{ matrix.cache }}
           labels: |
             org.opencontainers.image.source=${{ github.event.repository.html_url }}
             org.opencontainers.image.revision=${{ github.sha }}
@@ -115,19 +133,20 @@ jobs:
         continue-on-error: true
         env:
           IMAGE_NAME: ${{ steps.meta.outputs.image_name }}
+          CURRENT: latest${{ matrix.suffix }}
         run: |
-          docker pull -q "${IMAGE_NAME}:latest" >/dev/null
+          docker pull -q "${IMAGE_NAME}:${CURRENT}" >/dev/null
           {
-            echo "revision=$(docker image inspect --format '{{ index .Config.Labels "org.opencontainers.image.revision" }}' "${IMAGE_NAME}:latest")"
-            echo "digest=$(docker buildx imagetools inspect "${IMAGE_NAME}:latest" --format '{{json .Manifest.Digest}}' | tr -d '"')"
+            echo "revision=$(docker image inspect --format '{{ index .Config.Labels "org.opencontainers.image.revision" }}' "${IMAGE_NAME}:${CURRENT}")"
+            echo "digest=$(docker buildx imagetools inspect "${IMAGE_NAME}:${CURRENT}" --format '{{json .Manifest.Digest}}' | tr -d '"')"
           } >> "$GITHUB_OUTPUT"
 
       # 3) What changes for production compared with the current :latest (informative)
       - name: 🔍 Diff against current :latest
         continue-on-error: true
         run: |
-          docker pull -q "${{ steps.meta.outputs.image_name }}:latest" >/dev/null
-          scripts/image-snapshot.sh "${{ steps.meta.outputs.image_name }}:latest" snapshots/current >/dev/null
+          docker pull -q "${{ steps.meta.outputs.image_name }}:latest${{ matrix.suffix }}" >/dev/null
+          scripts/image-snapshot.sh "${{ steps.meta.outputs.image_name }}:latest${{ matrix.suffix }}" snapshots/current >/dev/null
           scripts/image-snapshot.sh rpa-worker:candidate snapshots/candidate >/dev/null
           {
             echo "### 🔍 Mudanças em relação à :latest atual"
@@ -219,7 +238,7 @@ jobs:
         if: always()
         uses: actions/upload-artifact@v7
         with:
-          name: release-test-results
+          name: release-test-results-${{ matrix.arch }}
           path: test-results/
           retention-days: 14
 
@@ -236,7 +255,7 @@ jobs:
         uses: dataaxiom/ghcr-cleanup-action@v1
         with:
           packages: 'rpa-worker-selenium'
-          keep-n-tagged: 5
-          exclude-tags: 'latest,prod,production,stable,deploy-*'
+          keep-n-tagged: 10   # 5 versões de cada arquitetura
+          exclude-tags: 'latest,latest-arm64,prod,production,stable,deploy-*'
           delete-untagged: false
           dry-run: false

@@ -11,9 +11,10 @@ Uso (certificado real, fora do GitHub):
     python /app/a1_check.py --self-test   # usa uma ICP de teste gerada na hora
 
 Passos: abrir o .pfx com a senha → dados/validade → assinatura .p7s attached
-(+ verificação) → PDF assinado (PAdES) → Java/PJeOffice lê o .pfx → importação no
-NSS do Chrome e do Firefox → os browsers apresentam o certificado a um servidor
-HTTPS local que exige certificado de cliente → limpeza.
+(+ verificação) → PDF assinado (PAdES) → Java/PJeOffice lê o .pfx → o PJeOffice assina
+(botão "Testar" da página local dele, com o PJeOffice ligado) → importação no NSS do
+Chrome e do Firefox → os browsers apresentam o certificado a um servidor HTTPS local
+que exige certificado de cliente → limpeza.
 
 Nada é enviado para fora do container. Saída: exit 0 se tudo passou, 1 se algo falhou.
 
@@ -22,6 +23,8 @@ Opções:
     --pdf ARQUIVO        PDF a assinar (padrão: um PDF de exemplo gerado na hora)
     --out DIR            onde salvar .p7s e PDF assinado (padrão: /tmp/a1-check)
     --browsers LISTA     chrome,uc,firefox (padrão: todos)
+    --pjeoffice auto|on|off  teste de assinatura no PJeOffice (pjeoffice_check.py); auto = com
+                         servidor X e o PJeOffice ligado (USE_PJEOFFICE=1 ou rodando)
     --keep               não remove o certificado do NSS/policies ao final
     --warn-days N        avisa se faltar menos de N dias para vencer (padrão: 30)
     --json ARQUIVO       grava o resultado em JSON (para Kestra/monitoramento)
@@ -43,6 +46,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parent))
 
 import a1_testkit as kit  # noqa: E402
 import a1cert  # noqa: E402
+import pjeoffice_check  # noqa: E402
 
 OK, WARN, FAIL = "✅", "⚠️ ", "❌"
 
@@ -82,6 +86,28 @@ def _load(args, report: Report, workdir: Path):
         report.line(OK, "ICP de teste gerada", str(pki["pfx"]))
         return cert
     return a1cert.load_from_env()
+
+
+def _pjeoffice_wanted(mode: str) -> bool:
+    if mode != "auto":
+        return mode == "on"
+    if not (pjeoffice_check.installed() and kit.has_display()):
+        return False
+    return os.getenv("USE_PJEOFFICE") == "1" or bool(pjeoffice_check.running_pids())
+
+
+def _pjeoffice_step(cert, report: Report) -> None:
+    name = "PJeOffice assina com o certificado"
+    if a1cert.java_password_problem(cert):
+        report.line(WARN, name, "pulado: o Java do PJeOffice não abre este .pfx (veja acima)")
+        return
+    try:
+        result = pjeoffice_check.signature_test(cert.path, cert.password)
+    except pjeoffice_check.PJeOfficeError as exc:
+        report.line(FAIL, name, str(exc))
+        return
+    who = " | ".join(filter(None, (result.get("titular"), result.get("cpf") or result.get("cnpj"))))
+    report.line(OK, name, f"botão \"Testar\" da página local: {who} [{result['segundos']}s]")
 
 
 def _browser_checks(cert, args, report: Report, workdir: Path) -> None:
@@ -149,6 +175,7 @@ def main(argv=None) -> int:
     parser.add_argument("--pdf")
     parser.add_argument("--out", default="/tmp/a1-check")
     parser.add_argument("--browsers", default="chrome,uc,firefox")
+    parser.add_argument("--pjeoffice", choices=["auto", "on", "off"], default="auto")
     parser.add_argument("--keep", action="store_true")
     parser.add_argument("--warn-days", type=int, default=30)
     parser.add_argument("--json")
@@ -212,6 +239,9 @@ def main(argv=None) -> int:
     elif shutil.which("keytool"):
         reason = a1cert.java_password_problem(cert) or "keytool não abriu o .pfx ou não achou a chave privada"
         report.line(FAIL, "Java/PJeOffice lê o .pfx", reason)
+
+    if _pjeoffice_wanted(args.pjeoffice):
+        report.step("PJeOffice assina com o certificado", lambda: _pjeoffice_step(cert, report))
 
     try:
         _browser_checks(cert, args, report, workdir)
