@@ -19,8 +19,13 @@ A medida é do container inteiro (cgroup): o script, os browsers que ele abre e 
 `docker stats` (uso menos o cache de arquivos que o kernel pode liberar). O exit code do
 script é devolvido sem mudança.
 
+Junto vem quem consumiu: CPU e memória por grupo de processos (Chrome, Firefox, drivers,
+PJeOffice, Xvfb/OpenBox/VNC, o script e outros), lidas do /proc, e em que momento da execução
+foram os picos. A memória por processo é a PSS (páginas compartilhadas divididas entre os
+processos que as usam), uma aproximação: a soma dos grupos não bate exatamente com o cgroup.
+
 Variáveis: RESOURCE_SAMPLE_SECS (intervalo das amostras, padrão 1), RESOURCE_LOG ("" não grava),
-WORKER_ID (vai no JSON).
+RESOURCE_PROCESSES (0 desliga a divisão por processo), WORKER_ID (vai no JSON).
 """
 
 from __future__ import annotations
@@ -39,6 +44,7 @@ from pathlib import Path
 from typing import Optional
 
 CGROUP_ROOT = Path("/sys/fs/cgroup")
+PROC_ROOT = Path("/proc")
 MB = 1024 * 1024
 UNLIMITED = 1 << 60  # cgroup v1 usa ~2^63 para "sem limite"
 MEMORY_HEADROOM = 1.25  # reserva sugerida = pico x 1,25
@@ -184,14 +190,150 @@ def suggestion(memory_peak_mb: float, cpu_p95: float) -> dict:
             "cpu_nucleos": round(round_up(max(cpu_p95 - 0.05, 0), 0.25), 2)}
 
 
+# --- divisão por processo ---------------------------------------------------------
+
+# Grupos da divisão por processo: chave no JSON -> nome no log
+GROUPS = {
+    "chrome": "Chrome",
+    "firefox": "Firefox",
+    "drivers": "chromedriver/geckodriver",
+    "pjeoffice": "PJeOffice (Java)",
+    "tela": "Xvfb/OpenBox/VNC",
+    "script": "script (Python)",
+    "outros": "outros",
+}
+DISPLAY_PROGRAMS = {"Xvfb", "openbox", "x11vnc", "ffmpeg", "xdotool", "websockify"}
+# A PSS (smaps_rollup) custa ~0,5 ms por processo do Chrome: lida a cada 5 s, não a cada amostra.
+# O pico do container (cgroup) continua exato; só a divisão da memória por grupo é mais espaçada.
+PSS_REFRESH_SECS = 5.0
+
+
+def classify(exe: str, comm: str, cmdline: str, in_script: bool) -> str:
+    """Grupo de um processo pelo executável (ou comm) e pela linha de comando."""
+    exe = exe.removesuffix(" (deleted)")
+    name = Path(exe).name if exe else comm
+    if name.startswith(("chromedriver", "uc_driver", "geckodriver")):
+        return "drivers"
+    if exe.startswith("/opt/chrome/") or name.startswith(("chrome", "chromium")):
+        return "chrome"
+    if exe.startswith("/opt/firefox/") or name.startswith("firefox"):
+        return "firefox"
+    if "/opt/pjeoffice/" in exe or "/opt/pjeoffice/" in cmdline:
+        return "pjeoffice"
+    if name in DISPLAY_PROGRAMS or "websockify" in cmdline:
+        return "tela"
+    return "script" if in_script else "outros"
+
+
+class ProcessTable:
+    """CPU e memória (PSS) por grupo de processos, pelo /proc do container.
+
+    Cada ``sample()`` devolve, por grupo, os segundos de CPU gastos desde a amostra anterior e a
+    memória atual (PSS relida a cada PSS_REFRESH_SECS). Processos que nascem e morrem entre duas
+    amostras escapam da conta (a CPU deles continua no total do cgroup)."""
+
+    def __init__(self, root: Optional[Path] = None) -> None:
+        self.root = Path(root or PROC_ROOT)
+        self.ticks = os.sysconf("SC_CLK_TCK") if hasattr(os, "sysconf") else 100
+        self.page = os.sysconf("SC_PAGE_SIZE") if hasattr(os, "sysconf") else 4096
+        self.script_pid: Optional[int] = None
+        self.own_cgroup = _read(self.root / "self" / "cgroup")
+        self._groups: dict = {}  # (pid, starttime, comm) -> grupo
+        self._prev: dict = {}  # pid -> (starttime, ticks de CPU)
+        self._pss: dict = {}  # (pid, starttime) -> bytes
+        self._pss_at = float("-inf")
+        self.clock = time.monotonic
+        self.sample()  # base: a CPU de antes da medição não entra
+
+    def _stat(self, pid: int) -> Optional[tuple]:
+        """(comm, ppid, ticks de CPU, starttime) de /proc/<pid>/stat."""
+        text = _read(self.root / str(pid) / "stat")
+        open_paren, close_paren = text.find("("), text.rfind(")")
+        if open_paren < 0 or close_paren < 0:
+            return None
+        rest = text[close_paren + 2:].split()
+        try:
+            return text[open_paren + 1:close_paren], int(rest[1]), int(rest[11]) + int(rest[12]), int(rest[19])
+        except (IndexError, ValueError):
+            return None
+
+    def _memory(self, pid: int) -> int:
+        for line in _read(self.root / str(pid) / "smaps_rollup").splitlines():
+            if line.startswith("Pss:"):
+                return int(line.split()[1]) * 1024
+        resident = _read(self.root / str(pid) / "statm").split()
+        return int(resident[1]) * self.page if len(resident) > 1 and resident[1].isdigit() else 0
+
+    def _in_script(self, pid: int, parents: dict) -> bool:
+        seen = set()
+        while pid and pid not in seen:
+            if pid == self.script_pid:
+                return True
+            seen.add(pid)
+            pid = parents.get(pid, 0)
+        return False
+
+    def _group(self, pid: int, comm: str, start: int, parents: dict) -> str:
+        key = (pid, start, comm)
+        if key not in self._groups:
+            base = self.root / str(pid)
+            try:
+                exe = os.readlink(base / "exe")
+            except OSError:
+                exe = ""
+            try:
+                cmdline = (base / "cmdline").read_bytes().replace(b"\0", b" ").decode("utf-8", "replace")
+            except OSError:
+                cmdline = ""
+            group = classify(exe, comm, cmdline, self._in_script(pid, parents))
+            if group == "outros" and self.script_pid is None:
+                return group  # o script ainda não começou: decide de novo na próxima amostra
+            self._groups[key] = group
+        return self._groups[key]
+
+    def sample(self) -> dict:
+        """{grupo: [segundos de CPU desde a amostra anterior, bytes de memória]}."""
+        stats = {}
+        for entry in self.root.iterdir():
+            if not entry.name.isdigit():
+                continue
+            if self.own_cgroup and _read(entry / "cgroup") != self.own_cgroup:
+                continue  # fora deste container (ex.: rodando direto no host)
+            stat = self._stat(int(entry.name))
+            if stat:
+                stats[int(entry.name)] = stat
+        parents = {pid: stat[1] for pid, stat in stats.items()}
+        now = self.clock()
+        refresh = now - self._pss_at >= PSS_REFRESH_SECS
+        if refresh:
+            self._pss_at = now
+        out: dict = {}
+        current, pss = {}, {}
+        for pid, (comm, _ppid, ticks, start) in stats.items():
+            prev_start, prev_ticks = self._prev.get(pid, (start, 0))
+            delta = ticks - prev_ticks if prev_start == start else ticks  # pid novo: nasceu nesse intervalo
+            current[pid] = (start, ticks)
+            key = (pid, start)
+            pss[key] = self._memory(pid) if refresh or key not in self._pss else self._pss[key]
+            group = out.setdefault(self._group(pid, comm, start, parents), [0.0, 0])
+            group[0] += max(delta, 0) / self.ticks
+            group[1] += pss[key]
+        self._prev, self._pss = current, pss
+        return out
+
+
 class Sampler(threading.Thread):
     """Amostra CPU e memória do cgroup a cada ``interval`` segundos até ``stop()``."""
 
-    def __init__(self, cg: Cgroup, interval: float = 1.0) -> None:
+    def __init__(self, cg: Cgroup, interval: float = 1.0, processes: Optional[ProcessTable] = None) -> None:
         super().__init__(daemon=True)
         self.cg, self.interval = cg, max(float(interval), 0.1)
+        self.processes = processes
         self._stop_event = threading.Event()
         self.cpu, self.memory = [], []
+        self.cpu_at, self.memory_at = [], []  # segundos desde o início de cada amostra
+        self.groups: dict = {}  # grupo -> {"cpu_s", "mem": [bytes por amostra]}
+        self.group_samples = 0
         self.started = time.monotonic()
         self.cpu0, self.throttled0, self.oom0 = cg.cpu_usec(), cg.throttled_usec(), cg.oom_kills()
         self.memory0 = cg.memory_bytes()
@@ -202,9 +344,40 @@ class Sampler(threading.Thread):
         last_t, last_cpu = self._last
         if cpu is not None and last_cpu is not None and now > last_t:
             self.cpu.append(max(cpu - last_cpu, 0) / 1e6 / (now - last_t))
+            self.cpu_at.append(now - self.started)
         if mem is not None:
             self.memory.append(mem)
+            self.memory_at.append(now - self.started)
         self._last = (now, cpu)
+        if self.processes is not None:
+            try:
+                self._sample_groups(self.processes.sample())
+            except Exception:  # noqa: BLE001 - sem a divisão, o resumo do container continua
+                self.processes = None
+
+    def _sample_groups(self, sample: dict) -> None:
+        for name in sample.keys() - self.groups.keys():
+            self.groups[name] = {"cpu_s": 0.0, "mem": [0] * self.group_samples}
+        for name, acc in self.groups.items():
+            cpu_s, mem = sample.get(name, (0.0, 0))
+            acc["cpu_s"] += cpu_s
+            acc["mem"].append(mem)
+        self.group_samples += 1
+
+    def processes_summary(self, duration: float, cpu_total: Optional[float]) -> dict:
+        """Por grupo: CPU média (e % do total do container) e memória média/pico, maior CPU primeiro."""
+        out = {}
+        for name, acc in sorted(self.groups.items(), key=lambda item: -item[1]["cpu_s"]):
+            mem_mb = [m / MB for m in acc["mem"]]
+            if acc["cpu_s"] < 0.05 and max(mem_mb, default=0) < 1:
+                continue
+            out[name] = {
+                "cpu_media_nucleos": round(acc["cpu_s"] / duration, 2) if duration > 0 else None,
+                "cpu_pct": round(min(acc["cpu_s"] / cpu_total * 100, 100)) if cpu_total else None,
+                "memoria_media_mb": round(sum(mem_mb) / len(mem_mb)) if mem_mb else 0,
+                "memoria_pico_mb": round(max(mem_mb, default=0)),
+            }
+        return out
 
     def run(self) -> None:
         while not self._stop_event.wait(self.interval):
@@ -231,6 +404,8 @@ class Sampler(threading.Thread):
             "pico_nucleos": round(max(self.cpu, default=0.0), 2),
             "tempo_s": round(cpu_total, 1) if cpu_total is not None else None,
         }
+        if self.cpu:
+            cpu["pico_em_s"] = round(self.cpu_at[self.cpu.index(max(self.cpu))])
         if None not in (throttled, self.throttled0) and duration > 0:
             cpu["limitada_pct"] = round(min(100.0, (throttled - self.throttled0) / 1e6 / duration * 100), 1)
         memory = {
@@ -239,10 +414,15 @@ class Sampler(threading.Thread):
             "p95_mb": round(percentile(mem_mb, 95)) if mem_mb else None,
             "pico_mb": round(max(mem_mb)) if mem_mb else None,
         }
+        if self.memory:
+            memory["pico_em_s"] = round(self.memory_at[self.memory.index(max(self.memory))])
         if None not in (oom, self.oom0):
             memory["oom_kills"] = oom - self.oom0
-        return {"duracao_s": round(duration, 1), "amostras": len(self.memory), "intervalo_s": self.interval,
-                "cpu": cpu, "memoria": memory}
+        result = {"duracao_s": round(duration, 1), "amostras": len(self.memory), "intervalo_s": self.interval,
+                  "cpu": cpu, "memoria": memory}
+        if self.group_samples:
+            result["processos"] = self.processes_summary(duration, cpu_total)
+        return result
 
 
 # --- formatação -----------------------------------------------------------------
@@ -296,6 +476,14 @@ def human_lines(summary: dict) -> list:
     else:
         mem_line += " (sem limite)"
     lines.append(mem_line)
+    peaks = []
+    if mem.get("pico_em_s") is not None:
+        peaks.append(f"memória aos {fmt_duration(mem['pico_em_s'])}")
+    if cpu.get("pico_em_s") is not None:
+        peaks.append(f"CPU aos {fmt_duration(cpu['pico_em_s'])}")
+    if peaks and summary.get("duracao_s", 0) >= SHORT_RUN_SECS:
+        lines.append("   picos: " + " · ".join(peaks))
+    lines.extend(process_lines(summary.get("processos")))
     if summary.get("duracao_s", 0) < SHORT_RUN_SECS:
         lines.append(f"   ℹ️  execução curta ({fmt_duration(summary.get('duracao_s', 0))}): a CPU aqui é quase só a partida "
                      "do Python; para dimensionar, use execuções reais (resource_usage.py report)")
@@ -309,6 +497,19 @@ def human_lines(summary: dict) -> list:
     if sug:
         lines.append(f"   💡 reserva sugerida: memória {fmt_mb(sug['memoria_mb'])} (pico + 25%) · "
                      f"CPU {fmt_cores(sug['cpu_nucleos'])} (p95)")
+    return lines
+
+
+def process_lines(groups: Optional[dict], pico_key: str = "memoria_pico_mb") -> list:
+    """Uma linha por grupo de processos: CPU média (% do container) · memória média / pico."""
+    if not groups:
+        return []
+    width = max(len(GROUPS.get(name, name)) for name in groups)
+    lines = ["   por processo (CPU média · memória média / pico; memória PSS, aproximada):"]
+    for name, g in groups.items():
+        share = f" ({g['cpu_pct']}%)" if g.get("cpu_pct") is not None else ""
+        lines.append(f"     {GROUPS.get(name, name).ljust(width)}  {fmt_cores(g.get('cpu_media_nucleos'))}{share}"
+                     f" · {fmt_mb(g.get('memoria_media_mb'))} / {fmt_mb(g.get(pico_key))}")
     return lines
 
 
@@ -360,7 +561,13 @@ def run(cmd: list, label: str, interval: float) -> int:
     sampler = None
     if cg is not None:
         try:
-            sampler = Sampler(cg, interval)
+            processes = None
+            if os.getenv("RESOURCE_PROCESSES", "1") != "0":
+                try:
+                    processes = ProcessTable()
+                except Exception:  # noqa: BLE001 - sem /proc legível: só o total do container
+                    processes = None
+            sampler = Sampler(cg, interval, processes)
             sampler.start()
         except Exception:  # noqa: BLE001
             sampler = None
@@ -376,6 +583,8 @@ def run(cmd: list, label: str, interval: float) -> int:
         if sampler:
             sampler.stop()
         return 127
+    if sampler is not None and sampler.processes is not None:
+        sampler.processes.script_pid = proc.pid
 
     def on_signal(signum, _frame):
         if forward and proc.poll() is None:
@@ -427,7 +636,28 @@ def aggregate(summaries: list) -> dict:
         "memoria_pico_max_mb": max(peaks),
         "oom_kills": sum(s["memoria"].get("oom_kills") or 0 for s in measured),
         "sugestao": suggestion(max(peaks), percentile(cpu_p95, 95) if cpu_p95 else 0),
+        "processos": aggregate_processes(measured),
     }
+
+
+def aggregate_processes(summaries: list) -> dict:
+    """Por grupo de processos: médias de CPU e memória e o maior pico de memória entre as execuções."""
+    groups: dict = {}
+    for s in summaries:
+        for name, g in (s.get("processos") or {}).items():
+            groups.setdefault(name, []).append(g)
+    out = {}
+    for name, items in groups.items():
+        cpu = [g["cpu_media_nucleos"] for g in items if g.get("cpu_media_nucleos") is not None]
+        pct = [g["cpu_pct"] for g in items if g.get("cpu_pct") is not None]
+        mem = [g.get("memoria_media_mb") or 0 for g in items]
+        out[name] = {
+            "cpu_media_nucleos": round(sum(cpu) / len(cpu), 2) if cpu else None,
+            "cpu_pct": round(sum(pct) / len(pct)) if pct else None,
+            "memoria_media_mb": round(sum(mem) / len(mem)),
+            "memoria_pico_max_mb": max(g.get("memoria_pico_mb") or 0 for g in items),
+        }
+    return dict(sorted(out.items(), key=lambda item: -(item[1]["cpu_media_nucleos"] or 0)))
 
 
 def report(path: Path) -> int:
@@ -462,6 +692,8 @@ def report(path: Path) -> int:
               f" · pico máximo {fmt_mb(agg['memoria_pico_max_mb'])}")
         if agg["oom_kills"]:
             print(f"   ❌ {agg['oom_kills']} processo(s) mortos por falta de memória (OOM)")
+        for line in process_lines(agg.get("processos"), pico_key="memoria_pico_max_mb"):
+            print(line)
         sug = agg["sugestao"]
         print(f"   💡 reserva sugerida: memória {fmt_mb(sug['memoria_mb'])} · CPU {fmt_cores(sug['cpu_nucleos'])}")
     print("RESOURCE_REPORT " + json.dumps(out, ensure_ascii=False))

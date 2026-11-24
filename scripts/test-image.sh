@@ -252,6 +252,67 @@ scenario_worker_loop() {
     return "$ok"
 }
 
+scenario_loop_cleanup() {
+    # WORKER_LOOP=1 com um script que deixa um Chrome órfão e trava ignorando o SIGTERM:
+    # no WORKER_TIMEOUT ele recebe SIGTERM, WORKER_KILL_AFTER depois SIGKILL, e o Chrome
+    # esquecido (com o perfil temporário) some antes da próxima iteração
+    local name="rpa-test-loop-cleanup-$$" log="$RESULTS/logs/loop-cleanup.log" ok=1 left=""
+    docker rm -f "$name" >/dev/null 2>&1
+    docker run -d --name "$name" --shm-size=2g -v "$REPO:/repo:ro" "${EXTRA_ARGS[@]}" \
+        -e SCRIPT_URL="$FIXTURE_URL/job_stuck.py" -e WORKER_LOOP=1 \
+        -e WORKER_TIMEOUT=8 -e WORKER_KILL_AFTER=3 -e WORKER_RESTART_DELAY=30 \
+        --entrypoint bash "$IMAGE" -c "$WITH_FIXTURES" _ >/dev/null || return 1
+    for _ in $(seq 1 90); do
+        docker logs "$name" 2>&1 | grep -q "Waiting 30s before next iteration" && break
+        sleep 1
+    done
+    # durante a espera: nem o script travado nem o Chrome dele podem continuar rodando
+    left="$(docker exec "$name" sh -c 'pgrep -af "job_stuck.py|job-stuck" | grep -v pgrep; ls -d /tmp/.org.chromium.Chromium.job-stuck 2>/dev/null' 2>&1)"
+    docker logs "$name" > "$log" 2>&1
+    docker rm -f "$name" >/dev/null 2>&1
+    grep -E "JOB-STUCK|timed out|Closing|Waiting" "$log" | head -8
+    if ! grep -q "JOB-STUCK travado" "$log"; then
+        echo "o script não rodou"
+    elif ! grep -q "ignored SIGTERM: killed after 3s more" "$log"; then
+        echo "o script travado não foi morto com SIGKILL"
+    elif ! grep -q "Closing [0-9]* browser/driver process(es) left by the iteration" "$log"; then
+        echo "a limpeza não fechou o Chrome esquecido"
+    elif [ -n "$left" ]; then
+        echo "sobrou da iteração:"
+        echo "$left"
+    else
+        ok=0
+    fi
+    return "$ok"
+}
+
+scenario_preflight_on_start() {
+    # PREFLIGHT_ON_START=1: preflight depois dos serviços e antes da primeira tarefa.
+    # Passou -> o script roda; falhou (A1 que não existe) -> o container para com exit 1 sem rodar.
+    local log_ok="$RESULTS/logs/preflight-on-start-ok.log" log_fail="$RESULTS/logs/preflight-on-start-fail.log"
+    local rc_ok rc_fail ok=0
+    run_in_image -e PREFLIGHT_ON_START=1 -e PREFLIGHT_ARGS="--browsers chrome --clock-url off" \
+        -e SCRIPT_URL="$FIXTURE_URL/job_ok.py" -e HELPER_URLS="$FIXTURE_URL/helper_mod.py" -e WORKER_ID=preflight \
+        --entrypoint bash "$IMAGE" -c "$WITH_FIXTURES" _ > "$log_ok" 2>&1
+    rc_ok=$?
+    run_in_image -e PREFLIGHT_ON_START=1 -e PREFLIGHT_ARGS="--browsers none --clock-url off" \
+        -e A1_PFX_PATH=/nao/existe.pfx -e SCRIPT_URL="$FIXTURE_URL/job_ok.py" \
+        -e HELPER_URLS="$FIXTURE_URL/helper_mod.py" -e WORKER_ID=preflight \
+        --entrypoint bash "$IMAGE" -c "$WITH_FIXTURES" _ > "$log_fail" 2>&1
+    rc_fail=$?
+    grep -hE "PREFLIGHT_ON_START|Preflight|JOB-OK" "$log_ok" "$log_fail"
+    echo "exit com preflight ok=$rc_ok, com preflight falhando=$rc_fail"
+    [ "$rc_ok" -eq 0 ] && grep -q "Preflight passed" "$log_ok" && grep -q "JOB-OK worker=preflight" "$log_ok" \
+        || { echo "preflight ok não deixou o script rodar"; ok=1; }
+    [ "$rc_fail" -eq 1 ] && grep -q "Preflight failed: stopping before the first task" "$log_fail" \
+        || { echo "preflight falhando não parou o container com exit 1"; ok=1; }
+    if grep -q "JOB-OK" "$log_fail"; then
+        echo "o script rodou mesmo com o preflight falhando"
+        ok=1
+    fi
+    return "$ok"
+}
+
 scenario_egress_loop() {
     # WORKER_LOOP=1 com relay: se o relay cair, a iteração é pulada (o script não roda
     # sem a saída certa) e o worker volta sozinho quando o relay volta
@@ -317,6 +378,8 @@ scenario_single_run_ok() {
     grep -m1 "Imagem " "$log" || { echo "linha da imagem ausente no log"; return 1; }
     grep -A3 "📊 Recursos de job_ok.py (exit 0" "$log" || { echo "resumo de recursos ausente"; return 1; }
     grep -q '^RESOURCE_SUMMARY {.*"exit_code": 0' "$log" || { echo "linha RESOURCE_SUMMARY ausente"; return 1; }
+    # divisão por processo (o script dura menos que uma amostra: o grupo dele é conferido no cenário de limites)
+    grep -q '^RESOURCE_SUMMARY {.*"processos": {' "$log" || { echo "divisão por processo ausente"; return 1; }
     return "$rc"
 }
 
@@ -362,8 +425,10 @@ import json, sys
 line = next(l for l in open(sys.argv[1], encoding="utf-8") if l.startswith("RESOURCE_SUMMARY "))
 s = json.loads(line.split(" ", 1)[1])
 peak, cpu = s["memoria"]["pico_mb"], s["limites"]["cpu_nucleos"]
-print(f"pico medido {peak} MB (alocados 300 MB), limite de CPU {cpu}")
+script_peak = s["processos"]["script"]["memoria_pico_mb"]
+print(f"pico medido {peak} MB (alocados 300 MB; {script_peak} MB no grupo do script), limite de CPU {cpu}")
 assert peak >= 300, "o pico não incluiu os 300 MB alocados"
+assert script_peak >= 300, "a divisão por processo não pôs os 300 MB no script"
 assert cpu == 0.5, "limite de CPU errado"
 PY
     return "$ok"
@@ -409,6 +474,8 @@ SCENARIOS=(
     "smoke_test.py (falha se o browser falhar):scenario_smoke_test"
     "worker em loop (SCRIPT_URL + HELPER_URLS, tokens fora do log):scenario_worker_loop"
     "worker em loop com relay - pula iteração com o relay fora do ar:scenario_egress_loop"
+    "worker em loop - script travado (SIGTERM ignorado) morto com SIGKILL e Chrome esquecido fechado:scenario_loop_cleanup"
+    "preflight na partida (PREFLIGHT_ON_START=1) - ok roda o script, falha para com exit 1:scenario_preflight_on_start"
     "execução única com SCRIPT_URL:scenario_single_run_ok"
     "falha do script propaga exit code:scenario_single_run_failure_propagates"
     "limites do container - avisos do preflight e resumo de recursos (shm 64 MB, 1 GB, 0,5 CPU):scenario_limits_and_resources"

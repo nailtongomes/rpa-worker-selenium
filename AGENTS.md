@@ -21,7 +21,7 @@ Usuários da imagem dependem do que está abaixo. Não mude nada disso sem pedid
   `/app/preflight.py`, `/app/pjeoffice_check.py`, `/app/resource_usage.py`, `/app/image_info.py`
   (+ `/app/image_info.json`, gravado no build), `/opt/icp-brasil/` (`raizes.pem`, `acs.pem`).
 - Variáveis de ambiente e seus defaults (`USE_*`, `WORKER_*`, `SCRIPT_URL`, `HELPER_URLS`,
-  `CHROME_PROFILE_URL`, `TASK_*`, `SCREEN_*`, `PJEOFFICE_*`, `A1_PFX_*`, `EGRESS_*`, `RESOURCE_*`).
+  `CHROME_PROFILE_URL`, `TASK_*`, `SCREEN_*`, `PJEOFFICE_*`, `A1_PFX_*`, `EGRESS_*`, `RESOURCE_*`, `PREFLIGHT_*`).
   Sem `EGRESS_PROXY_URL` o container sai direto, como sempre (recurso opcional, só alguns clientes). Os defaults do entrypoint
   estão travados em `tests/unit/test_entrypoint.py`.
 - Build-args usados pelo release: `BUILD_PJEOFFICE=1`, `ENABLE_PDF_TOOLS=1`,
@@ -42,7 +42,7 @@ Para conferir se uma mudança alterou o contrato, compare snapshots
 | `image/app/a1_check.py`, `a1_testkit.py` | verificador do A1 e ferramentas de teste (ICP de teste, servidor mTLS local) |
 | `image/app/egress_proxy.py`, `egress_check.py`, `egress_testkit.py` | relay de saída: repassador local + config de browsers/Python/Java, verificador e relay de referência/teste |
 | `image/app/preflight.py` | "o worker está pronto?": browsers + `a1_check` + `egress_check` num JSON |
-| `image/app/resource_usage.py` | CPU/memória de cada execução pelo cgroup (média, p95, pico, sugestão de reserva); o entrypoint e o standby rodam o script através dele (`RESOURCE_SUMMARY=1`); `report` junta `/app/logs/resources.jsonl` |
+| `image/app/resource_usage.py` | CPU/memória de cada execução pelo cgroup (média, p95, pico, sugestão de reserva) e por grupo de processos pelo `/proc` (Chrome, PJeOffice, Xvfb, script...); o entrypoint e o standby rodam o script através dele (`RESOURCE_SUMMARY=1`); `report` junta `/app/logs/resources.jsonl` |
 | `image/app/image_info.py` | qual imagem é esta: grava `/app/image_info.json` no build (`IMAGE_REVISION`), primeira linha do log e `"imagem"` no preflight |
 | `image/app/pjeoffice_check.py` | o PJeOffice assina? Chrome clica em "Testar" na página local dele (127.0.0.1:8800), xdotool responde a senha; usado pelo `a1_check` com `USE_PJEOFFICE=1` |
 | `image/icp-brasil/` | raízes (fingerprint fixado) + ACs oficiais da ICP-Brasil (ITI) → `/opt/icp-brasil`; só para validar cadeia do A1, fora do trust store |
@@ -122,7 +122,15 @@ como `secret_env: null` ou arquivo; URLs de exemplo em `example.com`; portas só
 mudar o exit code (sinal vira 128+N, como no shell) nem segurar a saída do script (stdout/stderr herdados).
 O comando direto (`docker run imagem <comando>`) continua com `exec`, sem o medidor no meio.
 O preflight só avisa sobre o ambiente (shm, disco, memória, CPU, relógio); nada ali reprova o worker,
-e a conferência do relógio nunca sai direto quando há relay.
+e a conferência do relógio nunca sai direto quando há relay. A divisão por processo lê a PSS
+(`smaps_rollup`, cara) só a cada `PSS_REFRESH_SECS`: o medidor não pode pesar na CPU que ele mede.
+
+**Loop (`WORKER_LOOP=1`):** a iteração roda em `timeout --kill-after` num `bash -c 'trap : TERM; ...'`.
+O `trap` faz o bash esperar o script depois do SIGTERM; sem ele o `timeout` voltaria na hora e um script
+que ignora o SIGTERM continuaria rodando. Depois de cada iteração, `cleanup_iteration` fecha só browsers e
+drivers, reconhecidos pelo executável (`/opt/chrome`, `/opt/firefox`, chromedriver, uc_driver,
+geckodriver). Serviços (Xvfb, OpenBox, PJeOffice, VNC, relay) nunca entram nessa lista.
+`PREFLIGHT_ON_START=1` roda depois dos serviços e antes do primeiro script (e do standby).
 
 **Mexer no entrypoint:** mantenha `set -e`, funções pequenas e o padrão de log
 `$(log_timestamp) <emoji> mensagem`. Serviços que dependem de outro (OpenBox → Xvfb,
@@ -223,5 +231,8 @@ noVNC → VNC) devem checar a dependência e pular com aviso, não falhar.
   duplicada entre camadas; sem Java 21 (o `java`/`keytool` do PATH é o Java 8 do PJeOffice), sem o ffmpeg do
   PJeOffice (stub), sem `pcsc-tools`/Perl, sem traduções fora pt/en, manuais e testes do pandas/numpy. Dockerfile
   anterior em `legacy/`.
+- [x] **Operação do worker:** divisão do resumo de recursos por processo e momento dos picos; loop com SIGKILL
+  para script travado (`WORKER_KILL_AFTER`) e limpeza de browsers/drivers esquecidos entre iterações
+  (`WORKER_CLEANUP`); `PREFLIGHT_ON_START=1` para falhar na partida.
 - [ ] **Fase 3:** alinhar `requirements.txt` com o que de fato roda (`cryptography`, `psutil`,
   `oscrypto`); revisar `set -e` x falha no download do profile.

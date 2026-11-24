@@ -50,14 +50,16 @@ Cenários (cada um é um `docker run` separado; qualquer falha => exit 1):
 | `smoke_test.py` | o script padrão da imagem agora **falha** se o browser falhar |
 | worker em loop | `WORKER_LOOP=1` baixa `SCRIPT_URL` + `HELPER_URLS` e executa ≥ 2 iterações, com o resumo de recursos em cada uma; as URLs levam usuário/senha e tokens na query, e nenhum deles pode aparecer no log |
 | worker em loop com relay | relay derrubado no meio do loop: as iterações são puladas (o script não roda) e o worker retoma sozinho quando o relay volta |
-| execução única | `SCRIPT_URL` executa e o helper de `/app/src` é importável; o log começa com a linha da imagem e termina com o resumo de recursos (`📊` e `RESOURCE_SUMMARY`) |
+| worker em loop: script travado | `job_stuck.py` deixa um Chrome aberto fora do grupo de processos e ignora o SIGTERM: no `WORKER_TIMEOUT` ele recebe SIGTERM, `WORKER_KILL_AFTER` depois SIGKILL, e antes da próxima iteração não sobra nem o script, nem o Chrome, nem o perfil temporário dele |
+| preflight na partida | `PREFLIGHT_ON_START=1`: preflight ok deixa o script rodar; preflight falhando (A1 que não existe) para o container com exit 1 sem rodar o script |
+| execução única | `SCRIPT_URL` executa e o helper de `/app/src` é importável; o log começa com a linha da imagem e termina com o resumo de recursos (`📊` e `RESOURCE_SUMMARY`, com a divisão por processo) |
 | falha propaga exit code | script com `sys.exit(3)` => container termina com exit 3, mesmo com o medidor de recursos no meio |
-| limites do container | `--shm-size=64m -m 1g --cpus 0.5` com `USE_PJEOFFICE=1`: o preflight avisa sobre `/dev/shm`, memória e CPU **sem reprovar**; o `resource_usage.py` lê os limites e mede um pico de 300 MB alocados |
+| limites do container | `--shm-size=64m -m 1g --cpus 0.5` com `USE_PJEOFFICE=1`: o preflight avisa sobre `/dev/shm`, memória e CPU **sem reprovar**; o `resource_usage.py` lê os limites e mede um pico de 300 MB alocados, atribuídos ao grupo do script na divisão por processo |
 | comando direto | `docker run <imagem> python --version` |
 | modo standby | `/health` = 200 e `/task` sem token = 401 |
 
 Os cenários com script usam um servidor HTTP **dentro do container** servindo
-`tests/image/fixtures/` (página de teste, `job_ok.py`, `job_fail.py`, `helper_mod.py`),
+`tests/image/fixtures/` (página de teste, `job_ok.py`, `job_fail.py`, `job_stuck.py`, `helper_mod.py`),
 então não dependem de serviços externos.
 
 Resultados em `test-results/`: `junit-*.xml`, `screenshots/` (cada browser salva a tela),
