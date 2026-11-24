@@ -185,6 +185,36 @@ def test_pjeoffice_jre_runs():
     assert 'version "1.8' in out, out
 
 
+@_requires("pjeoffice")
+def test_java_on_path_is_the_pjeoffice_jre():
+    """Imagem enxuta: sem Java 21 do sistema; `java`/`keytool` do PATH são os do PJeOffice (Java 8)."""
+    for tool in ("java", "keytool"):
+        assert os.path.realpath(shutil.which(tool)) == os.path.realpath(f"/opt/pjeoffice/jre/bin/{tool}")
+    assert not Path("/usr/lib/jvm").exists()
+    assert 'version "1.8' in _run("java", "-version")
+
+
+@_requires("pjeoffice")
+def test_pjeoffice_ffmpeg_is_a_stub():
+    """O ffmpeg do PJeOffice (75 MB, só para cortar vídeo) vira um stub que sai com erro, sem travar o launcher."""
+    stub = Path("/opt/pjeoffice/ffmpeg.exe")
+    assert stub.stat().st_size < 1024
+    assert subprocess.run([str(stub), "-version"], capture_output=True).returncode == 1
+
+
+def test_image_stays_slim():
+    """Só pt/en nas traduções (Chrome e sistema), sem manuais; a venv continua do rpauser."""
+    locales = sorted(p.name for p in Path("/opt/chrome/locales").iterdir())
+    assert "pt-BR.pak" in locales and "en-US.pak" in locales and len(locales) <= 4, locales
+    # a camada do debian:trixie traz os seus; o que importa é o que instalamos por cima (GTK, xdotool)
+    assert not Path("/usr/share/locale/de/LC_MESSAGES/gtk30.mo").exists()
+    assert Path("/usr/share/locale/pt_BR/LC_MESSAGES/gtk30.mo").exists()
+    assert not Path("/usr/share/man/man1/xdotool.1.gz").exists()
+    assert not shutil.which("pcsc_scan") and shutil.which("pcscd")
+    assert Path("/opt/venv/lib").stat().st_uid == 1000
+    assert not any(Path(sys.prefix).glob("lib/python*/site-packages/pandas/tests"))
+
+
 @_requires("pdf")
 @pytest.mark.parametrize("tool", ["convert", "gs"])
 def test_pdf_tools(tool):

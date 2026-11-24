@@ -188,7 +188,7 @@ serve como verificação prévia num fluxo do Kestra.
 
 | Sintoma | Causa | O que fazer |
 |---|---|---|
-| PJeOffice não abre o certificado; `a1_check` mostra "fora do ASCII" | O Java 21 não abre `.pfx` com senha acentuada ou com `ç` | Regrave com uma senha ASCII: `a1cert.export_pfx(cert, "/tmp/novo.pfx", "nova-senha")` |
+| PJeOffice não abre o certificado; `a1_check` mostra "fora do ASCII" | O Java não abre `.pfx` com senha acentuada ou com `ç` | Regrave com uma senha ASCII: `a1cert.export_pfx(cert, "/tmp/novo.pfx", "nova-senha")` |
 | `senha incorreta ou arquivo .pfx inválido` | senha errada, arquivo corrompido ou baixado pela metade (HTML de erro no lugar do `.pfx`) | confira a URL com `curl -I` e a senha |
 | `.pfx` antigo (RC2-40/3DES) | formato legado, que o OpenSSL 3 recusa sem o provider `legacy` | já suportado na imagem (Python, NSS e Java); testado no portão |
 | ⚠️ cadeia: "o .pfx não traz as ACs" | exportado sem a cadeia | os browsers locais funcionam; se um site recusar, exporte novamente com a cadeia |

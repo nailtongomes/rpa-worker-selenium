@@ -1,0 +1,565 @@
+# syntax=docker/dockerfile:1.7
+
+# rpa-worker-selenium Dockerfile (Debian Trixie Desktop)
+# Full Debian Trixie-based image with comprehensive GUI/window management support
+# Optimized for handling PJeOffice certificate dialogs and complex window interactions
+# Uses Debian Trixie (13) - more complete and updated than Bookworm (12)
+
+# ---------- STAGE 1: builder
+FROM debian:trixie-slim AS builder
+
+# https://googlechromelabs.github.io/chrome-for-testing/
+ARG CHROME_VERSION=158.0.8127.36
+# OLD: 156.0.8078.47
+
+# https://www.firefox.com/en-US/releases/
+ARG FIREFOX_VERSION=153.7.0esr
+#153.5.1esr 140.12.0esr
+ARG GECKODRIVER_VERSION=0.37.1
+
+ENV DEBIAN_FRONTEND=noninteractive
+
+# Install build dependencies
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    curl \
+    wget \
+    unzip \
+    bzip2 \
+    xz-utils \
+    ca-certificates \
+    && rm -rf /var/lib/apt/lists/*
+
+WORKDIR /downloads
+
+# Target architecture, set by BuildKit (docker build / buildx): amd64 (production
+# image, :latest) or arm64 (:latest-arm64 — Ampere/Graviton/Axion servers).
+# Chrome for Testing, Firefox and GeckoDriver publish both; the downloaded
+# folders are renamed so later stages do not depend on the architecture.
+ARG TARGETARCH
+
+# Download Chrome and ChromeDriver from Chrome for Testing
+RUN case "${TARGETARCH:-amd64}" in \
+        amd64) cft=linux64 ;; \
+        arm64) cft=linux-arm64 ;; \
+        *) echo "unsupported TARGETARCH=${TARGETARCH}" >&2; exit 1 ;; \
+    esac \
+ && curl -f -Lo "chromedriver.zip" "https://storage.googleapis.com/chrome-for-testing-public/${CHROME_VERSION}/${cft}/chromedriver-${cft}.zip" \
+ && curl -f -Lo "chrome.zip" "https://storage.googleapis.com/chrome-for-testing-public/${CHROME_VERSION}/${cft}/chrome-${cft}.zip" \
+ && unzip -q chromedriver.zip \
+ && unzip -q chrome.zip \
+ && mv "chromedriver-${cft}" chromedriver-dist \
+ && mv "chrome-${cft}" chrome-dist
+
+# Download Firefox ESR and GeckoDriver
+RUN case "${TARGETARCH:-amd64}" in \
+        amd64) ff=linux-x86_64; gd=linux64 ;; \
+        arm64) ff=linux-aarch64; gd=linux-aarch64 ;; \
+        *) echo "unsupported TARGETARCH=${TARGETARCH}" >&2; exit 1 ;; \
+    esac \
+ && curl -f --retry 5 -Lo firefox.tar.xz \
+    "https://ftp.mozilla.org/pub/firefox/releases/${FIREFOX_VERSION}/${ff}/pt-BR/firefox-${FIREFOX_VERSION}.tar.xz" \
+    && tar -xf firefox.tar.xz \
+ && curl -f --retry 5 --retry-delay 10 -Lo "geckodriver.tar.gz" \
+    "https://github.com/mozilla/geckodriver/releases/download/v${GECKODRIVER_VERSION}/geckodriver-v${GECKODRIVER_VERSION}-${gd}.tar.gz" \
+    && tar -zxf geckodriver.tar.gz
+
+# ---------- STAGE 2: runtime
+FROM debian:trixie
+
+# Timezone + locale Brasil
+RUN apt-get update && \
+    DEBIAN_FRONTEND=noninteractive apt-get install -y \
+        tzdata locales && \
+    ln -snf /usr/share/zoneinfo/America/Sao_Paulo /etc/localtime && \
+    echo "America/Sao_Paulo" > /etc/timezone && \
+    sed -i 's/^# pt_BR.UTF-8 UTF-8/pt_BR.UTF-8 UTF-8/' /etc/locale.gen && \
+    locale-gen && \
+    update-locale LANG=pt_BR.UTF-8
+
+ENV LANG=pt_BR.UTF-8 \
+    LANGUAGE=pt_BR:pt \
+    LC_ALL=pt_BR.UTF-8 \
+    TZ=America/Sao_Paulo
+
+# Pass build argument to runtime stage
+# Build arguments for optional features (all default to 0 for minimal image)
+ARG BUILD_PJEOFFICE=0
+ARG ENABLE_VNC=0
+ARG ENABLE_FFMPEG=0
+ARG ENABLE_NOVNC=0
+ARG ENABLE_PDF_TOOLS=0
+ARG CHROME_PROFILE_URL=""
+
+# Create and activate virtual environment (for PEP 668 compliance in Ubuntu 24.04)
+# This must be done after installing python3-venv below
+
+LABEL maintainer="nailtongsilva@gmail.com" \
+      version="3.0" \
+      description="Debian Trixie (13) Selenium with comprehensive GUI/window management for PJeOffice and RPA"
+
+# old screen 1366x768
+ENV DEBIAN_FRONTEND=noninteractive \
+    PYTHONUNBUFFERED=1 \
+    PYTHONDONTWRITEBYTECODE=1 \
+    DISPLAY=:99 \
+    SCREEN_WIDTH=1600 \
+    SCREEN_HEIGHT=900 \
+    HOME=/root \
+    MOZ_ALLOW_ROOT=1 \
+    XDG_RUNTIME_DIR=/tmp/runtime-root \
+    CHROME_PROFILE_URL=${CHROME_PROFILE_URL}
+
+# Install core system dependencies and desktop environment components
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    # Core system utilities
+    ca-certificates \
+    gnupg \
+    curl \
+    wget \
+    unzip \
+    zip \
+    bzip2 \
+    xz-utils \
+    # Python and build tools
+    python3 \
+    python3-pip \
+    python3-tk \
+    python3-venv \
+    # X11 and display management
+    xvfb \
+    x11-utils \
+    x11-xserver-utils \
+    # xserver-xorg-core \
+    # xserver-xorg-video-dummy \
+    # Window managers and desktop components
+    openbox \
+    xterm \
+    # Font rendering and internationalization
+    fontconfig \
+    fonts-liberation \
+    fonts-dejavu-core \
+    # fonts-noto \
+    # fonts-noto-color-emoji \
+    # GUI libraries (comprehensive set for window handling)
+    libgtk-3-0 \
+    # libgtk2.0-0 \
+    libgdk-pixbuf-2.0-0 \
+    libglib2.0-0 \
+    libdbus-1-3 \
+    libdbus-glib-1-2 \
+    libx11-6 \
+    libx11-xcb1 \
+    libxcb1 \
+    libxcomposite1 \
+    libxcursor1 \
+    libxdamage1 \
+    libxext6 \
+    libxfixes3 \
+    libxi6 \
+    libxrandr2 \
+    libxrender1 \
+    libxss1 \
+    libxt6 \
+    libxtst6 \
+    libxinerama1 \
+    libxkbcommon0 \
+    libxshmfence1 \
+    # Graphics and rendering
+    libgl1 \
+    libglx0 \
+    # libglu1-mesa \
+    # Fonts Fingerprints
+    fonts-noto-color-emoji \
+    fonts-freefont-ttf \
+    fonts-roboto \
+    fonts-droid-fallback \
+    libvulkan1 \
+    # Audio support (required by some certificate dialog boxes)
+    libasound2 \
+    # pulseaudio \
+    # NSS and certificate handling
+    libnss3 \
+    libnss3-tools \
+    libnspr4 \
+    p11-kit \
+    p11-kit-modules \
+    # PKCS#11 and smartcard support (critical for A1 certificate tokens)
+    libpcsclite1 \
+    pcscd \
+    pcsc-tools \
+    opensc \
+    opensc-pkcs11 \
+    # Additional desktop utilities for window management
+    wmctrl \
+    xdotool \
+    # xautomation \
+    xclip \
+    # Process management
+    procps \
+    psmisc \
+    # Cryptography and certificate tools
+    openssl \
+    # Cups for printing support (sometimes needed for certificate dialogs)
+    libcups2 \
+    # AT-SPI accessibility (required for some GTK dialogs)
+    at-spi2-core \
+    libatk1.0-0 \
+    libatk-bridge2.0-0 \
+    # Cairo graphics
+    libcairo2 \
+    libcairo-gobject2 \
+    libpangocairo-1.0-0 \
+    libpango-1.0-0 \
+    libpangoft2-1.0-0 \
+    # Additional dependencies
+    libu2f-udev \
+    libappindicator3-1 \
+    libgbm1 \
+    libdrm2 \
+    # Security tools
+    sudo \
+    # D-Bus for inter-process communication (critical for dialogs)
+    dbus \
+    dbus-x11 \
+    # PolicyKit for authentication dialogs
+    # polkitd \
+    && rm -rf /var/lib/apt/lists/*
+
+# ============================================================================
+# FINGERPRINT: extended font set + desktop integration
+# Container base ships a sparse, atypical font list — a detectable outlier in
+# canvas/font-enumeration checks. This widens it to a plausible Linux desktop.
+# xdg-utils is required for custom protocol handlers (e.g. pjeoffice://).
+# Isolated block: delete to roll back, no impact on layers above.
+# ============================================================================
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    # Metric-compatible with Arial / Times New Roman / Calibri / Cambria
+    fonts-liberation2 \
+    fonts-crosextra-carlito \
+    fonts-crosextra-caladea \
+    # Broad Unicode coverage (accented pt-BR, symbols, legal glyphs)
+    fonts-noto-core \
+    # Common UI / web fonts
+    fonts-lato \
+    fonts-open-sans \
+    # Monospace and icon sets
+    fonts-mononoki \
+    fonts-terminus \
+    fonts-powerline \
+    fonts-font-awesome \
+    # Desktop integration: protocol handlers, MIME dispatch
+    xdg-utils \
+    # AT-SPI client lib (GTK dialog introspection)
+    libatspi2.0-0 \
+    && fc-cache -fv \
+    && rm -rf /var/lib/apt/lists/*
+
+# ============================================================================
+# OPTIONAL: VNC server (installed only when ENABLE_VNC=1)
+# Used for remote debugging and visual inspection
+# ============================================================================
+RUN if [ "$ENABLE_VNC" = "1" ]; then \
+    echo "Installing VNC support..."; \
+    apt-get update && apt-get install -y --no-install-recommends \
+        x11vnc \
+    && rm -rf /var/lib/apt/lists/*; \
+fi
+
+# ============================================================================
+# OPTIONAL: FFmpeg (installed only when ENABLE_FFMPEG=1)
+# Used for screen recording during debugging
+# ============================================================================
+RUN if [ "$ENABLE_FFMPEG" = "1" ]; then \
+    echo "Installing FFmpeg..."; \
+    apt-get update && apt-get install -y --no-install-recommends \
+        ffmpeg \
+    && rm -rf /var/lib/apt/lists/*; \
+fi
+
+# ============================================================================
+# OPTIONAL: PDF tools (installed only when ENABLE_PDF_TOOLS=1)
+# ImageMagick and Ghostscript for PDF manipulation/signing
+# Note: PDF signing can be delegated to external APIs in most cases
+# ============================================================================
+RUN if [ "$ENABLE_PDF_TOOLS" = "1" ]; then \
+    echo "Installing PDF tools (ImageMagick + Ghostscript)..."; \
+    apt-get update && apt-get install -y --no-install-recommends \
+        imagemagick \
+        ghostscript \
+    && rm -rf /var/lib/apt/lists/*; \
+fi
+
+
+# Create and activate virtual environment for PEP 668 compliance
+# Debian Trixie enforces externally-managed Python environment
+RUN python3 -m venv /opt/venv
+ENV PATH="/opt/venv/bin:$PATH"
+
+# Copy Chrome and ChromeDriver from builder stage
+COPY --from=builder /downloads/chrome-dist /opt/chrome
+COPY --from=builder /downloads/chromedriver-dist/chromedriver /usr/local/bin/chromedriver
+
+# Copy Firefox and GeckoDriver from builder stage
+COPY --from=builder /downloads/firefox /opt/firefox/
+COPY --from=builder /downloads/geckodriver /usr/local/bin/geckodriver
+
+# Build-time only: patched and deleted in the same layer
+COPY image/patch_chromedriver.py /usr/local/bin/patch_chromedriver.py
+
+RUN chmod 0755 \
+        /usr/local/bin/chromedriver \
+        /usr/local/bin/patch_chromedriver.py \
+    && python3 /usr/local/bin/patch_chromedriver.py \
+    && rm -f /usr/local/bin/patch_chromedriver.py
+
+# Create symbolic links and set permissions for Chrome
+RUN ln -s /opt/chrome/chrome /usr/local/bin/chrome \
+    && ln -s /opt/chrome/chrome /usr/local/bin/google-chrome \
+    && chmod +x /usr/local/bin/chromedriver \
+    && chmod +x /opt/chrome/chrome
+
+# Optional: Download Chrome profile zip from URL at build time
+# When CHROME_PROFILE_URL is provided during build, downloads and extracts the profile
+# Location: /usr/local/share/chrome-profile/
+# If URL is not provided at build time, it can be downloaded at runtime via entrypoint
+RUN if [ -n "$CHROME_PROFILE_URL" ]; then \
+    echo "📦 Downloading Chrome profile from $CHROME_PROFILE_URL..."; \
+    mkdir -p /usr/local/share/chrome-profile && \
+    curl -fsSL "$CHROME_PROFILE_URL" -o /tmp/chrome-profile.zip && \
+    unzip -q /tmp/chrome-profile.zip -d /usr/local/share/chrome-profile && \
+    rm -f /tmp/chrome-profile.zip && \
+    echo "✅ Chrome profile extracted to /usr/local/share/chrome-profile/"; \
+else \
+    echo "ℹ️ CHROME_PROFILE_URL not set at build time - can be provided at runtime"; \
+fi
+
+# Create symbolic links and set permissions for Firefox
+RUN ln -s /opt/firefox/firefox /usr/local/bin/firefox \
+    && chmod +x /usr/local/bin/geckodriver \
+    && chmod +x /opt/firefox/firefox
+
+# Create symlinks for Python (Debian Trixie uses Python 3.12 by default)
+RUN ln -sf /usr/bin/python3 /usr/bin/python
+
+# Create non-root user with proper groups for GUI access
+RUN useradd -m -d /app -u 1000 -s /bin/bash rpauser \
+    && echo "rpauser ALL=(ALL) NOPASSWD: ALL" >> /etc/sudoers \
+    && usermod -aG audio,video,render rpauser
+
+# Set up working directory structure
+WORKDIR /app
+RUN mkdir -p /app/src /app/logs /app/tmp /app/recordings \
+    /app/.pki/nssdb \
+    /app/.cache \
+    /app/.config \
+    /app/.local/share \
+    /root/.pki/nssdb \
+    /root/.cache \
+    /root/.config \
+    /root/.local/share \
+    /data \
+    && chmod 1777 /app/tmp \
+    && chmod 700 /app/.pki/nssdb \
+    && chmod 700 /root/.pki/nssdb \
+    && chmod 777 /data \
+    && chmod 777 /app/recordings \
+    && chown -R rpauser:rpauser /app
+
+# Create Chrome policy directory for AutoSelectCertificateForUrls
+# Python will write JSON policy files here at runtime
+# Set ownership to rpauser to allow direct write access without sudo
+RUN mkdir -p /etc/opt/chrome/policies/managed \
+    && chown -R rpauser:rpauser /etc/opt/chrome/policies/managed \
+    && chmod 755 /etc/opt/chrome/policies/managed
+
+RUN mkdir -p /etc/opt/chrome_for_testing/policies/managed \
+    && chown -R rpauser:rpauser /etc/opt/chrome_for_testing/policies/managed \
+    && chmod 755 /etc/opt/chrome_for_testing/policies/managed
+
+# Set up OpenBox configuration to prevent menu warnings
+RUN mkdir -p /var/lib/openbox && \
+    echo '<?xml version="1.0" encoding="UTF-8"?>' > /var/lib/openbox/debian-menu.xml && \
+    echo '<openbox_menu xmlns="http://openbox.org/3.4/menu">' >> /var/lib/openbox/debian-menu.xml && \
+    echo '    <menu id="root-menu" label="Openbox 3">' >> /var/lib/openbox/debian-menu.xml && \
+    echo '        <item label="Terminal">' >> /var/lib/openbox/debian-menu.xml && \
+    echo '            <action name="Execute"><command>xterm</command></action>' >> /var/lib/openbox/debian-menu.xml && \
+    echo '        </item>' >> /var/lib/openbox/debian-menu.xml && \
+    echo '    </menu>' >> /var/lib/openbox/debian-menu.xml && \
+    echo '</openbox_menu>' >> /var/lib/openbox/debian-menu.xml && \
+    chmod 644 /var/lib/openbox/debian-menu.xml
+
+# Optional: Install PJeOffice (controlled by BUILD_PJEOFFICE build argument)
+# PJeOffice is only published as linux_x64: a Java app (.jar, any architecture)
+# plus a bundled x86-64 Azul Zulu 8 JRE with JavaFX. On arm64 that bundled JRE
+# is swapped for the same vendor's Zulu 8 FX JRE for aarch64 (checksum pinned);
+# amd64 keeps the bundle untouched.
+ARG TARGETARCH
+ARG PJEOFFICE_JRE_ARM64_URL=https://cdn.azul.com/zulu/bin/zulu8.98.0.111-ca-fx-jre8.0.512-linux_aarch64.tar.gz
+ARG PJEOFFICE_JRE_ARM64_SHA256=897dd578c23f491ff0b700ce9641e3545d4f577c934c8f8f3a76a0583f2bfcbc
+RUN if [ "$BUILD_PJEOFFICE" = "1" ]; then \
+    mkdir -p /opt/pjeoffice && \
+    cd /tmp && \
+    curl -Lo "pjeoffice.zip" "https://pje-office.pje.jus.br/pro/pjeoffice-pro-v2.5.16u-linux_x64.zip" && \
+    unzip pjeoffice.zip && \
+    if [ "${TARGETARCH:-amd64}" = "arm64" ]; then \
+        rm -rf pjeoffice-pro/jre && mkdir pjeoffice-pro/jre && \
+        curl -f --retry 5 -Lo jre.tar.gz "$PJEOFFICE_JRE_ARM64_URL" && \
+        echo "$PJEOFFICE_JRE_ARM64_SHA256  jre.tar.gz" | sha256sum -c - && \
+        tar -xzf jre.tar.gz -C pjeoffice-pro/jre --strip-components=1 && \
+        rm -f jre.tar.gz || exit 1; \
+    fi && \
+    cp -r pjeoffice-pro/* /opt/pjeoffice/ && \
+    rm -rf pjeoffice.zip pjeoffice-pro && \
+    chown -R rpauser:rpauser /opt/pjeoffice && \
+    chmod -R 755 /opt/pjeoffice && \
+    chmod +x /opt/pjeoffice/pjeoffice-pro.sh && \
+    mkdir -p /app/.pjeoffice-pro && \
+    chown -R rpauser:rpauser /app/.pjeoffice-pro && \
+    chmod -R 755 /app/.pjeoffice-pro; \
+    echo "Installing Java..."; \
+    apt-get update && apt-get install -y --no-install-recommends \
+        openjdk-21-jre-headless \
+    && rm -rf /var/lib/apt/lists/*; \
+fi
+
+# ============================================================================
+# Python dependencies (virtual environment)
+#
+# SeleniumBase always tracks the latest release on PyPI: it is upgraded right
+# after requirements.txt, in the SAME layer (a separate layer would duplicate
+# every package it upgrades, e.g. selenium/psutil, adding ~50 MB).
+# Any new value for SELENIUMBASE_REFRESH busts the cache of this layer; the
+# release workflow passes the run id, so every published image ships the
+# newest SeleniumBase even when the GitHub Actions layer cache is warm.
+# ============================================================================
+COPY requirements.txt .
+ARG SELENIUMBASE_REFRESH=""
+RUN --mount=type=cache,target=/root/.cache/pip \
+    apt-get update \
+ && apt-get install -y --no-install-recommends build-essential python3-dev \
+ && pip install --upgrade pip \
+ && pip install -r requirements.txt \
+ && pip install --upgrade seleniumbase \
+ && pip show seleniumbase | grep -E '^(Name|Version):' \
+ ; RC=$? ; \
+    chmod -R 777 /opt/venv/lib/python*/site-packages/seleniumbase/drivers 2>/dev/null || true ; \
+    apt-get purge -y build-essential python3-dev \
+ && apt-get autoremove -y && apt-get clean \
+ && rm -rf /var/lib/apt/lists/* \
+ ; exit $RC
+
+
+# ============================================================================
+# OPTIONAL: noVNC and websockify (installed only when ENABLE_NOVNC=1)
+# Browser-based VNC access for remote debugging
+# Requires git to clone noVNC, which is removed after installation
+# ============================================================================
+RUN if [ "$ENABLE_NOVNC" = "1" ]; then \
+    echo "Installing noVNC and websockify..."; \
+    apt-get update && apt-get install -y --no-install-recommends git && \
+    mkdir -p /opt/novnc && \
+    git clone --depth 1 https://github.com/novnc/noVNC.git /opt/novnc && \
+    ln -s /opt/novnc/vnc.html /opt/novnc/index.html && \
+    pip install --no-cache-dir websockify && \
+    ln -s /opt/venv/bin/websockify /usr/local/bin/websockify && \
+    apt-get purge -y git && \
+    apt-get autoremove -y && \
+    rm -rf /var/lib/apt/lists/* /root/.cache/pip; \
+fi
+
+# ============================================================================
+# Runtime dirs, ownership and D-Bus (stable — keep above COPY for cache reuse)
+# ============================================================================
+RUN mkdir -p /var/run/dbus \
+    && chown rpauser:rpauser /var/run/dbus
+
+RUN chown -R rpauser:rpauser /opt/venv
+
+# Ensure runtime directory exists for Firefox sandbox when running as root
+RUN mkdir -p /tmp/runtime-root \
+    && chmod 700 /tmp/runtime-root
+
+# ============================================================================
+# Firefox profile + NSS databases
+# MUST run BEFORE the Firefox warm-up below, which loads this exact profile
+# path. cert9.db / key4.db are initialised here so they can be patched at
+# runtime for A1 certificates.
+# ============================================================================
+RUN mkdir -p /root/.mozilla/firefox \
+    && firefox --headless --CreateProfile "selenium /root/.mozilla/firefox/selenium.default-release" \
+    && certutil -d sql:/root/.mozilla/firefox/selenium.default-release -N --empty-password || true
+
+# ============================================================================
+# Warm-ups (slow, network-bound) — kept above COPY so app code changes
+# do not invalidate them
+# ============================================================================
+
+# Pre-download drivers as root
+RUN python -c "from seleniumbase import Driver; d = Driver(uc=True, incognito=True, headless=True); \
+    d.get('about:blank'); d.quit()" \
+    && ls /opt/venv/lib/python*/site-packages/seleniumbase/drivers/uc_driver \
+    && rm -rf /root/.cache/selenium /tmp/* ~/.cache/pip \
+    && mkdir -p /tmp/runtime-root && chmod 700 /tmp/runtime-root
+
+# Warm-up Firefox: load the profile created above so NSS is fully initialised
+RUN python -c "\
+from selenium import webdriver; \
+from selenium.webdriver.firefox.firefox_profile import FirefoxProfile; \
+from selenium.webdriver.firefox.options import Options; \
+opts = Options(); \
+opts.add_argument('--headless'); \
+profile = FirefoxProfile('/root/.mozilla/firefox/selenium.default-release'); \
+opts.profile = profile; \
+d = webdriver.Firefox(options=opts); \
+d.get('about:blank'); \
+print('Firefox profile created:', d.capabilities.get('moz:profile', 'unknown')); \
+d.quit()"
+
+# Environment variables for control (all optional; defaults to lightweight/headless)
+ENV USE_XVFB=0 \
+    USE_OPENBOX=0 \
+    USE_VNC=0 \
+    USE_NOVNC=0 \
+    USE_PJEOFFICE=0 \
+    USE_SCREEN_RECORDING=0 \
+    VNC_PORT=5900 \
+    NOVNC_PORT=6080 \
+    RECORDING_DIR=/app/recordings \
+    XDG_CACHE_HOME=/root/.cache \
+    XDG_CONFIG_HOME=/root/.config \
+    XDG_DATA_HOME=/root/.local/share
+
+# ICP-Brasil roots + intermediate CAs from ITI, used to validate A1 chains
+# (a1cert.verify_chain). Not added to any trust store: browsers/TLS are unchanged.
+# Refresh with scripts/update-icp-brasil.py.
+COPY image/icp-brasil/ /opt/icp-brasil/
+
+# ============================================================================
+# VOLATILE LAYER — app code. Everything below rebuilds on each commit.
+# Keep this section as small as possible.
+# Only image/app/ is shipped to /app (see .dockerignore allowlist); docs,
+# examples and tests stay out of the production image.
+# ============================================================================
+COPY image/app/ /app/
+
+RUN chmod +x /app/entrypoint.sh /app/script_downloader.py /app/smoke_test.py
+
+# Which image is this? Revision, build time, architecture and browser versions go to
+# /app/image_info.json, shown in the first log line and in the preflight JSON.
+# The release passes the commit and the tag timestamp; local builds say "dev".
+ARG IMAGE_REVISION=dev
+ARG IMAGE_CREATED=""
+RUN python /app/image_info.py write --revision "${IMAGE_REVISION}" --created "${IMAGE_CREATED}"
+
+# Health check to ensure browsers are available
+HEALTHCHECK --interval=30s --timeout=10s --start-period=15s --retries=3 \
+    CMD chrome --version && firefox --version || exit 1
+
+# Run as root user (rpauser kept for compatibility but not used)
+# USER rpauser
+
+# Set up entrypoint for dynamic script execution with download support
+ENTRYPOINT ["/app/entrypoint.sh"]
+
+# Default command (can be overridden)
+CMD ["python", "--version"]
