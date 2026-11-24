@@ -11,13 +11,15 @@ Você troca só o que está marcado (URL do script, certificado, senhas) e roda.
 | Desenvolver ou depurar um script vendo o browser | [Docker local](docker-local/README.md) | seu computador com Docker |
 | Rodar na VPS, mas sair pela internet (IP residencial) do PC do cliente | [internet do cliente](internet-do-cliente/README.md) | VPS + PC com o shutup-and-run |
 | Vários workers num servidor | [`examples/server/`](../examples/server/README.md) | servidor Linux |
+| Workers num servidor ARM barato (Oracle Ampere, Hetzner CAX, Graviton) | [servidor ARM](servidor-arm/README.md) | servidor Linux ARM64 |
 | Worker aguardando tarefas por HTTP (standby) | [`examples/compose/`](../examples/compose/docker-compose.standby.yml), [docs/WORKER.md](../docs/WORKER.md) | servidor |
 | Saída por um relay/proxy próprio (SOCKS5/HTTP) | [docs/EGRESS_RELAY.md](../docs/EGRESS_RELAY.md) | qualquer lugar |
 
 ## O que vale para todas
 
 - **Imagem:** `ghcr.io/nailtongomes/rpa-worker-selenium:latest` (Chrome, Firefox, SeleniumBase UC, PJeOffice,
-  certificado A1 dinâmico). Para fixar uma versão, use a tag `sha-<commit>` ou o digest das
+  certificado A1 dinâmico). Em servidor ARM64, `:latest-arm64` ([servidor ARM](servidor-arm/README.md)).
+  Para fixar uma versão, use a tag `sha-<commit>` (`sha-<commit>-arm64`) ou o digest das
   [notas de release](https://github.com/nailtongomes/rpa-worker-selenium/releases).
 - **Tamanho:** 2 GB de memória e 1 GB de `/dev/shm` por worker. O pico medido com PJeOffice ligado foi
   ~1,1 GB; 2 GB é também o limite padrão por tarefa do shutup-and-run num PC compartilhado.
@@ -28,6 +30,7 @@ Você troca só o que está marcado (URL do script, certificado, senhas) e roda.
   nunca numa variável ou na linha de comando. No script: `cert = a1cert.load_from_env()`
   ([guia do A1](../docs/A1_CERTIFICATE_GUIDE.md)).
 - **Antes de produção:** `python /app/preflight.py` diz se browsers, A1 e relay estão funcionando, num JSON só.
+  Com o PJeOffice ligado (`USE_PJEOFFICE=1`), inclui o teste de assinatura dele (`/app/pjeoffice_check.py`).
 - **Logs:** URLs com token (`SCRIPT_URL`, `HELPER_URLS`) saem mascaradas nos logs da imagem.
 
 ## Testar uma receita do shutup-and-run sem instalar o shutup-and-run

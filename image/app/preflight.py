@@ -11,6 +11,8 @@ Junta três verificações (cada uma também existe sozinha):
                 local; com servidor X (USE_XVFB=1) em modo janela, senão headless.
                 Com --url, o Chrome também abre essas URLs (pela saída configurada).
   2. a1         /app/a1_check.py, se houver A1_PFX_URL/A1_PFX_PATH (ou --a1 on / self-test).
+                Com o PJeOffice ligado (USE_PJEOFFICE=1), inclui o teste de assinatura dele
+                (/app/pjeoffice_check.py: o botão "Testar" da página local).
   3. egress     /app/egress_check.py, se houver EGRESS_PROXY_URL (ou --egress on).
 
 Cada browser/URL tem uma nova tentativa: abrir só na segunda vira aviso (máquina com

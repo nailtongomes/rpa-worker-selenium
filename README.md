@@ -9,12 +9,14 @@ docker pull ghcr.io/nailtongomes/rpa-worker-selenium:latest
 ```
 
 A imagem é construída a partir de [`Dockerfile.trixie`](Dockerfile.trixie) (Debian 13 "Trixie")
-e publicada no GHCR pelo GitHub Actions a cada mudança na `main`.
+e publicada no GHCR pelo GitHub Actions a cada mudança na `main`. Para servidores **ARM64**
+(Oracle Ampere, Hetzner CAX, AWS Graviton), use `:latest-arm64`: mesma imagem e mesmo contrato,
+testada no mesmo portão num runner ARM ([receita do servidor ARM](recipes/servidor-arm/README.md)).
 
 > **Começando?** As [receitas plug and play](recipes/README.md) têm arquivos prontos para copiar:
 > testar o seu certificado A1 no PC com o [shutup-and-run](https://github.com/nailtongomes/shutup-and-run),
 > rotinas no PC sem orquestrador, tarefas cadastradas na nuvem (ou por uma IA) e executadas no PC,
-> desenvolvimento vendo o browser e worker na VPS saindo pela internet do cliente.
+> desenvolvimento vendo o browser, worker na VPS saindo pela internet do cliente e servidor ARM barato.
 
 ---
 
@@ -211,13 +213,14 @@ release: **build → `scripts/test-image.sh` na mesma imagem → push**. Se algu
 nada é publicado e a `:latest` atual continua valendo. Um build noturno sem cache avisa
 antes quando Debian/PyPI quebrarem algo.
 
-Cada release publica três tags:
+Cada release publica três tags por arquitetura (amd64 e arm64, cada uma testada no seu runner nativo;
+uma falha no arm64 não segura o amd64):
 
-| Tag | Uso |
-|---|---|
-| `latest` | produção |
-| `sha-<7 chars>` | imagem de um commit específico |
-| `YYYYMMDD-HHMMSS` | imagem de um momento específico (rollback) |
+| Tag (amd64) | Tag (arm64) | Uso |
+|---|---|---|
+| `latest` | `latest-arm64` | produção |
+| `sha-<7 chars>` | `sha-<7 chars>-arm64` | imagem de um commit específico |
+| `YYYYMMDD-HHMMSS` | `YYYYMMDD-HHMMSS-arm64` | imagem de um momento específico (rollback) |
 
 Cada release também cria um [GitHub Release](https://github.com/nailtongomes/rpa-worker-selenium/releases)
 com o digest publicado, os PRs incluídos, o que mudou dentro da imagem (versões de
@@ -226,7 +229,7 @@ browsers/drivers/pip) e os **comandos de rollback** para a versão anterior.
 Rollback: troque `:latest` pela tag anterior no seu compose/Kestra
 (`docker pull ghcr.io/nailtongomes/rpa-worker-selenium:<tag>`), ou aponte a `:latest` de volta
 para todos com `docker buildx imagetools create -t ...:latest ...:sha-<anterior>`. O GHCR guarda
-só as 5 tags mais recentes.
+só as 5 versões mais recentes de cada arquitetura.
 
 ---
 
@@ -239,6 +242,7 @@ image/
   app/                   # tudo que vai para /app dentro da imagem
     entrypoint.sh        #   orquestra Xvfb/OpenBox/PJeOffice/VNC e executa SCRIPT_URL
     preflight.py         #   "o worker está pronto?" (browsers + A1 + relay num JSON)
+    pjeoffice_check.py   #   o PJeOffice assina? (botão "Testar" da página local dele)
     a1cert.py ...        #   certificado A1 (a1_check.py) e relay de saída (egress_*.py)
     script_downloader.py #   download de SCRIPT_URL e HELPER_URLS
     task_server.py       #   modo standby (HTTP)
@@ -246,7 +250,7 @@ image/
     src/                 #   helpers de exemplo (/app/src)
   icp-brasil/            # raízes + ACs oficiais da ICP-Brasil (ITI) -> /opt/icp-brasil
   patch_chromedriver.py  # usado só durante o build
-recipes/                 # receitas plug and play (shutup-and-run, Docker local, internet do cliente)
+recipes/                 # receitas plug and play (shutup-and-run, Docker local, internet do cliente, servidor ARM)
 tests/
   unit/                  # testes rápidos no host (sem Docker)
   image/                 # testes que rodam DENTRO da imagem
@@ -310,7 +314,7 @@ Mais detalhes em [`docs/TESTING.md`](docs/TESTING.md).
 
 ## Documentação
 
-- [recipes/](recipes/README.md) — receitas plug and play (PC com shutup-and-run, Docker local, internet do cliente)
+- [recipes/](recipes/README.md) — receitas plug and play (PC com shutup-and-run, Docker local, internet do cliente, servidor ARM)
 - [docs/WORKER.md](docs/WORKER.md) — worker em loop e modo standby
 - [docs/EGRESS_RELAY.md](docs/EGRESS_RELAY.md) — relay de saída (internet do cliente): variáveis, requisitos do relay e rotina de teste
 - [docs/A1_CERTIFICATE_GUIDE.md](docs/A1_CERTIFICATE_GUIDE.md) — certificado A1: `a1cert`, `.p7s`, PAdES, `a1_check.py` e problemas conhecidos

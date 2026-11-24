@@ -54,6 +54,7 @@ def _requires(feature: str):
         ("/app/egress_check.py", True),
         ("/app/egress_testkit.py", True),
         ("/app/preflight.py", True),
+        ("/app/pjeoffice_check.py", True),
         ("/app/requirements.txt", False),
     ],
 )
@@ -124,6 +125,35 @@ def test_system_tools(tool):
 def test_pjeoffice_installed():
     assert os.access("/opt/pjeoffice/pjeoffice-pro.sh", os.X_OK)
     assert shutil.which("java"), "Java (necessário ao PJeOffice) ausente"
+
+
+# ELF e_machine: x86-64 = 62, AArch64 = 183
+ELF_MACHINE = {"x86_64": 62, "aarch64": 183}
+
+
+def _elf_machine(path: str) -> int:
+    with open(path, "rb") as fh:
+        header = fh.read(20)
+    assert header[:4] == b"\x7fELF", f"{path} não é um executável ELF"
+    return int.from_bytes(header[18:20], "little")
+
+
+@pytest.mark.parametrize("binary", [
+    "/opt/chrome/chrome", "/usr/local/bin/chromedriver", "/opt/firefox/firefox-bin", "/usr/local/bin/geckodriver",
+    pytest.param("/opt/pjeoffice/jre/bin/java", marks=_requires("pjeoffice")),
+])
+def test_binaries_match_the_machine(binary):
+    """Imagem amd64 e arm64 (:latest-arm64): browsers, drivers e o Java do PJeOffice da arquitetura certa.
+    No arm64 o PJeOffice traz um JRE x86-64 que é trocado no build; este teste pega se a troca falhar."""
+    machine = os.uname().machine
+    assert machine in ELF_MACHINE, f"arquitetura não suportada: {machine}"
+    assert _elf_machine(os.path.realpath(binary)) == ELF_MACHINE[machine], f"{binary} não é {machine}"
+
+
+@_requires("pjeoffice")
+def test_pjeoffice_jre_runs():
+    out = _run("/opt/pjeoffice/jre/bin/java", "-version")
+    assert 'version "1.8' in out, out
 
 
 @_requires("pdf")

@@ -3,7 +3,7 @@
 #
 # Debian Trixie, PyPI (SeleniumBase sempre na última versão) e os sites
 # mudam sem commit neste repositório. Toda noite:
-#   - build da imagem de produção SEM cache + scripts/test-image.sh
+#   - build da imagem de produção SEM cache + scripts/test-image.sh (amd64 e arm64)
 #   - relatório do que mudaria em relação à :latest publicada
 #   - build da variante com FFmpeg + teste de gravação de tela
 #   - ACs da ICP-Brasil empacotadas x repositório do ITI
@@ -21,7 +21,18 @@ permissions:
 
 jobs:
   production-image:
-    runs-on: ubuntu-latest
+    name: production-image (${{ matrix.arch }})
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - arch: amd64
+            runner: ubuntu-latest
+            suffix: ''
+          - arch: arm64
+            runner: ubuntu-24.04-arm
+            suffix: '-arm64'
+    runs-on: ${{ matrix.runner }}
     timeout-minutes: 90
     steps:
       - name: Checkout
@@ -35,7 +46,7 @@ jobs:
         with:
           context: .
           file: ./Dockerfile.trixie
-          platforms: linux/amd64
+          platforms: linux/${{ matrix.arch }}
           load: true
           push: false
           no-cache: true
@@ -54,13 +65,13 @@ jobs:
         if: always()
         continue-on-error: true
         run: |
-          docker pull -q ghcr.io/nailtongomes/rpa-worker-selenium:latest >/dev/null
-          scripts/image-snapshot.sh ghcr.io/nailtongomes/rpa-worker-selenium:latest snapshots/latest >/dev/null
+          docker pull -q ghcr.io/nailtongomes/rpa-worker-selenium:latest${{ matrix.suffix }} >/dev/null
+          scripts/image-snapshot.sh ghcr.io/nailtongomes/rpa-worker-selenium:latest${{ matrix.suffix }} snapshots/latest >/dev/null
           scripts/image-snapshot.sh rpa-worker:nightly snapshots/nightly >/dev/null
           {
             cat test-results/summary.md 2>/dev/null || true
             echo
-            echo "### 🔍 O que mudaria no próximo release (nightly x :latest)"
+            echo "### 🔍 O que mudaria no próximo release (nightly x :latest${{ matrix.suffix }})"
             echo '```diff'
             diff -u snapshots/latest/versions.txt snapshots/nightly/versions.txt | grep '^[-+][^-+]' || echo "(versões de browsers/drivers iguais)"
             diff -u snapshots/latest/pip-freeze.txt snapshots/nightly/pip-freeze.txt | grep '^[-+][^-+]' || echo "(pip freeze igual)"
@@ -72,7 +83,7 @@ jobs:
         if: always()
         uses: actions/upload-artifact@v7
         with:
-          name: nightly-results
+          name: nightly-results-${{ matrix.arch }}
           path: |
             test-results/
             snapshots/

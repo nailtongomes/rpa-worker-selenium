@@ -31,18 +31,36 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 
 WORKDIR /downloads
 
+# Target architecture, set by BuildKit (docker build / buildx): amd64 (production
+# image, :latest) or arm64 (:latest-arm64 — Ampere/Graviton/Axion servers).
+# Chrome for Testing, Firefox and GeckoDriver publish both; the downloaded
+# folders are renamed so later stages do not depend on the architecture.
+ARG TARGETARCH
+
 # Download Chrome and ChromeDriver from Chrome for Testing
-RUN curl -f -Lo "chromedriver-linux64.zip" "https://storage.googleapis.com/chrome-for-testing-public/${CHROME_VERSION}/linux64/chromedriver-linux64.zip" \
- && curl -f -Lo "chrome-linux64.zip" "https://storage.googleapis.com/chrome-for-testing-public/${CHROME_VERSION}/linux64/chrome-linux64.zip" \
- && unzip chromedriver-linux64.zip \
- && unzip chrome-linux64.zip
+RUN case "${TARGETARCH:-amd64}" in \
+        amd64) cft=linux64 ;; \
+        arm64) cft=linux-arm64 ;; \
+        *) echo "unsupported TARGETARCH=${TARGETARCH}" >&2; exit 1 ;; \
+    esac \
+ && curl -f -Lo "chromedriver.zip" "https://storage.googleapis.com/chrome-for-testing-public/${CHROME_VERSION}/${cft}/chromedriver-${cft}.zip" \
+ && curl -f -Lo "chrome.zip" "https://storage.googleapis.com/chrome-for-testing-public/${CHROME_VERSION}/${cft}/chrome-${cft}.zip" \
+ && unzip -q chromedriver.zip \
+ && unzip -q chrome.zip \
+ && mv "chromedriver-${cft}" chromedriver-dist \
+ && mv "chrome-${cft}" chrome-dist
 
 # Download Firefox ESR and GeckoDriver
-RUN curl -f --retry 5 -Lo firefox.tar.xz \
-    "https://ftp.mozilla.org/pub/firefox/releases/${FIREFOX_VERSION}/linux-x86_64/pt-BR/firefox-${FIREFOX_VERSION}.tar.xz" \
+RUN case "${TARGETARCH:-amd64}" in \
+        amd64) ff=linux-x86_64; gd=linux64 ;; \
+        arm64) ff=linux-aarch64; gd=linux-aarch64 ;; \
+        *) echo "unsupported TARGETARCH=${TARGETARCH}" >&2; exit 1 ;; \
+    esac \
+ && curl -f --retry 5 -Lo firefox.tar.xz \
+    "https://ftp.mozilla.org/pub/firefox/releases/${FIREFOX_VERSION}/${ff}/pt-BR/firefox-${FIREFOX_VERSION}.tar.xz" \
     && tar -xf firefox.tar.xz \
  && curl -f --retry 5 --retry-delay 10 -Lo "geckodriver.tar.gz" \
-    "https://github.com/mozilla/geckodriver/releases/download/v${GECKODRIVER_VERSION}/geckodriver-v${GECKODRIVER_VERSION}-linux64.tar.gz" \
+    "https://github.com/mozilla/geckodriver/releases/download/v${GECKODRIVER_VERSION}/geckodriver-v${GECKODRIVER_VERSION}-${gd}.tar.gz" \
     && tar -zxf geckodriver.tar.gz
 
 # ---------- STAGE 2: runtime
@@ -278,8 +296,8 @@ RUN python3 -m venv /opt/venv
 ENV PATH="/opt/venv/bin:$PATH"
 
 # Copy Chrome and ChromeDriver from builder stage
-COPY --from=builder /downloads/chrome-linux64 /opt/chrome
-COPY --from=builder /downloads/chromedriver-linux64/chromedriver /usr/local/bin/chromedriver
+COPY --from=builder /downloads/chrome-dist /opt/chrome
+COPY --from=builder /downloads/chromedriver-dist/chromedriver /usr/local/bin/chromedriver
 
 # Copy Firefox and GeckoDriver from builder stage
 COPY --from=builder /downloads/firefox /opt/firefox/
@@ -371,11 +389,25 @@ RUN mkdir -p /var/lib/openbox && \
     chmod 644 /var/lib/openbox/debian-menu.xml
 
 # Optional: Install PJeOffice (controlled by BUILD_PJEOFFICE build argument)
+# PJeOffice is only published as linux_x64: a Java app (.jar, any architecture)
+# plus a bundled x86-64 Azul Zulu 8 JRE with JavaFX. On arm64 that bundled JRE
+# is swapped for the same vendor's Zulu 8 FX JRE for aarch64 (checksum pinned);
+# amd64 keeps the bundle untouched.
+ARG TARGETARCH
+ARG PJEOFFICE_JRE_ARM64_URL=https://cdn.azul.com/zulu/bin/zulu8.98.0.111-ca-fx-jre8.0.512-linux_aarch64.tar.gz
+ARG PJEOFFICE_JRE_ARM64_SHA256=897dd578c23f491ff0b700ce9641e3545d4f577c934c8f8f3a76a0583f2bfcbc
 RUN if [ "$BUILD_PJEOFFICE" = "1" ]; then \
     mkdir -p /opt/pjeoffice && \
     cd /tmp && \
     curl -Lo "pjeoffice.zip" "https://pje-office.pje.jus.br/pro/pjeoffice-pro-v2.5.16u-linux_x64.zip" && \
     unzip pjeoffice.zip && \
+    if [ "${TARGETARCH:-amd64}" = "arm64" ]; then \
+        rm -rf pjeoffice-pro/jre && mkdir pjeoffice-pro/jre && \
+        curl -f --retry 5 -Lo jre.tar.gz "$PJEOFFICE_JRE_ARM64_URL" && \
+        echo "$PJEOFFICE_JRE_ARM64_SHA256  jre.tar.gz" | sha256sum -c - && \
+        tar -xzf jre.tar.gz -C pjeoffice-pro/jre --strip-components=1 && \
+        rm -f jre.tar.gz || exit 1; \
+    fi && \
     cp -r pjeoffice-pro/* /opt/pjeoffice/ && \
     rm -rf pjeoffice.zip pjeoffice-pro && \
     chown -R rpauser:rpauser /opt/pjeoffice && \
