@@ -46,7 +46,8 @@ Para conferir se uma mudança alterou o contrato, compare snapshots
 | `image/app/image_info.py` | qual imagem é esta: grava `/app/image_info.json` no build (`IMAGE_REVISION`), primeira linha do log e `"imagem"` no preflight |
 | `image/app/pjeoffice_check.py` | o PJeOffice assina? Chrome clica em "Testar" na página local dele (127.0.0.1:8800), xdotool responde a senha; usado pelo `a1_check` com `USE_PJEOFFICE=1` |
 | `image/icp-brasil/` | raízes (fingerprint fixado) + ACs oficiais da ICP-Brasil (ITI) → `/opt/icp-brasil`; só para validar cadeia do A1, fora do trust store |
-| `image/patch_chromedriver.py` | usado só no build (aplicado e apagado na mesma camada) |
+| `image/patch_chromedriver.py` | usado só no build (montado com `--mount=type=bind` na camada que copia o ChromeDriver; nunca entra na imagem) |
+| `legacy/Dockerfile.trixie` | Dockerfile anterior à imagem enxuta (3,8 GB), só referência: nenhum workflow o usa |
 | `.dockerignore` | **allowlist**: só `requirements.txt` e `image/` entram no contexto |
 | `tests/unit/` | testes rápidos no host (sem Docker) — rodam com `pytest` |
 | `tests/image/` | testes que rodam dentro da imagem (contrato, serviços, browsers, integração) + `fixtures/` |
@@ -87,6 +88,12 @@ atualizar). Nada de QEMU: CI, release e nightly usam o runner `ubuntu-24.04-arm`
 **Adicionar um pacote do sistema:** use `apt-get install -y --no-install-recommends`
 e termine o mesmo `RUN` com `rm -rf /var/lib/apt/lists/*`. Coloque-o perto de pacotes
 do mesmo tipo e lembre que camadas mais acima invalidam o cache de tudo que vem depois.
+Manuais, documentação e traduções que não são pt/en já ficam de fora (`/etc/dpkg/dpkg.cfg.d/90-rpa-worker-slim`).
+
+**Tamanho da imagem:** `chown`/`chmod`/patch/`pip install` numa camada posterior gravam uma **segunda cópia**
+de cada arquivo tocado (um `chown -R /opt/venv` separado custava ~670 MB). Mexa nos arquivos na mesma camada
+que os cria; `tests/unit/test_dockerfile.py` trava isso para a venv e o ChromeDriver. Para ver o peso de cada
+camada: `docker history --format '{{.Size}}\t{{.CreatedBy}}' <imagem>`.
 
 **Mexer no certificado A1:** a API pública é `image/app/a1cert.py` (scripts de produção importam).
 Mantenha as assinaturas das funções e a regra de nunca expor a senha (log, argv, repr). Qualquer
@@ -212,5 +219,9 @@ noVNC → VNC) devem checar a dependência e pular com aviso, não falhar.
 - [x] **Ambiente e dimensionamento:** preflight confere `/dev/shm`, disco, memória, CPU e relógio (avisos);
   versão da imagem na primeira linha do log e no preflight (`image_info.py`); resumo de CPU/memória por
   execução com sugestão de reserva e relatório de várias execuções (`resource_usage.py`).
+- [x] **Imagem enxuta:** de 3,8 GB para ~2,6 GB sem mudar o que a imagem faz: venv e ChromeDriver sem cópia
+  duplicada entre camadas; sem Java 21 (o `java`/`keytool` do PATH é o Java 8 do PJeOffice), sem o ffmpeg do
+  PJeOffice (stub), sem `pcsc-tools`/Perl, sem traduções fora pt/en, manuais e testes do pandas/numpy. Dockerfile
+  anterior em `legacy/`.
 - [ ] **Fase 3:** alinhar `requirements.txt` com o que de fato roda (`cryptography`, `psutil`,
   `oscrypto`); revisar `set -e` x falha no download do profile.

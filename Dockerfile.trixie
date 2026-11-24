@@ -48,7 +48,9 @@ RUN case "${TARGETARCH:-amd64}" in \
  && unzip -q chromedriver.zip \
  && unzip -q chrome.zip \
  && mv "chromedriver-${cft}" chromedriver-dist \
- && mv "chrome-${cft}" chrome-dist
+ && mv "chrome-${cft}" chrome-dist \
+ && find chrome-dist/locales -type f ! -name 'pt-BR.*' ! -name 'en-US.*' -delete \
+ && ls chrome-dist/locales/pt-BR.pak chrome-dist/locales/en-US.pak
 
 # Download Firefox ESR and GeckoDriver
 RUN case "${TARGETARCH:-amd64}" in \
@@ -65,6 +67,21 @@ RUN case "${TARGETARCH:-amd64}" in \
 
 # ---------- STAGE 2: runtime
 FROM debian:trixie
+
+# Slim: packages installed from here on skip man pages, docs (copyright kept) and
+# translations other than pt/pt_BR/en. Must come before the first apt-get.
+RUN printf '%s\n' \
+        'path-exclude=/usr/share/doc/*' \
+        'path-include=/usr/share/doc/*/copyright' \
+        'path-exclude=/usr/share/man/*' \
+        'path-exclude=/usr/share/info/*' \
+        'path-exclude=/usr/share/locale/*' \
+        'path-include=/usr/share/locale/locale.alias' \
+        'path-include=/usr/share/locale/pt/*' \
+        'path-include=/usr/share/locale/pt_BR/*' \
+        'path-include=/usr/share/locale/en/*' \
+        'path-include=/usr/share/locale/en_US/*' \
+        > /etc/dpkg/dpkg.cfg.d/90-rpa-worker-slim
 
 # Timezone + locale Brasil
 RUN apt-get update && \
@@ -186,7 +203,6 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     # PKCS#11 and smartcard support (critical for A1 certificate tokens)
     libpcsclite1 \
     pcscd \
-    pcsc-tools \
     opensc \
     opensc-pkcs11 \
     # Additional desktop utilities for window management
@@ -295,22 +311,20 @@ fi
 RUN python3 -m venv /opt/venv
 ENV PATH="/opt/venv/bin:$PATH"
 
-# Copy Chrome and ChromeDriver from builder stage
+# Copy Chrome from builder stage
 COPY --from=builder /downloads/chrome-dist /opt/chrome
-COPY --from=builder /downloads/chromedriver-dist/chromedriver /usr/local/bin/chromedriver
 
 # Copy Firefox and GeckoDriver from builder stage
 COPY --from=builder /downloads/firefox /opt/firefox/
 COPY --from=builder /downloads/geckodriver /usr/local/bin/geckodriver
 
-# Build-time only: patched and deleted in the same layer
-COPY image/patch_chromedriver.py /usr/local/bin/patch_chromedriver.py
-
-RUN chmod 0755 \
-        /usr/local/bin/chromedriver \
-        /usr/local/bin/patch_chromedriver.py \
-    && python3 /usr/local/bin/patch_chromedriver.py \
-    && rm -f /usr/local/bin/patch_chromedriver.py
+# ChromeDriver: copied and patched in the SAME layer (a separate COPY would ship
+# the unpatched binary in a layer below, ~30 MB). patch_chromedriver.py is only
+# bind-mounted, it never lands in the image.
+RUN --mount=type=bind,from=builder,source=/downloads/chromedriver-dist/chromedriver,target=/tmp/chromedriver.orig \
+    --mount=type=bind,source=image/patch_chromedriver.py,target=/tmp/patch_chromedriver.py \
+    install -m 0755 /tmp/chromedriver.orig /usr/local/bin/chromedriver \
+    && python3 /tmp/patch_chromedriver.py
 
 # Create symbolic links and set permissions for Chrome
 RUN ln -s /opt/chrome/chrome /usr/local/bin/chrome \
@@ -392,7 +406,9 @@ RUN mkdir -p /var/lib/openbox && \
 # PJeOffice is only published as linux_x64: a Java app (.jar, any architecture)
 # plus a bundled x86-64 Azul Zulu 8 JRE with JavaFX. On arm64 that bundled JRE
 # is swapped for the same vendor's Zulu 8 FX JRE for aarch64 (checksum pinned);
-# amd64 keeps the bundle untouched.
+# amd64 keeps the bundle untouched. That JRE (Java 8) is the only Java in the
+# image: `java`/`keytool` on PATH point to it. PJeOffice's bundled ffmpeg (75 MB,
+# only for its video-cutting tool) is replaced by a stub that exits 1.
 ARG TARGETARCH
 ARG PJEOFFICE_JRE_ARM64_URL=https://cdn.azul.com/zulu/bin/zulu8.98.0.111-ca-fx-jre8.0.512-linux_aarch64.tar.gz
 ARG PJEOFFICE_JRE_ARM64_SHA256=897dd578c23f491ff0b700ce9641e3545d4f577c934c8f8f3a76a0583f2bfcbc
@@ -408,6 +424,8 @@ RUN if [ "$BUILD_PJEOFFICE" = "1" ]; then \
         tar -xzf jre.tar.gz -C pjeoffice-pro/jre --strip-components=1 && \
         rm -f jre.tar.gz || exit 1; \
     fi && \
+    printf '#!/bin/sh\necho "ffmpeg do PJeOffice (corte de video) nao incluido nesta imagem" >&2\nexit 1\n' \
+        > pjeoffice-pro/ffmpeg.exe && \
     cp -r pjeoffice-pro/* /opt/pjeoffice/ && \
     rm -rf pjeoffice.zip pjeoffice-pro && \
     chown -R rpauser:rpauser /opt/pjeoffice && \
@@ -415,11 +433,9 @@ RUN if [ "$BUILD_PJEOFFICE" = "1" ]; then \
     chmod +x /opt/pjeoffice/pjeoffice-pro.sh && \
     mkdir -p /app/.pjeoffice-pro && \
     chown -R rpauser:rpauser /app/.pjeoffice-pro && \
-    chmod -R 755 /app/.pjeoffice-pro; \
-    echo "Installing Java..."; \
-    apt-get update && apt-get install -y --no-install-recommends \
-        openjdk-21-jre-headless \
-    && rm -rf /var/lib/apt/lists/*; \
+    chmod -R 755 /app/.pjeoffice-pro && \
+    ln -s /opt/pjeoffice/jre/bin/java /usr/local/bin/java && \
+    ln -s /opt/pjeoffice/jre/bin/keytool /usr/local/bin/keytool; \
 fi
 
 # ============================================================================
@@ -431,6 +447,9 @@ fi
 # Any new value for SELENIUMBASE_REFRESH busts the cache of this layer; the
 # release workflow passes the run id, so every published image ships the
 # newest SeleniumBase even when the GitHub Actions layer cache is warm.
+# websockify (noVNC), removing the pandas/numpy test suites and the chown to
+# rpauser also happen HERE: doing any of them in a later layer would store a
+# second copy of every touched file (the old separate chown cost ~670 MB).
 # ============================================================================
 COPY requirements.txt .
 ARG SELENIUMBASE_REFRESH=""
@@ -440,9 +459,13 @@ RUN --mount=type=cache,target=/root/.cache/pip \
  && pip install --upgrade pip \
  && pip install -r requirements.txt \
  && pip install --upgrade seleniumbase \
+ && if [ "$ENABLE_NOVNC" = "1" ]; then pip install websockify; fi \
  && pip show seleniumbase | grep -E '^(Name|Version):' \
+ && find /opt/venv/lib/python*/site-packages/pandas /opt/venv/lib/python*/site-packages/numpy \
+        -type d -name tests -prune -exec rm -rf {} + \
  ; RC=$? ; \
     chmod -R 777 /opt/venv/lib/python*/site-packages/seleniumbase/drivers 2>/dev/null || true ; \
+    chown -R rpauser:rpauser /opt/venv ; \
     apt-get purge -y build-essential python3-dev \
  && apt-get autoremove -y && apt-get clean \
  && rm -rf /var/lib/apt/lists/* \
@@ -453,6 +476,7 @@ RUN --mount=type=cache,target=/root/.cache/pip \
 # OPTIONAL: noVNC and websockify (installed only when ENABLE_NOVNC=1)
 # Browser-based VNC access for remote debugging
 # Requires git to clone noVNC, which is removed after installation
+# (websockify itself is installed with the Python packages above)
 # ============================================================================
 RUN if [ "$ENABLE_NOVNC" = "1" ]; then \
     echo "Installing noVNC and websockify..."; \
@@ -460,11 +484,11 @@ RUN if [ "$ENABLE_NOVNC" = "1" ]; then \
     mkdir -p /opt/novnc && \
     git clone --depth 1 https://github.com/novnc/noVNC.git /opt/novnc && \
     ln -s /opt/novnc/vnc.html /opt/novnc/index.html && \
-    pip install --no-cache-dir websockify && \
+    /opt/venv/bin/websockify --help >/dev/null && \
     ln -s /opt/venv/bin/websockify /usr/local/bin/websockify && \
     apt-get purge -y git && \
     apt-get autoremove -y && \
-    rm -rf /var/lib/apt/lists/* /root/.cache/pip; \
+    rm -rf /var/lib/apt/lists/*; \
 fi
 
 # ============================================================================
@@ -472,8 +496,6 @@ fi
 # ============================================================================
 RUN mkdir -p /var/run/dbus \
     && chown rpauser:rpauser /var/run/dbus
-
-RUN chown -R rpauser:rpauser /opt/venv
 
 # Ensure runtime directory exists for Firefox sandbox when running as root
 RUN mkdir -p /tmp/runtime-root \

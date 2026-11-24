@@ -29,13 +29,21 @@ testada no mesmo portão num runner ARM ([receita do servidor ARM](recipes/servi
 | Google Chrome for Testing + ChromeDriver | `ARG CHROME_VERSION` | mesma versão, baixados juntos |
 | Firefox ESR (pt-BR) + GeckoDriver | `ARG FIREFOX_VERSION` / `ARG GECKODRIVER_VERSION` | profile `selenium.default-release` com NSS pronto |
 | SeleniumBase | **sempre a mais recente do PyPI** no momento do release | camada própria, renovada a cada release |
-| PJeOffice Pro + Java 21 | 2.5.16 | `BUILD_PJEOFFICE=1` no release |
+| PJeOffice Pro (com o Java 8 dele, que também é o `java`/`keytool` do PATH) | 2.5.16 | `BUILD_PJEOFFICE=1` no release |
 | ImageMagick + Ghostscript | Debian | `ENABLE_PDF_TOOLS=1` no release |
 | x11vnc + noVNC | Debian / GitHub | `ENABLE_VNC=1`, `ENABLE_NOVNC=1` no release |
 | FFmpeg (gravação de tela) | — | **não incluso** na imagem publicada (`ENABLE_FFMPEG=0`) |
 
 As versões exatas da imagem atual estão registradas em
 [`docs/baseline/`](docs/baseline/) (gerado por `scripts/image-snapshot.sh`).
+
+**Imagem enxuta.** A imagem tinha 3,8 GB, e cerca de 700 MB disso eram cópias repetidas de arquivos
+entre camadas. Ficaram de fora também: o Java 21 do sistema (o PJeOffice usa o Java 8 que vem com ele),
+o ffmpeg do PJeOffice (só para cortar vídeo; no lugar há um stub que sai com erro), o `pcsc-tools`
+(diagnóstico de token A3), as traduções do Chrome e do sistema que não são pt/en, manuais/documentação
+dos pacotes e as suítes de teste do pandas/numpy. O Dockerfile anterior está em
+[`legacy/Dockerfile.trixie`](legacy/Dockerfile.trixie), só como referência (o release não o usa; para
+voltar à imagem antiga basta o rollback por tag, veja abaixo).
 
 ---
 
@@ -300,7 +308,8 @@ image/
     smoke_test.py ...    #   smoke tests usados no CI e como fallback
     src/                 #   helpers de exemplo (/app/src)
   icp-brasil/            # raízes + ACs oficiais da ICP-Brasil (ITI) -> /opt/icp-brasil
-  patch_chromedriver.py  # usado só durante o build
+  patch_chromedriver.py  # usado só durante o build (montado, não entra na imagem)
+legacy/Dockerfile.trixie # Dockerfile anterior à imagem enxuta (referência, fora do release)
 recipes/                 # receitas plug and play (shutup-and-run, Docker local, internet do cliente, servidor ARM)
 tests/
   unit/                  # testes rápidos no host (sem Docker)

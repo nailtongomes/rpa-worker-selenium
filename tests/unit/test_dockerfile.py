@@ -128,3 +128,51 @@ def test_image_info_is_written_in_the_last_layer(dockerfile_text):
     assert copy_app < arg < write
     assert '--revision "${IMAGE_REVISION}" --created "${IMAGE_CREATED}"' in dockerfile_text
     assert "RUN " not in dockerfile_text[write:].split("\n", 1)[1]
+
+
+# --- Tamanho da imagem --------------------------------------------------------
+# Num Dockerfile, mexer (chown/chmod/patch) numa camada posterior grava uma segunda cópia
+# de cada arquivo tocado. Foi assim que a venv passou a ocupar o dobro (~670 MB a mais).
+
+def _run_blocks(dockerfile_text):
+    """Cada instrução RUN completa (com as continuações de linha)."""
+    return re.findall(r"^RUN .*?(?<!\\)$", dockerfile_text, re.MULTILINE | re.DOTALL)
+
+
+def test_venv_owner_is_set_in_the_install_layer(dockerfile_text):
+    blocks = _run_blocks(dockerfile_text)
+    pip_layer = next(b for b in blocks if "pip install -r requirements.txt" in b)
+    assert "chown -R rpauser:rpauser /opt/venv" in pip_layer
+    assert "pip install websockify" in pip_layer, "websockify fora da camada do pip duplica o que ele atualiza"
+    others = [b for b in blocks if b != pip_layer]
+    assert not [b for b in others if "/opt/venv" in b and ("chown" in b or "pip install" in b)]
+
+
+def test_chromedriver_is_copied_and_patched_in_one_layer(dockerfile_text):
+    assert "COPY --from=builder /downloads/chromedriver-dist" not in dockerfile_text
+    assert "COPY image/patch_chromedriver.py" not in dockerfile_text
+    patch = next(b for b in _run_blocks(dockerfile_text) if "patch_chromedriver.py" in b)
+    assert "--mount=type=bind,from=builder,source=/downloads/chromedriver-dist/chromedriver" in patch
+    assert "install -m 0755" in patch and "python3 /tmp/patch_chromedriver.py" in patch
+
+
+def test_slim_dpkg_config_comes_before_any_package(dockerfile_text):
+    runtime = dockerfile_text[dockerfile_text.index("FROM debian:trixie\n"):]
+    assert runtime.index("path-exclude=/usr/share/doc/*") < runtime.index("RUN apt-get")
+    for kept in ("/usr/share/doc/*/copyright", "/usr/share/locale/pt_BR/*", "/usr/share/locale/locale.alias"):
+        assert f"path-include={kept}" in runtime
+
+
+def test_unused_heavy_packages_stay_out(dockerfile_text):
+    """Java 21 (o PJeOffice traz o Java 8 dele), pcsc-tools (Perl, diagnóstico de token A3)."""
+    assert "openjdk" not in dockerfile_text
+    assert not re.search(r"^\s+pcsc-tools", dockerfile_text, re.MULTILINE)
+    assert "ln -s /opt/pjeoffice/jre/bin/java /usr/local/bin/java" in dockerfile_text
+    assert "ln -s /opt/pjeoffice/jre/bin/keytool /usr/local/bin/keytool" in dockerfile_text
+    assert "! -name 'pt-BR.*' ! -name 'en-US.*' -delete" in dockerfile_text
+
+
+def test_legacy_dockerfile_is_kept():
+    """A versão anterior (3,8 GB) fica como referência/rollback; o release só usa o Dockerfile.trixie."""
+    legacy = (REPO_ROOT / "legacy" / "Dockerfile.trixie").read_text()
+    assert "openjdk-21-jre-headless" in legacy and "RUN chown -R rpauser:rpauser /opt/venv" in legacy
