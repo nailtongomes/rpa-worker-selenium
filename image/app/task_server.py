@@ -11,9 +11,12 @@ Environment Variables:
 - TASK_SERVER_PORT: Port to listen on (default: 8080)
 - TASK_AUTH_TOKEN: Optional Bearer token for authentication
 - WORKER_TIMEOUT: Timeout for script execution in seconds (default: 3600)
+- RESOURCE_SUMMARY: 1 (default) prints CPU/memory average and peaks after the script
+  (/app/resource_usage.py)
 """
 
 import os
+import signal
 import sys
 import json
 import subprocess
@@ -34,6 +37,16 @@ task_lock = threading.Lock()
 TASK_SERVER_PORT = int(os.getenv("TASK_SERVER_PORT", "8080"))
 TASK_AUTH_TOKEN = os.getenv("TASK_AUTH_TOKEN", "")
 WORKER_TIMEOUT = int(os.getenv("WORKER_TIMEOUT", "3600"))
+RESOURCE_USAGE = pathlib.Path(__file__).resolve().parent / "resource_usage.py"
+
+
+def script_command(destination):
+    """Command that runs the script; with RESOURCE_SUMMARY=1 (default) it goes through
+    resource_usage.py, which prints CPU/memory average and peaks at the end."""
+    cmd = ["python", str(destination)]
+    if os.getenv("RESOURCE_SUMMARY", "1") == "1" and RESOURCE_USAGE.is_file():
+        return ["python", str(RESOURCE_USAGE), "run", "--label", pathlib.Path(destination).name, "--", *cmd]
+    return cmd
 
 
 def log_timestamp():
@@ -144,22 +157,31 @@ def download_and_execute_script(script_url, script_name, task_payload=None):
         print(f"{log_timestamp()} ▶️  Executing script with timeout {WORKER_TIMEOUT}s...")
         
         # Execute the script with timeout
+        # Own process group: on timeout the whole tree (script, browsers) is killed
+        proc = subprocess.Popen(
+            script_command(destination),
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+            text=True,
+            start_new_session=True,
+        )
         try:
-            result = subprocess.run(
-                ["python", str(destination)],
-                timeout=WORKER_TIMEOUT,
-                capture_output=True,
-                text=True
-            )
-            
-            if result.returncode == 0:
+            stdout, stderr = proc.communicate(timeout=WORKER_TIMEOUT)
+
+            if proc.returncode == 0:
                 print(f"{log_timestamp()} ✅ Script completed successfully")
-                print(result.stdout)
+                print(stdout)
             else:
-                print(f"{log_timestamp()} ❌ Script failed with exit code: {result.returncode}")
-                print(result.stderr)
-                
+                print(f"{log_timestamp()} ❌ Script failed with exit code: {proc.returncode}")
+                print(stdout)
+                print(stderr)
+
         except subprocess.TimeoutExpired:
+            try:
+                os.killpg(proc.pid, signal.SIGKILL)
+            except OSError:
+                pass
+            proc.communicate()
             print(f"{log_timestamp()} ⏱️  Script timed out after {WORKER_TIMEOUT}s")
         
         print(f"{log_timestamp()} 🔄 Triggering container restart...")

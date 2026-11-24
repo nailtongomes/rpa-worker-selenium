@@ -32,6 +32,9 @@ Você troca só o que está marcado (URL do script, certificado, senhas) e roda.
 - **Antes de produção:** `python /app/preflight.py` diz se browsers, A1 e relay estão funcionando, num JSON só.
   Com o PJeOffice ligado (`USE_PJEOFFICE=1`), inclui o teste de assinatura dele (`/app/pjeoffice_check.py`).
 - **Logs:** URLs com token (`SCRIPT_URL`, `HELPER_URLS`) saem mascaradas nos logs da imagem.
+- **Dimensionar:** cada execução termina com `📊 Recursos de ...` no log (média, p95 e pico de CPU e memória,
+  e quanto reservar). `python /app/resource_usage.py report` junta as execuções já feitas no container. Use isso
+  para ajustar `cpu`/`memory` da receita ao que o script de fato usa.
 
 ## Testar uma receita do shutup-and-run sem instalar o shutup-and-run
 

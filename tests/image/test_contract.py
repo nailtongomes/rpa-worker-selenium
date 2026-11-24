@@ -17,6 +17,7 @@ import os
 import re
 import shutil
 import subprocess
+import sys
 from pathlib import Path
 
 import pytest
@@ -55,6 +56,9 @@ def _requires(feature: str):
         ("/app/egress_testkit.py", True),
         ("/app/preflight.py", True),
         ("/app/pjeoffice_check.py", True),
+        ("/app/resource_usage.py", True),
+        ("/app/image_info.py", True),
+        ("/app/image_info.json", False),
         ("/app/requirements.txt", False),
     ],
 )
@@ -108,6 +112,31 @@ def test_chrome_policy_dir_writable(policy_dir, tmp_path):
         assert json.loads(probe.read_text()) == {"AutoSelectCertificateForUrls": []}
     finally:
         probe.unlink(missing_ok=True)
+
+
+def test_image_info_describes_this_image():
+    """/app/image_info.json (gravado no build): arquitetura e browsers batem com a imagem."""
+    import platform
+
+    info = json.loads(Path("/app/image_info.json").read_text(encoding="utf-8"))
+    assert info["arquitetura"] == {"x86_64": "amd64", "aarch64": "arm64"}[platform.machine()]
+    assert info["revisao"] and info["criada_em"] and info["tag"]
+    if info["revisao"] != "dev":
+        assert info["tag"] == f"sha-{info['revisao'][:7]}" + ("-arm64" if info["arquitetura"] == "arm64" else "")
+    assert info["chrome"] and info["chrome"] in _run("chrome", "--version")
+    assert info["firefox"] and info["firefox"] in _run("firefox", "--version")
+    line = _run("python", "/app/image_info.py")
+    assert line.startswith(f"🏷️  Imagem {info['tag']} ({info['arquitetura']})") and info["chrome"] in line
+
+
+def test_resource_usage_reads_the_container_cgroup():
+    """O resumo de recursos mede o container (cgroup); sem isso ele só mostraria a duração."""
+    sys.path.insert(0, "/app")
+    import resource_usage
+
+    cg = resource_usage.Cgroup.detect()
+    assert cg is not None, "cgroup de CPU/memória não encontrado em /sys/fs/cgroup"
+    assert cg.memory_bytes() and cg.cpu_usec() is not None
 
 
 # --- Ferramentas do sistema --------------------------------------------------

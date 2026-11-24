@@ -51,6 +51,9 @@ def test_entrypoint_shellcheck_errors():
         ("PJEOFFICE_EXECUTABLE", "/opt/pjeoffice/pjeoffice-pro.sh"),
         ("EGRESS_REQUIRED", "1"),
         ("EGRESS_LOCAL_PORT", "3128"),
+        ("RESOURCE_SUMMARY", "1"),
+        ("RESOURCE_SAMPLE_SECS", "1"),
+        ("RESOURCE_LOG", "/app/logs/resources.jsonl"),
     ],
 )
 def test_entrypoint_env_defaults(entrypoint_text, var, default):
@@ -156,3 +159,37 @@ def test_loop_checks_egress_before_each_iteration(entrypoint_text):
     ready = _function_body(entrypoint_text, "egress_ready")
     assert '[ -n "${EGRESS_PID}" ] || return 0' in ready  # sem relay: não faz nada
     assert "egress_proxy.py check" in ready
+
+
+def test_scripts_run_measured(entrypoint_text):
+    """Script baixado e smoke test passam pelo resource_usage.py (média e picos no fim)."""
+    body = _function_body(entrypoint_text, "download_and_execute")
+    assert 'run_measured "$(basename "$SCRIPT_PATH")" python "$SCRIPT_PATH"' in body
+    assert "run_measured smoke_test.py python /app/smoke_test.py" in body
+    measured = _function_body(entrypoint_text, "run_measured")
+    assert 'python /app/resource_usage.py run --label "${label}" -- "$@"' in measured
+    assert 'RESOURCE_SUMMARY}" = "1"' in measured
+    # o loop roda as iterações num bash filho: a função precisa ser exportada
+    loop = _function_body(entrypoint_text, "execute_with_loop")
+    assert re.search(r"export -f .*\brun_measured\b", loop)
+
+
+def test_passthrough_command_is_untouched(entrypoint_text):
+    """`docker run imagem <comando>` continua com exec direto (sem medidor no meio)."""
+    assert 'exec "$@"' in _function_body(entrypoint_text, "main")
+
+
+def test_first_log_line_shows_image(entrypoint_text):
+    main = _function_body(entrypoint_text, "main")
+    assert main.find("log_image_info") < main.find("setup_directories")
+    assert "python /app/image_info.py" in _function_body(entrypoint_text, "log_image_info")
+
+
+def test_run_measured_keeps_exit_code(tmp_path):
+    """run_measured devolve o exit code do comando, com e sem medição."""
+    func = _function_body(ENTRYPOINT.read_text(encoding="utf-8"), "run_measured")
+    script = tmp_path / "t.sh"
+    script.write_text("run_measured() {\n" + func + "}\nrun_measured x bash -c 'exit 7'\n")
+    for value in ("0", "1"):
+        result = subprocess.run(["bash", str(script)], env={"RESOURCE_SUMMARY": value, "PATH": "/usr/bin:/bin"})
+        assert result.returncode == 7

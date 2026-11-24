@@ -242,3 +242,21 @@ class TestTaskEndpoint:
 
 if __name__ == '__main__':
     pytest.main([__file__, '-v'])
+
+
+class TestScriptCommand:
+    """O standby mede o script como o entrypoint (RESOURCE_SUMMARY=1 por padrão)."""
+
+    def test_measured_by_default(self, monkeypatch):
+        import task_server
+
+        monkeypatch.delenv("RESOURCE_SUMMARY", raising=False)
+        cmd = task_server.script_command("/tmp/tarefa.py")
+        assert cmd[1].endswith("resource_usage.py") and cmd[2:5] == ["run", "--label", "tarefa.py"]
+        assert cmd[-3:] == ["--", "python", "/tmp/tarefa.py"]
+
+    def test_disabled(self, monkeypatch):
+        import task_server
+
+        monkeypatch.setenv("RESOURCE_SUMMARY", "0")
+        assert task_server.script_command("/tmp/tarefa.py") == ["python", "/tmp/tarefa.py"]

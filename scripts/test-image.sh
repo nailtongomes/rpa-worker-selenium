@@ -240,6 +240,10 @@ scenario_worker_loop() {
     docker logs "$name" > "$log" 2>&1
     docker rm -f "$name" >/dev/null 2>&1
     grep -E "iteration|JOB-OK|Downloading" "$log" | head -8
+    if [ "$(grep -c '📊 Recursos de job_ok.py' "$log")" -lt 2 ]; then
+        echo "o loop não mostrou o resumo de recursos a cada iteração"
+        ok=1
+    fi
     if grep -q "SEGREDO-" "$log"; then
         echo "token/senha das URLs apareceu no log:"
         grep "SEGREDO-" "$log" | head -3
@@ -309,6 +313,10 @@ scenario_single_run_ok() {
         -e WORKER_ID=single --entrypoint bash "$IMAGE" -c "$WITH_FIXTURES" _ > "$log" 2>&1
     rc=$?
     grep "JOB-OK" "$log" || { echo "marcador JOB-OK ausente"; return 1; }
+    # primeira linha do log: qual imagem é; no fim: CPU/memória da execução (resource_usage.py)
+    grep -m1 "Imagem " "$log" || { echo "linha da imagem ausente no log"; return 1; }
+    grep -A3 "📊 Recursos de job_ok.py (exit 0" "$log" || { echo "resumo de recursos ausente"; return 1; }
+    grep -q '^RESOURCE_SUMMARY {.*"exit_code": 0' "$log" || { echo "linha RESOURCE_SUMMARY ausente"; return 1; }
     return "$rc"
 }
 
@@ -320,7 +328,45 @@ scenario_single_run_failure_propagates() {
     rc=$?
     echo "exit code do container: $rc"
     grep -q "JOB-FAIL" "$log" || { echo "script não executou"; return 1; }
-    [ "$rc" -ne 0 ]
+    # o medidor de recursos fica no meio e não pode mudar o exit code (job_fail.py sai com 3)
+    grep -q "📊 Recursos de job_fail.py (exit 3" "$log" || { echo "resumo de recursos sem o exit 3"; return 1; }
+    [ "$rc" -eq 3 ]
+}
+
+scenario_limits_and_resources() {
+    # Container apertado (shm 64 MB, 1 GB, meia CPU, como um PC mal configurado):
+    # o preflight avisa (sem reprovar) e o resource_usage lê os limites e mede um pico conhecido.
+    local log="$RESULTS/logs/limits-and-resources.log" rc ok=0
+    timeout 600 docker run --rm --shm-size=64m -m 1g --cpus 0.5 -e USE_PJEOFFICE=1 \
+        -v "$RESULTS:/results" "${EXTRA_ARGS[@]}" --entrypoint bash "$IMAGE" -c '
+            python /app/preflight.py --browsers none --clock-url off --json /results/preflight-limits.json
+            echo "preflight exit=$?"
+            RESOURCE_LOG=/tmp/r.jsonl python /app/resource_usage.py run --label pico.py -- python -c "
+import time
+blocos = [bytearray(300 * 1024 * 1024)]
+for b in blocos:
+    b[::4096] = b\"x\" * len(b[::4096])
+time.sleep(3)
+"
+            python /app/resource_usage.py report /tmp/r.jsonl' > "$log" 2>&1
+    rc=$?
+    grep -E "/dev/shm|memória|CPU|preflight exit|📊|pico|reserva" "$log" | head -20
+    [ "$rc" -eq 0 ] || { echo "exit $rc"; ok=1; }
+    grep -q "preflight exit=0" "$log" || { echo "avisos do ambiente reprovaram o worker"; ok=1; }
+    grep -q "⚠️  /dev/shm: 0,1 GB" "$log" || { echo "sem aviso de /dev/shm pequeno"; ok=1; }
+    grep -q "⚠️  memória: limite 1,0 GB" "$log" || { echo "sem aviso de memória para o PJeOffice"; ok=1; }
+    grep -q "⚠️  CPU: limite 0.5" "$log" || { echo "sem aviso de meia CPU"; ok=1; }
+    grep -q "(limite 1,00 GB" "$log" || { echo "resource_usage não leu o limite de memória"; ok=1; }
+    python3 - "$log" <<'PY' || ok=1
+import json, sys
+line = next(l for l in open(sys.argv[1], encoding="utf-8") if l.startswith("RESOURCE_SUMMARY "))
+s = json.loads(line.split(" ", 1)[1])
+peak, cpu = s["memoria"]["pico_mb"], s["limites"]["cpu_nucleos"]
+print(f"pico medido {peak} MB (alocados 300 MB), limite de CPU {cpu}")
+assert peak >= 300, "o pico não incluiu os 300 MB alocados"
+assert cpu == 0.5, "limite de CPU errado"
+PY
+    return "$ok"
 }
 
 scenario_passthrough_command() {
@@ -365,6 +411,7 @@ SCENARIOS=(
     "worker em loop com relay - pula iteração com o relay fora do ar:scenario_egress_loop"
     "execução única com SCRIPT_URL:scenario_single_run_ok"
     "falha do script propaga exit code:scenario_single_run_failure_propagates"
+    "limites do container - avisos do preflight e resumo de recursos (shm 64 MB, 1 GB, 0,5 CPU):scenario_limits_and_resources"
     "comando direto (passthrough):scenario_passthrough_command"
     "modo standby (HTTP):scenario_standby"
 )

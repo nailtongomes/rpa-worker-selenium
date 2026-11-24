@@ -291,3 +291,16 @@ def test_arm64_never_takes_the_latest_tag():
     assert legs["amd64"]["cache"] == "buildkit" and legs["arm64"]["cache"] != "buildkit"
     cleanup = workflow["jobs"]["cleanup"]["steps"][0]["with"]
     assert "latest-arm64" in cleanup["exclude-tags"]
+
+
+@pytest.mark.parametrize("path, job", [(CI, "image"), (RELEASE, "build-and-push"), (NIGHTLY, "production-image")],
+                         ids=lambda v: getattr(v, "name", v))
+def test_builds_record_the_revision(path, job):
+    """A imagem sabe de qual commit veio (log e preflight): /app/image_info.json."""
+    args = _build_args(_build_step(_load(path), job))
+    assert args.get("IMAGE_REVISION", "").startswith("${{"), args
+
+
+def test_release_records_the_tag_timestamp():
+    args = _build_args(_build_step(_load(RELEASE), "build-and-push"))
+    assert args["IMAGE_CREATED"] == "${{ steps.meta.outputs.timestamp }}"

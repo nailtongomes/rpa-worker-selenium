@@ -40,7 +40,7 @@ Cenários (cada um é um `docker run` separado; qualquer falha => exit 1):
 
 | Cenário | O que garante |
 |---|---|
-| contrato da imagem | `tests/image/test_contract.py`: arquivos de `/app`, Chrome = ChromeDriver, Firefox + profile com NSS, policies do Chrome graváveis, ferramentas (xdotool, certutil, ImageMagick, Java, x11vnc, noVNC...), módulos Python, defaults de ambiente |
+| contrato da imagem | `tests/image/test_contract.py`: arquivos de `/app`, `/app/image_info.json` batendo com a arquitetura e os browsers, cgroup legível para o resumo de recursos, Chrome = ChromeDriver, Firefox + profile com NSS, policies do Chrome graváveis, ferramentas (xdotool, certutil, ImageMagick, Java, x11vnc, noVNC...), módulos Python, defaults de ambiente |
 | browsers headless sem display | `tests/image/test_browsers.py` sem Xvfb |
 | serviços + browsers + integração | Xvfb + OpenBox + PJeOffice + VNC + noVNC ligados: `test_services.py` (inclui o **teste de assinatura do PJeOffice**: o Chrome clica em "Testar" na página local dele, o PJeOffice pede a senha, assina com um A1 de teste e devolve nome/CPF; senha errada precisa ser recusada), `test_browsers.py` (inclui UC headful) e `trixie_integration_test.py` |
 | certificado A1 | `tests/image/test_a1_certificate.py` + `test_preflight.py` com uma ICP de teste gerada na hora: `.pfx` por URL + senha (AES, 3DES e RC2), senha errada/certificado vencido, PDF → `.p7s` attached (CAdES-BES) e detached, PDF assinado (PAdES), Java/PJeOffice lendo o `.pfx`, importação/limpeza no NSS, e Chrome, SeleniumBase UC e Firefox (headless e com janela) apresentando o certificado a um servidor HTTPS local que **exige** certificado de cliente; controles negativos sem o certificado; `/app/a1_check.py` e `/app/preflight.py` de ponta a ponta |
@@ -48,10 +48,11 @@ Cenários (cada um é um `docker run` separado; qualquer falha => exit 1):
 | relay de saída | `tests/image/test_egress.py` com relay SOCKS5 de teste ("internet falsa"): Python, curl, Java do PJeOffice, Chrome, UC e Firefox saem pelo relay; DNS resolvido no relay (hosts `.invalid`); WebRTC sem IP; policies em `chrome://policy`; localhost direto; A1 (mTLS) junto; `preflight.py` com o relay |
 | relay de saída: proxy HTTP e falhas | proxy HTTP com senha; relay fora do ar, senha errada e esquema inválido **param** o container; `EGRESS_REQUIRED=0` só avisa; senha fora do log |
 | `smoke_test.py` | o script padrão da imagem agora **falha** se o browser falhar |
-| worker em loop | `WORKER_LOOP=1` baixa `SCRIPT_URL` + `HELPER_URLS` e executa ≥ 2 iterações; as URLs levam usuário/senha e tokens na query, e nenhum deles pode aparecer no log |
+| worker em loop | `WORKER_LOOP=1` baixa `SCRIPT_URL` + `HELPER_URLS` e executa ≥ 2 iterações, com o resumo de recursos em cada uma; as URLs levam usuário/senha e tokens na query, e nenhum deles pode aparecer no log |
 | worker em loop com relay | relay derrubado no meio do loop: as iterações são puladas (o script não roda) e o worker retoma sozinho quando o relay volta |
-| execução única | `SCRIPT_URL` executa e o helper de `/app/src` é importável |
-| falha propaga exit code | script com `sys.exit(3)` => container termina com erro |
+| execução única | `SCRIPT_URL` executa e o helper de `/app/src` é importável; o log começa com a linha da imagem e termina com o resumo de recursos (`📊` e `RESOURCE_SUMMARY`) |
+| falha propaga exit code | script com `sys.exit(3)` => container termina com exit 3, mesmo com o medidor de recursos no meio |
+| limites do container | `--shm-size=64m -m 1g --cpus 0.5` com `USE_PJEOFFICE=1`: o preflight avisa sobre `/dev/shm`, memória e CPU **sem reprovar**; o `resource_usage.py` lê os limites e mede um pico de 300 MB alocados |
 | comando direto | `docker run <imagem> python --version` |
 | modo standby | `/health` = 200 e `/task` sem token = 401 |
 
