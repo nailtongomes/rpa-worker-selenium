@@ -42,6 +42,7 @@ CGROUP_ROOT = Path("/sys/fs/cgroup")
 MB = 1024 * 1024
 UNLIMITED = 1 << 60  # cgroup v1 usa ~2^63 para "sem limite"
 MEMORY_HEADROOM = 1.25  # reserva sugerida = pico x 1,25
+SHORT_RUN_SECS = 10  # abaixo disso a CPU medida é quase só a partida do interpretador
 
 
 def _read(path: Path) -> str:
@@ -295,6 +296,9 @@ def human_lines(summary: dict) -> list:
     else:
         mem_line += " (sem limite)"
     lines.append(mem_line)
+    if summary.get("duracao_s", 0) < SHORT_RUN_SECS:
+        lines.append(f"   ℹ️  execução curta ({fmt_duration(summary.get('duracao_s', 0))}): a CPU aqui é quase só a partida "
+                     "do Python; para dimensionar, use execuções reais (resource_usage.py report)")
     if cpu.get("limitada_pct", 0) >= 10:
         lines.append(f"   ⚠️  a CPU bateu no limite em {_num(cpu['limitada_pct'], 0)}% do tempo: "
                      "a necessidade real pode ser maior que o medido")

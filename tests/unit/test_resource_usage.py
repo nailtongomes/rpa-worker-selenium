@@ -163,3 +163,12 @@ def test_report_aggregates_runs(tmp_path, capsys):
     assert agg["memoria_pico_max_mb"] == 1200 and agg["memoria_pico_medio_mb"] == 1000
     assert agg["sugestao"] == ru.suggestion(1200, 0.9)
     assert "pico máximo 1,17 GB" in out
+
+
+def test_short_run_is_flagged():
+    summary = {"rotulo": "x.py", "exit_code": 0, "duracao_s": 0.4, "fonte": "cgroup v2", "amostras": 1,
+               "cpu": {"media_nucleos": 1.1, "p95_nucleos": 1.1, "pico_nucleos": 1.1},
+               "memoria": {"inicio_mb": 20, "media_mb": 20, "pico_mb": 20}, "limites": {}}
+    assert "execução curta" in "\n".join(ru.human_lines(summary))
+    summary["duracao_s"] = 60
+    assert "execução curta" not in "\n".join(ru.human_lines(summary))
