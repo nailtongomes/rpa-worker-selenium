@@ -244,15 +244,17 @@ def _run_function(tmp_path, names, call, env=None, prelude=""):
 @pytest.mark.parametrize("cleanup, survives", [("1", False), ("0", True)])
 def test_cleanup_closes_leftover_driver(tmp_path, cleanup, survives):
     """Um "chromedriver" esquecido pela iteração é fechado; com WORKER_CLEANUP=0 fica."""
+    # Uma cópia do bash chamada chromedriver: /proc/<pid>/exe termina em /chromedriver. (Uma cópia do
+    # sleep não serve: no runner do CI ele sai na hora fora do lugar de origem.)
     fake = tmp_path / "bin" / "chromedriver"
     fake.parent.mkdir()
-    fake.write_bytes(pathlib.Path(shutil.which("sleep")).read_bytes())
+    fake.write_bytes(pathlib.Path(shutil.which("bash")).read_bytes())
     fake.chmod(0o755)
-    # argv[0] = "sleep": em sistemas com coreutils multicall (uutils) o binário escolhe o comando por ele
-    proc = subprocess.Popen(["sleep", "300"], executable=str(fake))
+    proc = subprocess.Popen([str(fake), "-c", "while :; do sleep 0.2; done"],
+                            stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True)
     try:
-        time.sleep(0.2)
-        assert proc.poll() is None, "o chromedriver falso não ficou rodando"
+        time.sleep(0.3)
+        assert proc.poll() is None, f"o chromedriver falso não ficou rodando: {proc.stdout.read()}"
         # O teste roda no host: rm vira no-op (perfis temporários de verdade ficam) e o kill só
         # alcança o processo falso (browsers/drivers de quem roda o pytest ficam)
         prelude = ("rm() { :; }\n"
