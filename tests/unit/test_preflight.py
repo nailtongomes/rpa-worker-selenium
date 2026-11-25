@@ -224,3 +224,42 @@ def test_environment_limits_from_cgroup(tmp_path, monkeypatch):
     assert steps["CPU"]["status"] == "aviso" and "0.5" in steps["CPU"]["detalhe"]
     assert steps["relógio"]["status"] == "pulado"
     assert result["limites"]["memoria_mb"] == 1024
+
+
+
+@pytest.mark.parametrize("env_xmx, launcher_xmx, expected, origin", [
+    ("", "-Xmx2048m", 2048 * 1024 ** 2, "launcher do PJeOffice"),
+    ("512m", "-Xmx2048m", 512 * 1024 ** 2, "PJEOFFICE_JAVA_XMX"),
+    ("1G", "", 1024 ** 3, "PJEOFFICE_JAVA_XMX"),
+    ("", "", None, ""),
+])
+def test_pjeoffice_xmx(tmp_path, monkeypatch, env_xmx, launcher_xmx, expected, origin):
+    launcher = tmp_path / "pjeoffice-pro.sh"
+    launcher.write_text(f"nohup ./jre/bin/java -Xms20m {launcher_xmx} -jar pjeoffice-pro.jar &\n")
+    monkeypatch.setenv("PJEOFFICE_EXECUTABLE", str(launcher))
+    monkeypatch.setenv("PJEOFFICE_JAVA_XMX", env_xmx)
+    assert preflight.pjeoffice_xmx() == (expected, origin)
+
+
+@pytest.mark.parametrize("env_xmx, status", [("", "aviso"), ("512m", "ok")])
+def test_environment_warns_when_pjeoffice_heap_can_take_the_container(tmp_path, monkeypatch, env_xmx, status):
+    import resource_usage
+
+    cg = tmp_path / "cg"
+    cg.mkdir()
+    (cg / "memory.current").write_text(str(300 * 1024 * 1024))
+    (cg / "memory.stat").write_text("inactive_file 0\n")
+    (cg / "cpu.stat").write_text("usage_usec 1\n")
+    (cg / "memory.max").write_text(str(2048 * 1024 * 1024))
+    (cg / "cpu.max").write_text("max 100000")
+    monkeypatch.setattr(resource_usage, "CGROUP_ROOT", cg)
+    launcher = tmp_path / "pjeoffice-pro.sh"
+    launcher.write_text("nohup ./jre/bin/java -Xmx2048m -jar pjeoffice-pro.jar &\n")
+    monkeypatch.setenv("PJEOFFICE_EXECUTABLE", str(launcher))
+    monkeypatch.setenv("PJEOFFICE_JAVA_XMX", env_xmx)
+    monkeypatch.setenv("USE_PJEOFFICE", "1")
+    result = preflight.check_environment("off")
+    step = _steps(result)["Java do PJeOffice"]
+    assert result["ok"] is True and step["status"] == status
+    if status == "aviso":
+        assert "PJEOFFICE_JAVA_XMX=512m" in step["detalhe"] and "2,0 GB" in step["detalhe"]

@@ -103,9 +103,11 @@ scenario_headless_no_display() {
 }
 
 scenario_full_services() {
-    # Configuração de produção: Xvfb + OpenBox + PJeOffice + VNC + noVNC
+    # Configuração de produção: Xvfb + OpenBox + PJeOffice + VNC + noVNC. O PJeOffice sobe com
+    # PJEOFFICE_JAVA_XMX (launcher copiado): o teste de assinatura dele roda assim; a receita
+    # shutup-and-run cobre o launcher original.
     run_in_image \
-        -e USE_XVFB=1 -e USE_OPENBOX=1 -e USE_PJEOFFICE=1 -e USE_VNC=1 -e USE_NOVNC=1 \
+        -e USE_XVFB=1 -e USE_OPENBOX=1 -e USE_PJEOFFICE=1 -e USE_VNC=1 -e USE_NOVNC=1 -e PJEOFFICE_JAVA_XMX=512m \
         "$IMAGE" bash -c "sleep 8 && $PYTEST $(marker_filter '') --junitxml=/results/junit-full.xml \
             /repo/tests/image/test_services.py /repo/tests/image/test_browsers.py \
             /repo/tests/image/trixie_integration_test.py"
@@ -313,6 +315,93 @@ scenario_preflight_on_start() {
     return "$ok"
 }
 
+scenario_restart_stale_locks() {
+    # O mesmo container subindo de novo (docker restart, política de restart): o /tmp guarda o
+    # lock do Xvfb anterior, com um PID que na nova partida é de outro processo. Antes o Xvfb
+    # recusava ("Server is already active for display 99") e o container caía. Também: travas
+    # velhas de perfil do Chrome/Firefox e um log acima de LOG_MAX_MB.
+    local name="rpa-test-restart-$$" log="$RESULTS/logs/restart-stale-locks.log" ok=1 rc
+    local leave_behind='xdpyinfo -display :99 >/dev/null && echo XVFB-OK
+        mkdir -p /app/perfil && ln -sfn "$(hostname)-$$" /app/perfil/SingletonLock
+        ln -sfn "127.0.0.1:+$$" /root/.mozilla/firefox/selenium.default-release/lock
+        head -c 2097152 /dev/zero > /app/logs/grande.log'
+    docker rm -f "$name" >/dev/null 2>&1
+    docker run --name "$name" "${EXTRA_ARGS[@]}" -e USE_XVFB=1 -e USE_OPENBOX=1 -e LOG_MAX_MB=1 \
+        "$IMAGE" bash -c "$leave_behind" > /dev/null 2>&1
+    timeout 120 docker start -a "$name" > "$log" 2>&1
+    rc=$?
+    docker rm -f "$name" >/dev/null 2>&1
+    grep -E "stale|Xvfb|XVFB-OK|Rotated|Fatal" "$log" | head -8
+    if [ "$rc" -ne 0 ]; then
+        echo "a segunda partida falhou (exit $rc)"
+    elif ! grep -q "Removed stale Xvfb lock /tmp/.X99-lock" "$log" || ! grep -q "XVFB-OK" "$log"; then
+        echo "o lock velho do Xvfb não foi removido ou o Xvfb não subiu"
+    elif ! grep -q "Removed 2 stale browser profile lock(s)" "$log"; then
+        echo "travas velhas do Chrome/Firefox não foram removidas"
+    elif ! grep -q "Rotated /app/logs/grande.log" "$log"; then
+        echo "log acima de LOG_MAX_MB não foi rodado"
+    else
+        ok=0
+    fi
+    return "$ok"
+}
+
+scenario_vnc_password() {
+    # VNC_PASSWORD: o VNC passa a exigir senha (RFB security type 2, nunca 1 = sem senha),
+    # a senha não fica no argv nem chega ao comando/script, e VNC_VIEW_ONLY=1 vira -viewonly.
+    # Sem senha (cenário de serviços) continua aberto como sempre.
+    local log="$RESULTS/logs/vnc-password.log"
+    run_in_image -e USE_XVFB=1 -e USE_VNC=1 -e VNC_PASSWORD=S3nha-VNC -e VNC_VIEW_ONLY=1 \
+        "$IMAGE" bash -c 'sleep 2
+            python3 - <<PY
+import socket, time
+for _ in range(20):
+    try:
+        s = socket.create_connection(("127.0.0.1", 5900), timeout=5)
+        break
+    except OSError:
+        time.sleep(0.5)
+version = s.recv(12)
+s.sendall(b"RFB 003.008\n")
+n = s.recv(1)[0]
+types = list(s.recv(n))
+print(f"RFB {version.decode().strip()} security types: {types}")
+assert types and 1 not in types and 2 in types, "VNC sem senha"
+print("VNC-SENHA-OK")
+PY
+            echo "senha no ambiente do comando: $(env | grep -c VNC_PASSWORD=)"
+            echo "senha no argv: $(ps -eo args | grep -c "[S]3nha-VNC")"
+            echo "arquivo da senha: $(ls /tmp/.x11vnc-passwd 2>/dev/null | wc -l)"
+            ps -eo args | grep -q "[x]11vnc.*-viewonly" && echo "VIEW-ONLY-OK"' > "$log" 2>&1
+    grep -E "security types|senha|VNC|VIEW" "$log" | grep -v "S3nha" | head -8
+    grep -q "VNC-SENHA-OK" "$log" && grep -q "VIEW-ONLY-OK" "$log" \
+        && grep -q "senha no ambiente do comando: 0" "$log" && grep -q "senha no argv: 0" "$log" \
+        && grep -q "arquivo da senha: 0" "$log" && grep -q "password required, view only" "$log" \
+        && ! grep -q "S3nha-VNC" "$log"
+}
+
+scenario_script_sha256() {
+    # SCRIPT_SHA256: hash certo roda; hash errado não roda, não tenta de novo e sai com erro
+    local log_ok="$RESULTS/logs/sha256-ok.log" log_bad="$RESULTS/logs/sha256-bad.log" rc_ok rc_bad ok=0 good
+    good="$(sha256sum "$REPO/tests/image/fixtures/job_ok.py" | cut -d' ' -f1)"
+    run_in_image -e SCRIPT_URL="$FIXTURE_URL/job_ok.py" -e HELPER_URLS="$FIXTURE_URL/helper_mod.py" \
+        -e SCRIPT_SHA256="$good" -e WORKER_ID=sha --entrypoint bash "$IMAGE" -c "$WITH_FIXTURES" _ > "$log_ok" 2>&1
+    rc_ok=$?
+    run_in_image -e SCRIPT_URL="$FIXTURE_URL/job_ok.py" -e HELPER_URLS="$FIXTURE_URL/helper_mod.py" \
+        -e SCRIPT_SHA256="$(printf '0%.0s' $(seq 1 64))" -e WORKER_ID=sha \
+        --entrypoint bash "$IMAGE" -c "$WITH_FIXTURES" _ > "$log_bad" 2>&1
+    rc_bad=$?
+    grep -hE "SHA-256|SCRIPT_SHA256|JOB-OK|attempt" "$log_ok" "$log_bad"
+    echo "exit com hash certo=$rc_ok, com hash errado=$rc_bad"
+    [ "$rc_ok" -eq 0 ] && grep -q "JOB-OK worker=sha" "$log_ok" || { echo "hash certo não rodou o script"; ok=1; }
+    [ "$rc_bad" -ne 0 ] && grep -q "does not match SCRIPT_SHA256" "$log_bad" || { echo "hash errado não parou"; ok=1; }
+    if grep -q "JOB-OK" "$log_bad" || grep -q "Download attempt 2" "$log_bad"; then
+        echo "hash errado: o script rodou ou o download foi repetido"
+        ok=1
+    fi
+    return "$ok"
+}
+
 scenario_egress_loop() {
     # WORKER_LOOP=1 com relay: se o relay cair, a iteração é pulada (o script não roda
     # sem a saída certa) e o worker volta sozinho quando o relay volta
@@ -476,6 +565,9 @@ SCENARIOS=(
     "worker em loop com relay - pula iteração com o relay fora do ar:scenario_egress_loop"
     "worker em loop - script travado (SIGTERM ignorado) morto com SIGKILL e Chrome esquecido fechado:scenario_loop_cleanup"
     "preflight na partida (PREFLIGHT_ON_START=1) - ok roda o script, falha para com exit 1:scenario_preflight_on_start"
+    "restart do mesmo container - lock velho do Xvfb, travas de perfil e log grande:scenario_restart_stale_locks"
+    "VNC com senha (VNC_PASSWORD) e só visualização (VNC_VIEW_ONLY):scenario_vnc_password"
+    "SCRIPT_SHA256 - hash certo roda, errado não roda nem tenta de novo:scenario_script_sha256"
     "execução única com SCRIPT_URL:scenario_single_run_ok"
     "falha do script propaga exit code:scenario_single_run_failure_propagates"
     "limites do container - avisos do preflight e resumo de recursos (shm 64 MB, 1 GB, 0,5 CPU):scenario_limits_and_resources"

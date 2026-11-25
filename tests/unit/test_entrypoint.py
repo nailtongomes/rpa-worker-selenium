@@ -5,6 +5,7 @@ Não executam o entrypoint (ele cria diretórios em /app e /root); a execução
 real é validada pelos testes de imagem.
 """
 
+import os
 import pathlib
 import re
 import shutil
@@ -61,6 +62,9 @@ def test_entrypoint_shellcheck_errors():
         ("WORKER_CLEANUP", "1"),
         ("PREFLIGHT_ON_START", "0"),
         ("PREFLIGHT_ARGS", ""),
+        ("PJEOFFICE_JAVA_XMX", ""),
+        ("LOG_MAX_MB", "0"),  # rotação desligada: logs como sempre
+        ("VNC_VIEW_ONLY", "0"),
     ],
 )
 def test_entrypoint_env_defaults(entrypoint_text, var, default):
@@ -296,3 +300,146 @@ def test_preflight_on_start_stops_the_container_when_it_fails(tmp_path, enabled,
     assert (calls_file.read_text().strip() if calls_file.exists() else "") == calls
     if rc:
         assert "Preflight failed: stopping before the first task" in result.stdout
+
+
+
+# --- partida defensiva: locks velhos, Xvfb, -Xmx do PJeOffice, logs, VNC, SHA-256 ----------
+
+def test_stale_locks_are_cleared_before_any_service(entrypoint_text):
+    main = _function_body(entrypoint_text, "main")
+    assert main.index("clear_stale_locks") < main.index("setup_firefox_profile") < main.index("start_xvfb")
+
+
+def _fake_process(tmp_path, name):
+    """Processo vivo com comm = name (cópia do bash em loop)."""
+    exe = tmp_path / "fake" / name
+    exe.parent.mkdir(exist_ok=True)
+    exe.write_bytes(pathlib.Path(shutil.which("bash")).read_bytes())
+    exe.chmod(0o755)
+    proc = subprocess.Popen([str(exe), "-c", "while :; do sleep 0.2; done"])
+    time.sleep(0.3)
+    assert proc.poll() is None
+    return proc
+
+
+@pytest.mark.parametrize("owner, browsers, xlock_kept, profile_locks_kept", [
+    ("gone", "", False, False),        # restart: dono do lock não existe mais
+    ("other", "", False, False),       # PID reaproveitado por outro processo (o caso real)
+    ("Xvfb", "", True, False),         # um Xvfb vivo é dono: fica
+    ("gone", "4242", False, True),     # browser rodando: travas dos perfis ficam
+])
+def test_clear_stale_locks(tmp_path, owner, browsers, xlock_kept, profile_locks_kept):
+    display = 900 + os.getpid() % 90  # display exclusivo do teste: o lock em /tmp é nosso
+    xlock, xsock = pathlib.Path(f"/tmp/.X{display}-lock"), pathlib.Path(f"/tmp/.X11-unix/X{display}")
+    proc = _fake_process(tmp_path, "Xvfb") if owner == "Xvfb" else (
+        _fake_process(tmp_path, "openbox") if owner == "other" else None)
+    pid = proc.pid if proc else 4_000_000
+    profile = tmp_path / "perfil"
+    profile.mkdir()
+    (profile / "SingletonLock").symlink_to("host-123")
+    firefox = tmp_path / "ff"
+    firefox.mkdir()
+    (firefox / "lock").symlink_to("127.0.0.1:+123")
+    (firefox / ".parentlock").write_text("")
+    try:
+        xlock.write_text(f"{pid:>10}\n")
+        xsock.parent.mkdir(exist_ok=True)
+        xsock.write_text("")
+        # find/browser_pids/remove_browser_temp de mentira: o teste nunca mexe no /tmp, /app, /root reais
+        prelude = (f"find() {{ printf '%s\\0' '{profile / 'SingletonLock'}'; }}\n"
+                   f"browser_pids() {{ [ -n '{browsers}' ] && echo {browsers}; return 0; }}\n"
+                   "remove_browser_temp() { echo TEMP-LIMPO; }\n")
+        result = _run_function(tmp_path, ["clear_stale_locks"], "clear_stale_locks",
+                               env={"DISPLAY": f":{display}", "FIREFOX_PROFILE_DIR": str(firefox)},
+                               prelude=prelude)
+        assert result.returncode == 0, result.stderr
+        assert xlock.exists() == xlock_kept and xsock.exists() == xlock_kept
+        assert ("Removed stale Xvfb lock" in result.stdout) == (not xlock_kept)
+        assert (profile / "SingletonLock").is_symlink() == profile_locks_kept
+        assert (firefox / "lock").is_symlink() == profile_locks_kept
+        assert ("Removed 2 stale browser profile lock(s)" in result.stdout) == (not profile_locks_kept)
+        assert ("TEMP-LIMPO" in result.stdout) == (not profile_locks_kept)
+    finally:
+        xlock.unlink(missing_ok=True)
+        xsock.unlink(missing_ok=True)
+        if proc:
+            proc.kill()
+            proc.wait()
+
+
+def test_xvfb_start_fails_fast_and_reuses_a_live_display(entrypoint_text):
+    body = _function_body(entrypoint_text, "start_xvfb")
+    assert body.index('xdpyinfo -display "${DISPLAY}" >/dev/null 2>&1; then') < body.index("Xvfb \"${DISPLAY}\"")
+    assert 'if ! kill -0 "$XVFB_PID"' in body and "Xvfb exited during startup" in body
+
+
+def test_rotate_logs(tmp_path):
+    logs = tmp_path / "logs"
+    logs.mkdir()
+    (logs / "egress_proxy.log").write_bytes(b"x" * (2 * 1024 * 1024 + 1))
+    (logs / "resources.jsonl").write_bytes(b"y" * 100)
+    (logs / "egress_proxy.log.1").write_text("antigo")
+    text = ENTRYPOINT.read_text(encoding="utf-8").replace("/app/logs/", f"{logs}/")
+    func = _function_body(text, "rotate_logs")
+    script = tmp_path / "r.sh"
+    script.write_text("log_timestamp() { echo '[t]'; }\nrotate_logs() {\n" + func + "}\nrotate_logs\n")
+    for max_mb, rotated in (("0", False), ("2", True)):
+        result = subprocess.run(["bash", str(script)], capture_output=True, text=True,
+                                env={"PATH": "/usr/bin:/bin", "LOG_MAX_MB": max_mb})
+        assert result.returncode == 0, result.stderr
+        assert ((logs / "egress_proxy.log").stat().st_size == 0) == rotated
+    assert (logs / "egress_proxy.log.1").stat().st_size == 2 * 1024 * 1024 + 1
+    assert (logs / "resources.jsonl").stat().st_size == 100  # abaixo do limite: intacto
+    assert "Rotated" in result.stdout
+
+
+def test_logs_rotate_at_start_and_between_iterations(entrypoint_text):
+    assert "rotate_logs" in _function_body(entrypoint_text, "setup_directories")
+    loop = _function_body(entrypoint_text, "execute_with_loop")
+    assert loop.index("cleanup_iteration") < loop.index("rotate_logs") < loop.index('sleep "${WORKER_RESTART_DELAY}"')
+
+
+@pytest.mark.parametrize("xmx, ok", [("512m", True), ("1G", True), ("512", False), ("1g; rm -rf /", False)])
+def test_pjeoffice_launcher_with_xmx(tmp_path, xmx, ok):
+    launcher = tmp_path / "pjeoffice" / "pjeoffice-pro.sh"
+    launcher.parent.mkdir()
+    launcher.write_text('#!/bin/bash\nnohup ./jre/bin/java \\\n-Xms20m \\\n-Xmx2048m \\\n-jar pjeoffice-pro.jar &\n')
+    result = _run_function(tmp_path, ["pjeoffice_launcher_with_xmx"], f"pjeoffice_launcher_with_xmx '{xmx}'",
+                           env={"PJEOFFICE_EXECUTABLE": str(launcher)})
+    assert (result.returncode == 0) == ok, result.stderr
+    if ok:
+        custom = pathlib.Path(result.stdout.strip())
+        assert custom.parent == launcher.parent  # o launcher acha o jar pelo próprio diretório
+        text = custom.read_text()
+        assert f"-Xmx{xmx}" in text and "-Xmx2048m" not in text and "-Xms20m" in text
+        assert os.access(custom, os.X_OK)
+        assert "-Xmx2048m" in launcher.read_text()  # o original não muda
+    else:
+        assert "keeping the launcher's -Xmx" in result.stderr
+
+
+def test_pjeoffice_uses_the_xmx_launcher_only_when_asked(entrypoint_text):
+    body = _function_body(entrypoint_text, "start_pjeoffice")
+    assert 'if [ -n "${PJEOFFICE_JAVA_XMX}" ]; then' in body
+    assert '"${launcher}" &' in body
+
+
+def test_vnc_password_never_in_argv_or_children(entrypoint_text):
+    body = _function_body(entrypoint_text, "start_vnc")
+    assert "auth=(-nopw)" in body  # sem senha: como sempre
+    assert '-passwdfile "rm:${password_file}"' in body  # x11vnc lê e apaga o arquivo
+    assert "umask 077" in body and "unset VNC_PASSWORD" in body
+    assert '"${auth[@]}"' in body and "-nopw \\\n" not in body
+    assert 'VNC_VIEW_ONLY}" = "1"' in body and "-viewonly" in body
+    # a senha só passa por printf (builtin, fora do argv) e nunca vai para o log
+    for line in body.splitlines():
+        if "VNC_PASSWORD}" in line and "VNC_PASSWORD_FILE" not in line:
+            assert line.strip().startswith(("printf", "if [", "elif", "unset")) or "-n \"${VNC_PASSWORD" in line, line
+        if line.strip().startswith("echo"):
+            assert "VNC_PASSWORD}" not in line
+
+
+def test_script_hash_mismatch_is_not_retried(entrypoint_text):
+    body = _function_body(entrypoint_text, "download_script_with_retry")
+    assert 'if [ "$rc" -eq 3 ]; then' in body
+    assert body.index('"$rc" -eq 3') < body.index("sleep $wait_time")

@@ -19,6 +19,8 @@ export PYTHONPATH="/app:/app/src${PYTHONPATH:+:${PYTHONPATH}}"
 export PJEOFFICE_CONFIG_DIR=${PJEOFFICE_CONFIG_DIR:-/app/.pjeoffice-pro}
 export PJEOFFICE_CONFIG_FILE=${PJEOFFICE_CONFIG_FILE:-${PJEOFFICE_CONFIG_DIR}/pjeoffice-pro.config}
 export PJEOFFICE_EXECUTABLE=${PJEOFFICE_EXECUTABLE:-/opt/pjeoffice/pjeoffice-pro.sh}
+# Max Java heap of PJeOffice (e.g. 512m). Empty keeps the launcher's own -Xmx2048m.
+export PJEOFFICE_JAVA_XMX=${PJEOFFICE_JAVA_XMX:-}
 
 # Screen recording configuration
 export RECORDING_DIR=${RECORDING_DIR:-/app/recordings}
@@ -45,6 +47,13 @@ export RESOURCE_SUMMARY=${RESOURCE_SUMMARY:-1}
 export RESOURCE_SAMPLE_SECS=${RESOURCE_SAMPLE_SECS:-1}
 export RESOURCE_LOG=${RESOURCE_LOG:-/app/logs/resources.jsonl}
 export RESOURCE_PROCESSES=${RESOURCE_PROCESSES:-1}  # 0: no per-process breakdown
+
+# Files in /app/logs above this size (MB) are rotated (one .1 copy kept); 0 (default) never rotates
+export LOG_MAX_MB=${LOG_MAX_MB:-0}
+
+# VNC: VNC_PASSWORD_FILE (preferred) or VNC_PASSWORD asks for a password; VNC_VIEW_ONLY=1
+# lets viewers watch without clicking or typing. Without a password VNC stays open, as always.
+export VNC_VIEW_ONLY=${VNC_VIEW_ONLY:-0}
 
 # Task server configuration (for standby mode)
 export TASK_SERVER_PORT=${TASK_SERVER_PORT:-8080}
@@ -110,7 +119,64 @@ setup_directories() {
         mkdir -p /root/.pki 2>/dev/null || true
         chmod 700 /root/.pki 2>/dev/null || true
     fi
-    
+
+    rotate_logs
+    return 0
+}
+
+# Logs in /app/logs (relay, VNC, resources.jsonl, the scripts' own) grow forever in a
+# long-running worker: above LOG_MAX_MB the file is copied to <file>.1 and emptied in place
+# (copy + truncate, so a process still writing to it keeps working).
+rotate_logs() {
+    local max="${LOG_MAX_MB}" file size
+    [ "${max}" -gt 0 ] 2>/dev/null || return 0
+    for file in /app/logs/*.log /app/logs/*.jsonl; do
+        [ -f "$file" ] || continue
+        size="$(stat -c %s "$file" 2>/dev/null)" || continue
+        if [ "$size" -gt $((max * 1024 * 1024)) ]; then
+            cp -f "$file" "${file}.1" && : > "$file"
+            echo "$(log_timestamp) 🗂️  Rotated ${file} ($((size / 1024 / 1024)) MB > ${max} MB; previous content in ${file}.1)"
+        fi
+    done
+    return 0
+}
+
+# Locks left by a previous run of this same container (docker restart, restart policy):
+# /tmp survives a restart and the PID written in a lock usually belongs to another live
+# process in the new run (PIDs repeat in containers, often it is the new Xvfb's own PID),
+# so Xvfb refuses to start ("Server is already active for display") and Chrome/Firefox
+# think the profile is in use. Runs before any service or browser starts; a lock whose
+# owner is really running (an Xvfb on the display, any browser) is left alone.
+clear_stale_locks() {
+    local display_num lock pid file
+    local removed=0
+    display_num="${DISPLAY#*:}"
+    display_num="${display_num%%.*}"
+    lock="/tmp/.X${display_num}-lock"
+    if [ -e "$lock" ]; then
+        pid="$(tr -dc '0-9' < "$lock" 2>/dev/null)" || pid=""
+        if [ -z "$pid" ] || [ "$(cat "/proc/${pid}/comm" 2>/dev/null)" != "Xvfb" ]; then
+            rm -f "$lock" "/tmp/.X11-unix/X${display_num}"
+            echo "$(log_timestamp) 🧹 Removed stale Xvfb lock ${lock} (from a previous run)"
+        fi
+    fi
+
+    [ -z "$(browser_pids)" ] || return 0
+    # Chrome: Singleton* in any profile (tmp, /app, /root, volumes under them);
+    # Firefox: the "lock" symlink of the profile
+    while IFS= read -r -d '' file; do
+        rm -f "$file"
+        removed=$((removed + 1))
+    done < <(find /tmp /app /root -maxdepth 6 \( -name SingletonLock -o -name SingletonSocket \
+        -o -name SingletonCookie \) -print0 2>/dev/null)
+    if [ -L "${FIREFOX_PROFILE_DIR}/lock" ] || [ -e "${FIREFOX_PROFILE_DIR}/lock" ]; then
+        rm -f "${FIREFOX_PROFILE_DIR}/lock" "${FIREFOX_PROFILE_DIR}/.parentlock"
+        removed=$((removed + 1))
+    fi
+    if [ "$removed" -gt 0 ]; then
+        echo "$(log_timestamp) 🧹 Removed ${removed} stale browser profile lock(s) (from a previous run)"
+    fi
+    remove_browser_temp
     return 0
 }
 
@@ -258,6 +324,13 @@ start_xvfb() {
     mkdir -p /tmp/.X11-unix 2>/dev/null || true
     chmod 1777 /tmp/.X11-unix 2>/dev/null || true
     
+    # An X server already answering on this display (shared /tmp/.X11-unix, entrypoint run
+    # twice): use it instead of failing to start a second one
+    if xdpyinfo -display "${DISPLAY}" >/dev/null 2>&1; then
+        echo "$(log_timestamp) ✅ X server already running on ${DISPLAY}, using it"
+        return 0
+    fi
+
     # Get screen dimensions
     local width=${SCREEN_WIDTH:-1366}
     local height=${SCREEN_HEIGHT:-768}
@@ -266,9 +339,14 @@ start_xvfb() {
     Xvfb "${DISPLAY}" -screen 0 "${width}x${height}x24" -nolisten tcp &
     XVFB_PID=$!
     
-    # Wait for Xvfb to be ready
+    # Wait for Xvfb to be ready (if it exits, its error is right above in the log)
     local attempt=0
     while ! xdpyinfo -display "${DISPLAY}" >/dev/null 2>&1; do
+        if ! kill -0 "$XVFB_PID" 2>/dev/null; then
+            echo "$(log_timestamp) ❌ Xvfb exited during startup (see its error above)"
+            XVFB_PID=""
+            return 1
+        fi
         sleep 1
         attempt=$((attempt + 1))
         if [ $attempt -ge 10 ]; then
@@ -344,12 +422,37 @@ start_pjeoffice() {
         return 0
     fi
     
-    echo "$(log_timestamp) 📄 Starting PJeOffice from ${PJEOFFICE_EXECUTABLE}..."
-    "${PJEOFFICE_EXECUTABLE}" &
+    local launcher="${PJEOFFICE_EXECUTABLE}"
+    if [ -n "${PJEOFFICE_JAVA_XMX}" ]; then
+        launcher="$(pjeoffice_launcher_with_xmx "${PJEOFFICE_JAVA_XMX}")" || launcher="${PJEOFFICE_EXECUTABLE}"
+    fi
+
+    echo "$(log_timestamp) 📄 Starting PJeOffice from ${launcher}..."
+    "${launcher}" &
     PJEOFFICE_PID=$!
     
     echo "$(log_timestamp) ✅ PJeOffice started (PID: ${PJEOFFICE_PID})"
     return 0
+}
+
+# The PJeOffice launcher hardcodes -Xmx2048m (as much as a 2 GB container): with
+# PJEOFFICE_JAVA_XMX the same launcher runs from a copy next to it (it finds its files by its
+# own directory) with only -Xmx changed. Prints the launcher to run; fails (with a warning) when
+# the value or the launcher is not what we expect, and the original launcher is used.
+pjeoffice_launcher_with_xmx() {
+    local xmx="$1" custom
+    if ! [[ "$xmx" =~ ^[0-9]+[mMgG]$ ]]; then
+        echo "$(log_timestamp) ⚠️  PJEOFFICE_JAVA_XMX=${xmx} is not like 512m or 1g; keeping the launcher's -Xmx" >&2
+        return 1
+    fi
+    if ! grep -q -- '-Xmx[0-9]*[mMgG]' "${PJEOFFICE_EXECUTABLE}"; then
+        echo "$(log_timestamp) ⚠️  no -Xmx in ${PJEOFFICE_EXECUTABLE}; PJEOFFICE_JAVA_XMX ignored" >&2
+        return 1
+    fi
+    custom="$(dirname "${PJEOFFICE_EXECUTABLE}")/.pjeoffice-xmx.sh"
+    sed "s/-Xmx[0-9]*[mMgG]/-Xmx${xmx}/" "${PJEOFFICE_EXECUTABLE}" > "$custom" && chmod 755 "$custom" || return 1
+    echo "$(log_timestamp) ☕ PJeOffice Java heap limited to ${xmx} (PJEOFFICE_JAVA_XMX)" >&2
+    echo "$custom"
 }
 
 # Start screen recording
@@ -430,6 +533,34 @@ start_vnc() {
     
     # Get VNC port configuration
     local vnc_port=${VNC_PORT:-5900}
+
+    # Password (optional): written to a 0600 file that x11vnc reads and deletes (rm:), never
+    # in argv; the variable is dropped so the scripts do not inherit it
+    local auth=(-nopw) auth_note="no password"
+    local password_file=/tmp/.x11vnc-passwd
+    if [ -n "${VNC_PASSWORD_FILE:-}" ] || [ -n "${VNC_PASSWORD:-}" ]; then
+        (
+            umask 077
+            if [ -n "${VNC_PASSWORD_FILE:-}" ]; then
+                head -n 1 "${VNC_PASSWORD_FILE}"
+            else
+                printf '%s\n' "${VNC_PASSWORD}"
+            fi
+        ) > "$password_file" 2>/dev/null
+        unset VNC_PASSWORD
+        if [ -s "$password_file" ]; then
+            auth=(-passwdfile "rm:${password_file}")
+            auth_note="password required"
+        else
+            rm -f "$password_file"
+            echo "$(log_timestamp) ⚠️  VNC_PASSWORD_FILE unreadable or empty: skipping VNC (it would be open without a password)"
+            return 0
+        fi
+    fi
+    if [ "${VNC_VIEW_ONLY}" = "1" ]; then
+        auth+=(-viewonly)
+        auth_note="${auth_note}, view only"
+    fi
     
     # Start x11vnc server
     # Options:
@@ -437,14 +568,15 @@ start_vnc() {
     #   -forever: keep listening for new connections (don't exit after first client disconnects)
     #   -shared: allow multiple VNC clients to connect simultaneously
     #   -rfbport: VNC server port
-    #   -nopw: no password required (suitable for local/trusted networks)
+    #   -nopw / -passwdfile: no password (trusted networks only) or VNC_PASSWORD(_FILE)
+    #   -viewonly: VNC_VIEW_ONLY=1
     #   -bg: run in background
     #   -o: log file location
     x11vnc -display "${DISPLAY}" \
            -forever \
            -shared \
            -rfbport "${vnc_port}" \
-           -nopw \
+           "${auth[@]}" \
            -bg \
            -o /app/logs/x11vnc.log
     
@@ -455,7 +587,7 @@ start_vnc() {
     
     if [ -n "$VNC_PID" ] && ps -p "$VNC_PID" > /dev/null 2>&1; then
         echo "$(log_timestamp) ✅ VNC server started successfully (PID: ${VNC_PID})"
-        echo "$(log_timestamp) 🌐 VNC server listening on port: ${vnc_port}"
+        echo "$(log_timestamp) 🌐 VNC server listening on port: ${vnc_port} (${auth_note})"
         echo "$(log_timestamp) 💡 Connect with: vncviewer <container-ip>:${vnc_port}"
         return 0
     else
@@ -543,10 +675,16 @@ download_script_with_retry() {
 
         echo "$(log_timestamp) 🔄 Download attempt $attempt (elapsed: ${elapsed}s)..."
 
-        # Run the script downloader
-        if python /app/script_downloader.py; then
+        # Run the script downloader (exit 3: SCRIPT_SHA256 mismatch, retrying does not help)
+        local rc=0
+        python /app/script_downloader.py || rc=$?
+        if [ "$rc" -eq 0 ]; then
             echo "$(log_timestamp) ✅ Script downloaded successfully"
             return 0
+        fi
+        if [ "$rc" -eq 3 ]; then
+            echo "$(log_timestamp) ❌ The downloaded script does not match SCRIPT_SHA256: not running it"
+            return 1
         fi
 
         attempt=$((attempt + 1))
@@ -674,13 +812,18 @@ cleanup_iteration() {
             sleep 1
         fi
     fi
-    # Temporary profiles of browsers that are no longer running (chromedriver/geckodriver
-    # create them per session; killed browsers leave them behind, /dev/shm counts as memory)
     if [ -z "$(browser_pids)" ]; then
-        rm -rf /tmp/.org.chromium.Chromium.* /tmp/.com.google.Chrome.* /tmp/rust_mozprofile* \
-            /dev/shm/.org.chromium.Chromium.* /dev/shm/.com.google.Chrome.* 2>/dev/null || true
+        remove_browser_temp
     fi
     return 0
+}
+
+# Temporary profiles of browsers that are no longer running (chromedriver/geckodriver create
+# them per session; killed browsers leave them behind, and /dev/shm counts as memory).
+# Only call it when no browser is running.
+remove_browser_temp() {
+    rm -rf /tmp/.org.chromium.Chromium.* /tmp/.com.google.Chrome.* /tmp/rust_mozprofile* \
+        /dev/shm/.org.chromium.Chromium.* /dev/shm/.com.google.Chrome.* 2>/dev/null || true
 }
 
 # PREFLIGHT_ON_START=1: is the worker ready (browsers, A1, relay, PJeOffice)? Runs once, after
@@ -738,6 +881,7 @@ execute_with_loop() {
         fi
 
         cleanup_iteration
+        rotate_logs
 
         iteration=$((iteration + 1))
 
@@ -753,6 +897,7 @@ main() {
     
     # Setup directories
     setup_directories
+    clear_stale_locks
     setup_firefox_profile
 
     # Optional egress relay: must come before any download

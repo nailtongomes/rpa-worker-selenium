@@ -21,7 +21,8 @@ Usuários da imagem dependem do que está abaixo. Não mude nada disso sem pedid
   `/app/preflight.py`, `/app/pjeoffice_check.py`, `/app/resource_usage.py`, `/app/image_info.py`
   (+ `/app/image_info.json`, gravado no build), `/opt/icp-brasil/` (`raizes.pem`, `acs.pem`).
 - Variáveis de ambiente e seus defaults (`USE_*`, `WORKER_*`, `SCRIPT_URL`, `HELPER_URLS`,
-  `CHROME_PROFILE_URL`, `TASK_*`, `SCREEN_*`, `PJEOFFICE_*`, `A1_PFX_*`, `EGRESS_*`, `RESOURCE_*`, `PREFLIGHT_*`).
+  `CHROME_PROFILE_URL`, `TASK_*`, `SCREEN_*`, `PJEOFFICE_*`, `A1_PFX_*`, `EGRESS_*`, `RESOURCE_*`, `PREFLIGHT_*`,
+  `VNC_*`, `LOG_MAX_MB`, `SCRIPT_SHA256`).
   Sem `EGRESS_PROXY_URL` o container sai direto, como sempre (recurso opcional, só alguns clientes). Os defaults do entrypoint
   estão travados em `tests/unit/test_entrypoint.py`.
 - Build-args usados pelo release: `BUILD_PJEOFFICE=1`, `ENABLE_PDF_TOOLS=1`,
@@ -132,6 +133,15 @@ drivers, reconhecidos pelo executável (`/opt/chrome`, `/opt/firefox`, chromedri
 geckodriver). Serviços (Xvfb, OpenBox, PJeOffice, VNC, relay) nunca entram nessa lista.
 `PREFLIGHT_ON_START=1` roda depois dos serviços e antes do primeiro script (e do standby).
 
+**Partida depois de um restart:** `clear_stale_locks` roda antes de qualquer serviço. O `/tmp` sobrevive ao
+`docker restart`, e o PID gravado num lock velho costuma ser de outro processo vivo na nova partida (PIDs se
+repetem em containers). Por isso a decisão nunca é só "o PID está vivo?": o lock do Xvfb só fica se o dono for
+um `Xvfb`, e as travas de perfil só saem se nenhum browser estiver rodando.
+
+**PJeOffice:** o launcher original (`/opt/pjeoffice/pjeoffice-pro.sh`) nunca é alterado. `PJEOFFICE_JAVA_XMX`
+roda uma cópia ao lado dele (`.pjeoffice-xmx.sh`, que acha o jar pelo próprio diretório) com só o `-Xmx`
+trocado. O `JAVA_TOOL_OPTIONS` não serve para isso: a opção da linha de comando vence.
+
 **Mexer no entrypoint:** mantenha `set -e`, funções pequenas e o padrão de log
 `$(log_timestamp) <emoji> mensagem`. Serviços que dependem de outro (OpenBox → Xvfb,
 noVNC → VNC) devem checar a dependência e pular com aviso, não falhar.
@@ -197,8 +207,9 @@ noVNC → VNC) devem checar a dependência e pular com aviso, não falhar.
   nunca é registrada em log nem passada em linha de comando (`pk12util -w`, `keytool -storepass:file`).
 - `EGRESS_PROXY_URL` contém a senha do relay: prefira `EGRESS_PROXY_URL_FILE`; o repassador nunca
   a registra (`Upstream.masked`).
-- VNC/noVNC não têm senha: só para debug em rede confiável ou atrás de proxy com auth
-  (`docs/VNC_CADDY_PROXY.md`).
+- VNC/noVNC não têm senha por padrão: só para debug em rede confiável, com `VNC_PASSWORD_FILE` ou atrás de
+  proxy com auth (`docs/VNC_CADDY_PROXY.md`). A senha vai para o x11vnc por arquivo `0600` que ele apaga ao
+  ler (`-passwdfile rm:`), nunca no argv, e `VNC_PASSWORD` é removida do ambiente dos scripts.
 - `CHROME_PROFILE_URL` vira `ENV` na imagem publicada. É uma decisão consciente do mantenedor.
 
 ## Backlog da reforma
@@ -234,5 +245,8 @@ noVNC → VNC) devem checar a dependência e pular com aviso, não falhar.
 - [x] **Operação do worker:** divisão do resumo de recursos por processo e momento dos picos; loop com SIGKILL
   para script travado (`WORKER_KILL_AFTER`) e limpeza de browsers/drivers esquecidos entre iterações
   (`WORKER_CLEANUP`); `PREFLIGHT_ON_START=1` para falhar na partida.
+- [x] **Partida defensiva:** locks velhos do Xvfb/Chrome/Firefox removidos depois de restart; Xvfb falha
+  rápido mostrando o erro; `PJEOFFICE_JAVA_XMX`; `SCRIPT_SHA256`; rotação opcional de `/app/logs` (`LOG_MAX_MB`, desligada por padrão); VNC com
+  senha (`VNC_PASSWORD_FILE`) e só visualização (`VNC_VIEW_ONLY`).
 - [ ] **Fase 3:** alinhar `requirements.txt` com o que de fato roda (`cryptography`, `psutil`,
   `oscrypto`); revisar `set -e` x falha no download do profile.

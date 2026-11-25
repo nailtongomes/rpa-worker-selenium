@@ -94,6 +94,17 @@ docker run --rm --shm-size=2g -p 6080:6080 \
 # abrir http://localhost:6080/vnc.html
 ```
 
+Sem senha, o VNC fica aberto para quem alcançar a porta: use só em rede confiável. Para pedir
+senha, monte um arquivo e aponte `VNC_PASSWORD_FILE` para ele (ou use `VNC_PASSWORD`, que fica
+visível no `docker inspect`). O noVNC pede a mesma senha na tela. Só os 8 primeiros caracteres
+contam, por limitação do protocolo VNC. `VNC_VIEW_ONLY=1` deixa só assistir, sem clicar nem digitar,
+para acompanhar uma execução sem atrapalhar.
+
+```bash
+  -e USE_VNC=1 -e USE_NOVNC=1 -e VNC_VIEW_ONLY=1 \
+  -e VNC_PASSWORD_FILE=/run/secrets/vnc -v "$PWD/vnc-senha.txt:/run/secrets/vnc:ro" \
+```
+
 ### Modo standby (recebe tarefas por HTTP)
 
 Veja [`examples/compose/docker-compose.standby.yml`](examples/compose/docker-compose.standby.yml)
@@ -233,6 +244,30 @@ Para medir um comando avulso: `python /app/resource_usage.py run -- python meu_s
 `https://usuario:token@...`). O log mostra só o caminho: usuário/senha e o valor de todo
 parâmetro da query viram `***`.
 
+### Conferir o script baixado (`SCRIPT_SHA256`)
+
+Com `SCRIPT_SHA256=<saída do sha256sum>`, o worker só executa o `SCRIPT_URL` se o arquivo baixado
+tiver exatamente esse hash. Se não tiver, o arquivo é apagado, o download não é repetido e o container
+sai com erro. Protege contra um script trocado no caminho ou na origem, já que o worker roda com o A1
+carregado. Gere o hash com `sha256sum meu-script.py`. Os `HELPER_URLS` não são conferidos.
+
+### Container reiniciado (`docker restart`, política de restart)
+
+O `/tmp` do container sobrevive ao restart, e com ele as travas da execução anterior. Antes de subir
+qualquer serviço, o entrypoint remove o que ficou para trás:
+
+- o lock do Xvfb (`/tmp/.X99-lock`), que impedia o Xvfb de subir com "Server is already active for display 99";
+- as travas de perfil do Chrome (`SingletonLock`/`Socket`/`Cookie` em `/tmp`, `/app` e `/root`) e do Firefox
+  (`lock`);
+- os perfis temporários dos browsers.
+
+Uma trava só é removida se o processo dono não estiver rodando: um Xvfb vivo no display é reaproveitado.
+Se o Xvfb não subir, o log mostra o erro dele na hora, sem esperar 10 s.
+
+Para workers que ficam no ar por muito tempo, `LOG_MAX_MB=50` (desligado por padrão) roda os arquivos de
+`/app/logs` acima desse tamanho, na partida e entre as iterações do loop: o conteúdo vai para `<arquivo>.1` e o
+arquivo recomeça vazio.
+
 ### Sem `SCRIPT_URL`
 
 O container executa o comando passado (padrão: `python --version`). Com `WORKER_LOOP=1`
@@ -250,6 +285,7 @@ antigo (aceitar o fallback via `requests`).
 | Variável | Padrão | Descrição |
 |---|---|---|
 | `SCRIPT_URL` | — | Script Python baixado para `/tmp/` e executado |
+| `SCRIPT_SHA256` | — | Hash esperado do `SCRIPT_URL`; diferente, o script não roda (exit 1, sem nova tentativa) |
 | `HELPER_URLS` | — | Scripts auxiliares (separados por vírgula), salvos em `/app/src` |
 | `WORKER_MODE` | `pull` | `pull` (baixa e executa) ou `standby` (servidor HTTP em `/app/task_server.py`) |
 | `WORKER_LOOP` | `0` | `1` = executa em loop infinito |
@@ -276,11 +312,15 @@ antigo (aceitar o fallback via `requests`).
 | `USE_XVFB` | `0` | Display virtual (`DISPLAY=:99`) |
 | `USE_OPENBOX` | `0` | Window manager (requer Xvfb) — necessário para diálogos de certificado |
 | `USE_PJEOFFICE` | `0` | Inicia o PJeOffice Pro no boot |
-| `USE_VNC` / `VNC_PORT` | `0` / `5900` | Servidor VNC sem senha (requer Xvfb) |
+| `USE_VNC` / `VNC_PORT` | `0` / `5900` | Servidor VNC (requer Xvfb); sem senha, a menos que `VNC_PASSWORD_FILE`/`VNC_PASSWORD` esteja definido |
+| `VNC_PASSWORD_FILE` / `VNC_PASSWORD` | — | Senha do VNC/noVNC (o arquivo é preferível; só os 8 primeiros caracteres contam) |
+| `VNC_VIEW_ONLY` | `0` | `1` = VNC/noVNC só para assistir (sem mouse/teclado) |
 | `USE_NOVNC` / `NOVNC_PORT` | `0` / `6080` | VNC pelo navegador (requer VNC) |
 | `SCREEN_WIDTH` × `SCREEN_HEIGHT` | `1600` × `900` | Resolução do Xvfb |
 | `USE_SCREEN_RECORDING` | `0` | Grava a tela com FFmpeg (exige imagem com `ENABLE_FFMPEG=1`) |
 | `PJEOFFICE_EXECUTABLE` | `/opt/pjeoffice/pjeoffice-pro.sh` | Executável do PJeOffice |
+| `PJEOFFICE_JAVA_XMX` | — (o launcher usa `2048m`) | Teto de memória (heap) do Java do PJeOffice, ex.: `512m`; o preflight avisa quando o teto deixa menos de 1 GB para o Chrome |
+| `LOG_MAX_MB` | `0` (desligado) | Arquivos de `/app/logs` maiores que isso (MB) são rodados (`.1`) |
 | `PJEOFFICE_CONFIG_DIR` | `/app/.pjeoffice-pro` | Configuração do PJeOffice |
 | `FIREFOX_PROFILE_DIR` | `/root/.mozilla/firefox/selenium.default-release` | Profile do Firefox com NSS |
 

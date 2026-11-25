@@ -7,6 +7,8 @@ Environment Variables:
 - SCRIPT_URL: URL of the main script to download and execute (required)
 - HELPER_URLS: Comma-separated list of helper script URLs to download (optional)
 - SCRIPTS_DIR: Directory to save helper scripts (default: /app/src)
+- SCRIPT_SHA256: expected SHA-256 (hex) of the SCRIPT_URL file (optional). When set, a file
+  with another hash is deleted and never runs (exit 3: the entrypoint does not retry).
 """
 
 import os
@@ -18,6 +20,7 @@ import re
 from urllib.parse import urlparse, urlsplit, urlunsplit, parse_qs, unquote
 
 MASK = "***"
+EXIT_HASH_MISMATCH = 3  # SCRIPT_SHA256 não bate: baixar de novo não resolve
 
 _CONTENT_DISP_RE = re.compile(r'filename\*?=(?:UTF-8\'\')?"?([^";]+)"?', re.IGNORECASE)
 
@@ -164,6 +167,31 @@ def choose_download_name(url: str, is_primary: bool = False, headers: dict | Non
     name = _ensure_py(name)
     return _sanitize(name)
 
+def sha256_file(path) -> str:
+    digest = hashlib.sha256()
+    with open(path, "rb") as fh:
+        for block in iter(lambda: fh.read(1 << 20), b""):
+            digest.update(block)
+    return digest.hexdigest()
+
+
+def verify_sha256(path, expected: str) -> bool:
+    """O arquivo baixado é o esperado? Se não for, apaga (nunca roda um script trocado)."""
+    expected = expected.strip().lower().removeprefix("sha256:")
+    if not re.fullmatch(r"[0-9a-f]{64}", expected):
+        print("[downloader] ERROR: SCRIPT_SHA256 must be 64 hex characters (sha256sum output)")
+        pathlib.Path(path).unlink(missing_ok=True)
+        return False
+    actual = sha256_file(path)
+    if actual != expected:
+        print(f"[downloader] ERROR: SHA-256 mismatch for the main script: expected {expected[:12]}…, "
+              f"got {actual[:12]}… (file deleted; the script was changed or the download is wrong)")
+        pathlib.Path(path).unlink(missing_ok=True)
+        return False
+    print(f"[downloader] SHA-256 OK ({actual[:12]}…)")
+    return True
+
+
 def download_main_script(script_url, temp_dir="/tmp"):
     """
     Download the main script to be executed.
@@ -268,6 +296,9 @@ def main(argv=None):
     if script_url:
         main_script_path = download_main_script(script_url)
         
+        expected = os.getenv("SCRIPT_SHA256", "").strip()
+        if main_script_path and expected and not verify_sha256(main_script_path, expected):
+            return EXIT_HASH_MISMATCH
         if main_script_path:
             print(f"[downloader] Main script ready: {main_script_path}")
             print(f"[downloader] To execute: python {main_script_path}")

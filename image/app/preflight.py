@@ -46,6 +46,7 @@ import http.server
 import json
 import os
 import platform
+import re
 import subprocess
 import sys
 import tempfile
@@ -71,6 +72,7 @@ SHM_MIN = 1 * GB            # Chrome usa /dev/shm; o padrão do Docker (64 MB) d
 DISK_MIN = 2 * GB           # perfis, downloads, gravações e logs
 MEMORY_MIN = 1 * GB         # browsers
 MEMORY_MIN_PJEOFFICE = 2 * GB  # browsers + PJeOffice (pico medido ~1,1 GB)
+BROWSER_MEMORY = 1 * GB     # o que sobra do container para Chrome/Xvfb/script além do Java do PJeOffice
 CLOCK_MAX_SKEW = 30         # segundos; TLS tolera mais, mas tokens e códigos de login não
 CLOCK_URL = "https://www.google.com/generate_204"
 
@@ -217,6 +219,22 @@ def _env_step(step: str, ok: bool, detail: str, advice: str = "") -> dict:
     return {"status": "aviso", "passo": step, "detalhe": f"{detail}: {advice}" if advice else detail}
 
 
+def pjeoffice_xmx() -> tuple:
+    """(-Xmx efetivo do Java do PJeOffice em bytes, de onde veio); (None, "") se não der para saber."""
+    value, origin = os.getenv("PJEOFFICE_JAVA_XMX", "").strip(), "PJEOFFICE_JAVA_XMX"
+    if not value:
+        launcher = os.getenv("PJEOFFICE_EXECUTABLE", "/opt/pjeoffice/pjeoffice-pro.sh")
+        try:
+            match = re.search(r"-Xmx(\d+[mMgG])\b", Path(launcher).read_text(encoding="utf-8", errors="replace"))
+        except OSError:
+            return None, ""
+        value, origin = (match.group(1) if match else ""), "launcher do PJeOffice"
+    match = re.fullmatch(r"(\d+)([mMgG])", value)
+    if not match:
+        return None, ""
+    return int(match.group(1)) * (GB if match.group(2) in "gG" else 1024 ** 2), origin
+
+
 def _egress_configured() -> bool:
     return bool(os.getenv("EGRESS_PROXY_URL") or os.getenv("EGRESS_PROXY_URL_FILE"))
 
@@ -290,6 +308,14 @@ def check_environment(clock_url: str = CLOCK_URL) -> dict:
         steps.append(_env_step("memória", not host or host >= need,
                                f"sem limite no container (máquina: {_gb(host)}){in_use}",
                                f"a máquina tem menos que os {_gb(need)} recomendados"))
+
+    xmx, xmx_origin = pjeoffice_xmx() if pjeoffice else (None, "")
+    if xmx and lim["memoria_mb"]:
+        limit = lim["memoria_mb"] * 1024 * 1024
+        steps.append(_env_step("Java do PJeOffice", xmx + BROWSER_MEMORY <= limit * 1.05,
+                               f"pode crescer até {_gb(xmx)} (-Xmx, {xmx_origin}) num container de {_gb(limit)}",
+                               f"sobra menos de {_gb(BROWSER_MEMORY)} para o Chrome; se a memória apertar, limite com "
+                               "PJEOFFICE_JAVA_XMX=512m (ele costuma usar 130-150 MB)"))
 
     cpus = lim["cpu_nucleos"]
     if cpus:
