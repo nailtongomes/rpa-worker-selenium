@@ -18,11 +18,11 @@ Usuários da imagem dependem do que está abaixo. Não mude nada disso sem pedid
   `/opt/firefox`, `/opt/pjeoffice`, `/opt/venv`, `/opt/novnc`,
   `/root/.mozilla/firefox/selenium.default-release`, `/etc/opt/chrome*/policies/managed`,
   `/app/a1cert.py` (API usada pelos scripts), `/app/a1_check.py`, `/app/egress_proxy.py`, `/app/egress_check.py`,
-  `/app/preflight.py`, `/app/pjeoffice_check.py`, `/app/resource_usage.py`, `/app/image_info.py`
+  `/app/preflight.py`, `/app/pjeoffice_check.py`, `/app/resource_usage.py`, `/app/image_info.py`, `/app/worker_events.py`
   (+ `/app/image_info.json`, gravado no build), `/opt/icp-brasil/` (`raizes.pem`, `acs.pem`).
 - Variáveis de ambiente e seus defaults (`USE_*`, `WORKER_*`, `SCRIPT_URL`, `HELPER_URLS`,
   `CHROME_PROFILE_URL`, `TASK_*`, `SCREEN_*`, `PJEOFFICE_*`, `A1_PFX_*`, `EGRESS_*`, `RESOURCE_*`, `PREFLIGHT_*`,
-  `VNC_*`, `LOG_MAX_MB`, `SCRIPT_SHA256`).
+  `VNC_*`, `LOG_MAX_MB`, `SCRIPT_SHA256`, `LOG_POST_*`, `PING_URL*`, `SCREENSHOT_*`).
   Sem `EGRESS_PROXY_URL` o container sai direto, como sempre (recurso opcional, só alguns clientes). Os defaults do entrypoint
   estão travados em `tests/unit/test_entrypoint.py`.
 - Build-args usados pelo release: `BUILD_PJEOFFICE=1`, `ENABLE_PDF_TOOLS=1`,
@@ -44,6 +44,7 @@ Para conferir se uma mudança alterou o contrato, compare snapshots
 | `image/app/egress_proxy.py`, `egress_check.py`, `egress_testkit.py` | relay de saída: repassador local + config de browsers/Python/Java, verificador e relay de referência/teste |
 | `image/app/preflight.py` | "o worker está pronto?": browsers + `a1_check` + `egress_check` num JSON |
 | `image/app/resource_usage.py` | CPU/memória de cada execução pelo cgroup (média, p95, pico, sugestão de reserva) e por grupo de processos pelo `/proc` (Chrome, PJeOffice, Xvfb, script...); o entrypoint e o standby rodam o script através dele (`RESOURCE_SUMMARY=1`); `report` junta `/app/logs/resources.jsonl` |
+| `image/app/worker_events.py` | o que aconteceu, para quem acompanha de fora (tudo opcional): `status.json` (`WORKER_STATUS=1`), ping por execução (`PING_URL`), telas da falha (`SCREENSHOT_ON_FAIL=1`) e POST do log no fim do container (`LOG_POST_URL`) |
 | `image/app/image_info.py` | qual imagem é esta: grava `/app/image_info.json` no build (`IMAGE_REVISION`), primeira linha do log e `"imagem"` no preflight |
 | `image/app/pjeoffice_check.py` | o PJeOffice assina? Chrome clica em "Testar" na página local dele (127.0.0.1:8800), xdotool responde a senha; usado pelo `a1_check` com `USE_PJEOFFICE=1` |
 | `image/icp-brasil/` | raízes (fingerprint fixado) + ACs oficiais da ICP-Brasil (ITI) → `/opt/icp-brasil`; só para validar cadeia do A1, fora do trust store |
@@ -138,6 +139,18 @@ geckodriver). Serviços (Xvfb, OpenBox, PJeOffice, VNC, relay) nunca entram ness
 repetem em containers). Por isso a decisão nunca é só "o PID está vivo?": o lock do Xvfb só fica se o dono for
 um `Xvfb`, e as travas de perfil só saem se nenhum browser estiver rodando.
 
+**Observabilidade (`worker_events.py`):** tudo desligado sem as variáveis, e nada ali muda o exit code
+(falha vira aviso). Com `LOG_POST_URL`, e só nesse caso:
+- a saída também vai para `/app/logs/worker.log` (`tee`);
+- o script, o `sleep` do loop e o standby rodam em segundo plano com `wait` (`run_child`), para o trap do
+  SIGTERM rodar na hora no `docker stop` (em primeiro plano o bash só roda o trap quando o comando termina, e o
+  Docker mata tudo 10 s depois);
+- o POST sai no trap `EXIT`.
+
+Sem `LOG_POST_URL`, o caminho é o de sempre (primeiro plano). O comando direto continua com `exec` e não envia
+nada. Ping e POST nunca saem direto quando há relay configurado e ainda não ligado, e as URLs deles aparecem
+no log só como esquema e host (o segredo costuma estar no caminho).
+
 **PJeOffice:** o launcher original (`/opt/pjeoffice/pjeoffice-pro.sh`) nunca é alterado. `PJEOFFICE_JAVA_XMX`
 roda uma cópia ao lado dele (`.pjeoffice-xmx.sh`, que acha o jar pelo próprio diretório) com só o `-Xmx`
 trocado. O `JAVA_TOOL_OPTIONS` não serve para isso: a opção da linha de comando vence.
@@ -207,6 +220,8 @@ noVNC → VNC) devem checar a dependência e pular com aviso, não falhar.
   nunca é registrada em log nem passada em linha de comando (`pk12util -w`, `keytool -storepass:file`).
 - `EGRESS_PROXY_URL` contém a senha do relay: prefira `EGRESS_PROXY_URL_FILE`; o repassador nunca
   a registra (`Upstream.masked`).
+- `LOG_POST_URL`/`PING_URL` costumam levar token no caminho: prefira os `_FILE`; no log só esquema e host.
+  O POST leva a saída do script como ela é: o script não deve imprimir segredos.
 - VNC/noVNC não têm senha por padrão: só para debug em rede confiável, com `VNC_PASSWORD_FILE` ou atrás de
   proxy com auth (`docs/VNC_CADDY_PROXY.md`). A senha vai para o x11vnc por arquivo `0600` que ele apaga ao
   ler (`-passwdfile rm:`), nunca no argv, e `VNC_PASSWORD` é removida do ambiente dos scripts.
@@ -248,5 +263,8 @@ noVNC → VNC) devem checar a dependência e pular com aviso, não falhar.
 - [x] **Partida defensiva:** locks velhos do Xvfb/Chrome/Firefox removidos depois de restart; Xvfb falha
   rápido mostrando o erro; `PJEOFFICE_JAVA_XMX`; `SCRIPT_SHA256`; rotação opcional de `/app/logs` (`LOG_MAX_MB`, desligada por padrão); VNC com
   senha (`VNC_PASSWORD_FILE`) e só visualização (`VNC_VIEW_ONLY`).
+- [x] **Observabilidade e eficiência:** POST do log no fim do container (`LOG_POST_URL`, últimas linhas +
+  `worker.txt` opcional), telas do Xvfb na falha (`SCREENSHOT_ON_FAIL`), ping por execução (`PING_URL`), espera
+  crescente no loop sem trabalho (`WORKER_IDLE_EXIT_CODE`) e `/app/logs/status.json` (`WORKER_STATUS`); tudo opt-in.
 - [ ] **Fase 3:** alinhar `requirements.txt` com o que de fato roda (`cryptography`, `psutil`,
   `oscrypto`); revisar `set -e` x falha no download do profile.

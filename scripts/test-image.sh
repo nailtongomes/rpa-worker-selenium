@@ -457,6 +457,96 @@ scenario_egress_loop() {
     return "$ok"
 }
 
+# Recebe o POST do fim do container e os pings dentro do próprio container (fixtures/log_receiver.py)
+RECEIVER_PORT=8766
+with_receiver() {
+    echo "${FIXTURE_SERVER}python3 /repo/tests/image/fixtures/log_receiver.py ${RECEIVER_PORT} $1 >/dev/null 2>&1 & \
+sleep 1; exec /app/entrypoint.sh \"\$@\""
+}
+
+scenario_end_of_container_report() {
+    # Container efêmero que falha (exit 3) com tudo ligado: ping antes/depois, telas da falha,
+    # status.json e POST no fim com as últimas linhas + worker.txt + telas. Segredos das URLs fora do log.
+    local log="$RESULTS/logs/end-of-container.log" got="$RESULTS/end-of-container.jsonl" rc ok=0
+    rm -f "$got"
+    run_in_image -e USE_XVFB=1 -e SCRIPT_URL="$FIXTURE_URL/job_fail.py" \
+        -e LOG_POST_URL="http://127.0.0.1:${RECEIVER_PORT}/hook/SEGREDO-HOOK?token=SEGREDO-Q" \
+        -e LOG_POST_FULL=1 -e LOG_POST_LINES=40 -e SCREENSHOT_ON_FAIL=1 -e SCREENSHOT_INTERVAL=1 \
+        -e PING_URL="http://127.0.0.1:${RECEIVER_PORT}/ping/SEGREDO-PING" -e WORKER_STATUS=1 \
+        --entrypoint bash "$IMAGE" -c "$(with_receiver /results/end-of-container.jsonl)" _ > "$log" 2>&1
+    rc=$?
+    grep -E "JOB-FAIL|📸|📤|⚠️" "$log" | head -8
+    [ "$rc" -eq 3 ] || { echo "exit code do container: $rc (esperado 3)"; ok=1; }
+    if grep -q "SEGREDO" "$log"; then echo "segredo da URL apareceu no log:"; grep "SEGREDO" "$log" | head -3; ok=1; fi
+    python3 - "$got" <<'PY' || ok=1
+import json, sys
+entries = [json.loads(line) for line in open(sys.argv[1], encoding="utf-8")]
+pings = [e["caminho"] for e in entries if e["caminho"].startswith("/ping/")]
+assert pings == ["/ping/SEGREDO-PING/start", "/ping/SEGREDO-PING/3"], pings
+(post,) = [e for e in entries if e["caminho"].startswith("/hook/")]
+assert post["metodo"] == "POST"
+data = json.loads(post["campos"]["dados"])
+assert data["exit_code"] == 3 and data["motivo"] == "falha" and data["modo"] == "script", data
+assert data["script"] == "job_fail.py" and data["linhas"] <= 40 and "JOB-FAIL" in data["log"]
+assert data["recursos"]["exit_code"] == 3, data.get("recursos")
+status = data["status"]
+assert status["contadores"]["falha"] == 1 and status["ultima"]["exit_code"] == 3, status
+assert "xvfb_s" in status["partida"] and "total_s" in status["partida"], status
+files = post["arquivos"]
+assert "Starting RPA Worker" in files["log"]["texto"] and "JOB-FAIL" in files["log"]["texto"]
+telas = [f for k, f in files.items() if k.startswith("tela_")]
+assert telas and all(f["inicio"].startswith("ffd8") and f["bytes"] > 1000 for f in telas), telas
+print(f"POST: {data['linhas']} linhas, worker.txt {files['log']['bytes']} bytes, {len(telas)} tela(s); pings {pings}")
+PY
+    return "$ok"
+}
+
+scenario_loop_idle_and_stop() {
+    # WORKER_LOOP=1 com script sem trabalho (exit 75): espera dobra até WORKER_IDLE_MAX_DELAY, status.json
+    # conta as rodadas; `docker stop` no meio da espera termina na hora e manda o log (motivo "parado")
+    local name="rpa-test-loop-idle-$$" log="$RESULTS/logs/loop-idle-stop.log" got="$RESULTS/loop-idle.jsonl"
+    local ok=0 status="" began elapsed
+    rm -f "$got"
+    docker rm -f "$name" >/dev/null 2>&1
+    docker run -d --name "$name" -v "$REPO:/repo:ro" -v "$RESULTS:/results" "${EXTRA_ARGS[@]}" \
+        -e SCRIPT_URL="$FIXTURE_URL/job_idle.py" -e WORKER_LOOP=1 -e RESOURCE_SUMMARY=0 \
+        -e WORKER_RESTART_DELAY=1 -e WORKER_IDLE_EXIT_CODE=75 -e WORKER_IDLE_MAX_DELAY=4 -e WORKER_STATUS=1 \
+        -e LOG_POST_URL="http://127.0.0.1:${RECEIVER_PORT}/hook" \
+        --entrypoint bash "$IMAGE" -c "$(with_receiver /results/loop-idle.jsonl)" _ >/dev/null || return 1
+    for _ in $(seq 1 60); do
+        docker logs "$name" 2>&1 | grep -q "3 in a row): next iteration in 4s" && break
+        sleep 1
+    done
+    sleep 1
+    status="$(docker exec "$name" cat /app/logs/status.json 2>&1)"
+    began=$(date +%s)
+    docker stop -t 10 "$name" >/dev/null
+    elapsed=$(( $(date +%s) - began ))
+    docker logs "$name" > "$log" 2>&1
+    docker rm -f "$name" >/dev/null 2>&1
+    grep -E "Nothing to do|📤|shutdown" "$log" | head -6
+    echo "docker stop levou ${elapsed}s"
+    grep -q "1 in a row): next iteration in 2s" "$log" && grep -q "2 in a row): next iteration in 4s" "$log" \
+        || { echo "a espera não dobrou (2s, 4s)"; ok=1; }
+    grep -q "Script failed with exit code: 75" "$log" && { echo "exit 75 contou como falha"; ok=1; }
+    [ "$elapsed" -le 8 ] || { echo "docker stop esperou demais (${elapsed}s): o trap não rodou durante a espera"; ok=1; }
+    printf '%s' "$status" | python3 -c '
+import json, sys
+s = json.load(sys.stdin)
+assert s["modo"] == "loop" and s["contadores"]["sem_trabalho"] >= 3 and s["contadores"]["falha"] == 0, s
+assert s["ultima"]["resultado"] == "sem_trabalho" and s["fase"] in ("esperando", "executando"), s
+print("status.json:", s["fase"], s["contadores"])' || ok=1
+    python3 - "$got" <<'PY' || ok=1
+import json, sys
+(post,) = [json.loads(line) for line in open(sys.argv[1], encoding="utf-8")]
+data = post["json"]
+assert data["motivo"] == "parado" and data["modo"] == "loop" and data["exit_code"] == 0, data
+assert "JOB-IDLE" in data["log"] and data["status"]["fase"] == "encerrado", data["status"]
+print("POST no docker stop:", data["motivo"], data["linhas"], "linhas")
+PY
+    return "$ok"
+}
+
 scenario_single_run_ok() {
     local log="$RESULTS/logs/single-run-ok.log" rc
     run_in_image -e SCRIPT_URL="$FIXTURE_URL/job_ok.py" -e HELPER_URLS="$FIXTURE_URL/helper_mod.py" \
@@ -568,6 +658,8 @@ SCENARIOS=(
     "restart do mesmo container - lock velho do Xvfb, travas de perfil e log grande:scenario_restart_stale_locks"
     "VNC com senha (VNC_PASSWORD) e só visualização (VNC_VIEW_ONLY):scenario_vnc_password"
     "SCRIPT_SHA256 - hash certo roda, errado não roda nem tenta de novo:scenario_script_sha256"
+    "fim do container - POST do log com telas da falha, ping e status.json:scenario_end_of_container_report"
+    "loop sem trabalho (WORKER_IDLE_EXIT_CODE) - espera dobra e docker stop envia o log:scenario_loop_idle_and_stop"
     "execução única com SCRIPT_URL:scenario_single_run_ok"
     "falha do script propaga exit code:scenario_single_run_failure_propagates"
     "limites do container - avisos do preflight e resumo de recursos (shm 64 MB, 1 GB, 0,5 CPU):scenario_limits_and_resources"

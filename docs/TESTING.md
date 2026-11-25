@@ -21,7 +21,7 @@ pytest
 ```
 
 Cobrem: entrypoint (sintaxe, shellcheck, defaults do contrato, ordem dos serviços,
-SIGTERM), Dockerfile x `.dockerignore` x build-args, `script_downloader` (com servidor
+SIGTERM, espera sem trabalho, POST no fim), `worker_events` (status.json, ping, envio do log, URLs fora do log), Dockerfile x `.dockerignore` x build-args, `script_downloader` (com servidor
 HTTP local), `task_server`, `smoke_test`, exemplos de compose, scripts `.sh` e **as regras
 dos workflows** (`test_workflows.py`): o release só faz push depois do portão, CI/nightly
 constroem com as mesmas flags do release e não existe `|| exit 0` em nenhum workflow.
@@ -55,6 +55,8 @@ Cenários (cada um é um `docker run` separado; qualquer falha => exit 1):
 | VNC com senha | `VNC_PASSWORD` + `VNC_VIEW_ONLY=1`: o servidor só oferece autenticação por senha (RFB tipo 2), com `-viewonly`; a senha não aparece no argv, no ambiente do comando nem em arquivo |
 | `SCRIPT_SHA256` | hash certo roda o script; hash errado não roda, não tenta baixar de novo e sai com erro |
 | preflight na partida | `PREFLIGHT_ON_START=1`: preflight ok deixa o script rodar; preflight falhando (A1 que não existe) para o container com exit 1 sem rodar o script |
+| fim do container: log, telas, ping e status | Execução única que falha (exit 3), com `LOG_POST_URL` (token no caminho e na query), `LOG_POST_FULL=1`, `SCREENSHOT_ON_FAIL=1`, `PING_URL` e `WORKER_STATUS=1`, conferido num receptor dentro do container (`fixtures/log_receiver.py`). O exit code continua 3. Os pings são `/start` e `/3`. O POST multipart traz: no campo `dados`, as últimas linhas, `motivo` "falha", o resumo de recursos e o `status` (contadores e partida do Xvfb); o `worker.txt` completo; e as telas em JPEG. Nenhum segredo das URLs aparece no log. |
+| loop sem trabalho + `docker stop` | `job_idle.py` sai com 75 e `WORKER_IDLE_EXIT_CODE=75`: a espera dobra (2 s, 4 s, 4 s, com teto de 4) e nada conta como falha. O `status.json` mostra `sem_trabalho` ≥ 3. O `docker stop` no meio da espera termina na hora e envia o log com `motivo` "parado". |
 | execução única | `SCRIPT_URL` executa e o helper de `/app/src` é importável; o log começa com a linha da imagem e termina com o resumo de recursos (`📊` e `RESOURCE_SUMMARY`, com a divisão por processo) |
 | falha propaga exit code | script com `sys.exit(3)` => container termina com exit 3, mesmo com o medidor de recursos no meio |
 | limites do container | `--shm-size=64m -m 1g --cpus 0.5` com `USE_PJEOFFICE=1`: o preflight avisa sobre `/dev/shm`, memória e CPU **sem reprovar**; o `resource_usage.py` lê os limites e mede um pico de 300 MB alocados, atribuídos ao grupo do script na divisão por processo |
@@ -62,7 +64,7 @@ Cenários (cada um é um `docker run` separado; qualquer falha => exit 1):
 | modo standby | `/health` = 200 e `/task` sem token = 401 |
 
 Os cenários com script usam um servidor HTTP **dentro do container** servindo
-`tests/image/fixtures/` (página de teste, `job_ok.py`, `job_fail.py`, `job_stuck.py`, `helper_mod.py`),
+`tests/image/fixtures/` (página de teste, `job_ok.py`, `job_fail.py`, `job_stuck.py`, `job_idle.py`, `helper_mod.py`),
 então não dependem de serviços externos.
 
 Resultados em `test-results/`: `junit-*.xml`, `screenshots/` (cada browser salva a tela),

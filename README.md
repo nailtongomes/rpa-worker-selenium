@@ -268,6 +268,102 @@ Para workers que ficam no ar por muito tempo, `LOG_MAX_MB=50` (desligado por pad
 `/app/logs` acima desse tamanho, na partida e entre as iterações do loop: o conteúdo vai para `<arquivo>.1` e o
 arquivo recomeça vazio.
 
+### Log no fim do container (`LOG_POST_URL`)
+
+Para containers efêmeros (uma execução e descarta tudo): com `LOG_POST_URL` (ou `LOG_POST_URL_FILE`, que não
+aparece no `docker inspect`), o worker faz um POST nessa URL quando o container termina, seja por fim normal,
+erro, falha na partida ou `docker stop`. No loop, o POST também só acontece no fim do container.
+
+- Sem anexos, o corpo é JSON:
+  - `container`, `worker_id`, `imagem`, `modo` (`script`/`loop`/`standby`) e `script`;
+  - `exit_code` e `motivo` (`concluido`, `falha` ou `parado`, no `docker stop`);
+  - `inicio`, `fim` e `duracao_s`;
+  - `recursos`, o último resumo de CPU/memória;
+  - `log`, as últimas `LOG_POST_LINES` (100) linhas, e `linhas`, quantas vieram;
+  - `status`, com `WORKER_STATUS=1`.
+- Com `LOG_POST_FULL=1`, ou quando há telas da falha, o POST vira `multipart/form-data`:
+  - o mesmo JSON vai no campo `dados`;
+  - o log inteiro vai no arquivo `log` (`worker.txt`, até os últimos 20 MB);
+  - as telas vão como `tela_1`, `tela_2`...
+
+Exemplo, com um webhook do n8n:
+
+```bash
+docker run --rm -e SCRIPT_URL=https://.../job.py \
+  -e LOG_POST_URL=https://n8n.exemplo.com/webhook/<id> -e LOG_POST_FULL=1 \
+  ghcr.io/nailtongomes/rpa-worker-selenium:latest
+```
+
+- **Captura:** só com `LOG_POST_URL` definida, a saída do entrypoint e do script também vai para
+  `/app/logs/worker.log`. O `docker logs` continua igual.
+- **Tempo:** o envio tem até `LOG_POST_TIMEOUT` (8) segundos e até 3 tentativas; o `docker stop` espera 10 s.
+- **Exit code:** nunca muda. Se o envio falhar, só aparece um aviso no log.
+- **Autenticação:** pode ir na própria URL (`https://usuario:senha@...`, ou token no caminho ou na query).
+- **O que aparece no log:** só esquema e host da URL.
+- **Relay:** com relay de saída configurado, o POST sai pelo relay. Se o container parar antes de o relay
+  subir, nada é enviado direto.
+- **Comando direto:** não se aplica (`docker run imagem <comando>`, que substitui o entrypoint).
+- **Segredos no log:** o que o seu script imprime vai como está. O entrypoint mascara as URLs dele e nunca
+  registra senhas, mas não controla a saída do script.
+
+### Tela da falha (`SCREENSHOT_ON_FAIL=1`)
+
+Durante a execução do script, o worker guarda uma tela do Xvfb a cada `SCREENSHOT_INTERVAL` (10) segundos, e
+mantém só as 3 mais recentes. Se o script falhar ou estourar o tempo, tira mais uma na hora e salva todas em
+`/app/logs/falhas/<data>/`. Esse diretório fica com as últimas `SCREENSHOT_KEEP` (20) falhas. Se a execução dá
+certo, as telas são apagadas.
+
+- **Por que durante a execução:** um script que fecha o browser ao falhar (`with SB()`) deixaria só a área de
+  trabalho vazia para um print tirado no fim.
+- **Requisitos:** `USE_XVFB=1`.
+- **Custo:** cerca de 0,1 s de CPU por tela.
+- **Com `LOG_POST_URL`:** as telas vão anexadas.
+
+### Sinal de vida (`PING_URL`)
+
+Ping antes e depois de cada execução (uma só na execução única; cada iteração no loop), no formato do
+[healthchecks.io](https://healthchecks.io):
+
+- `GET <url>/start` antes;
+- `GET <url>/<exit code>` depois (`0` = ok);
+- se o script avisou que não havia trabalho, o ping é `0`.
+
+O serviço de monitoramento avisa quando um worker morre, trava ou para de rodar sem ninguém olhar o log.
+
+Para outros serviços, a URL vira um modelo quando contém `{evento}` (`start`/`ok`/`fail`), `{status}`
+(`up`/`down`) ou `{exit_code}`. Por exemplo, no Uptime Kuma:
+`PING_URL=https://kuma.exemplo.com/api/push/<token>?status={status}&msg={evento}`.
+
+Também aceita `PING_URL_FILE`. Falha no ping só gera aviso, e a URL não aparece no log.
+
+### Loop sem trabalho (`WORKER_IDLE_EXIT_CODE`)
+
+Para scripts que buscam tarefas: combine um exit code para "não havia nada a fazer", por exemplo
+`sys.exit(75)` com `WORKER_IDLE_EXIT_CODE=75`. Quando o script sai com esse código:
+
+- a iteração não conta como falha;
+- a espera até a próxima dobra a cada rodada vazia seguida (`WORKER_RESTART_DELAY` × 2, × 4...), até
+  `WORKER_IDLE_MAX_DELAY` (1800 s);
+- a primeira rodada com trabalho volta ao intervalo normal.
+
+Com N workers parados, isso economiza CPU (Python e Chrome subindo à toa), tráfego pelo relay e requisições ao
+seu servidor de tarefas. Use um código de 1 a 255 que não seja 124 nem 137, que são do timeout. Na execução
+única, o exit code chega ao container como está.
+
+### Estado do worker (`WORKER_STATUS=1`)
+
+O worker grava `/app/logs/status.json` a cada mudança de fase, com:
+
+- `fase`: `iniciando`, `pronto`, `executando`, `esperando`, `standby` ou `encerrado`;
+- `desde`, a iteração e o início da execução atual;
+- `ultima`: exit code, resultado e duração;
+- `contadores`: `ok`, `falha`, `tempo_esgotado` e `sem_trabalho`;
+- `proxima_em`;
+- `partida`: o tempo de partida de cada serviço ligado (Xvfb, OpenBox, PJeOffice, VNC, preflight).
+
+Para consultar: `docker exec <worker> cat /app/logs/status.json`. O `examples/server/workers.sh status` mostra
+uma linha por worker.
+
 ### Sem `SCRIPT_URL`
 
 O container executa o comando passado (padrão: `python --version`). Com `WORKER_LOOP=1`
@@ -292,6 +388,12 @@ antigo (aceitar o fallback via `requests`).
 | `WORKER_TIMEOUT` | `3600` | Timeout por iteração/tarefa (s) |
 | `WORKER_KILL_AFTER` | `30` | Loop: segundos entre o SIGTERM do timeout e o SIGKILL, para o script que não para sozinho |
 | `WORKER_RESTART_DELAY` | `120` | Pausa entre iterações (s) |
+| `WORKER_IDLE_EXIT_CODE` / `WORKER_IDLE_MAX_DELAY` | — / `1800` | Loop: exit code que o script usa para "nada a fazer"; a espera dobra a cada rodada vazia até o máximo (s) |
+| `WORKER_STATUS` | `0` | `1` grava `/app/logs/status.json` (fase, contadores, última execução, partida dos serviços) |
+| `LOG_POST_URL` / `LOG_POST_URL_FILE` | — (desligado) | POST com o fim do log, exit code e duração quando o container termina |
+| `LOG_POST_LINES` / `LOG_POST_FULL` / `LOG_POST_TIMEOUT` | `100` / `0` / `8` | Linhas no corpo / `1` anexa o log inteiro (`worker.txt`) / tempo máximo do envio (s) |
+| `PING_URL` / `PING_URL_FILE` | — (desligado) | Ping antes (`/start`) e depois (`/<exit code>`) de cada execução (healthchecks.io, Uptime Kuma...) |
+| `SCREENSHOT_ON_FAIL` / `SCREENSHOT_INTERVAL` / `SCREENSHOT_KEEP` | `0` / `10` / `20` | `1` guarda telas do Xvfb quando o script falha em `/app/logs/falhas/` / intervalo (s) / falhas mantidas |
 | `WORKER_CLEANUP` | `1` | Loop: depois de cada iteração fecha Chrome/Firefox/drivers que o script deixou abertos e apaga os perfis temporários deles; `0` mantém |
 | `PREFLIGHT_ON_START` / `PREFLIGHT_ARGS` | `0` / — | `1` roda o `preflight.py` ao subir e para o container (exit 1) se falhar; `PREFLIGHT_ARGS` passa opções a ele |
 | `RESOURCE_SUMMARY` | `1` | Resumo de CPU/memória (média, p95, pico) ao fim de cada execução; `0` desliga |

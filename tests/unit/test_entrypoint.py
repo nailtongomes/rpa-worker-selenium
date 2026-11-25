@@ -9,6 +9,7 @@ import os
 import pathlib
 import re
 import shutil
+import signal
 import subprocess
 import time
 
@@ -65,6 +66,16 @@ def test_entrypoint_shellcheck_errors():
         ("PJEOFFICE_JAVA_XMX", ""),
         ("LOG_MAX_MB", "0"),  # rotação desligada: logs como sempre
         ("VNC_VIEW_ONLY", "0"),
+        # observabilidade: tudo desligado sem as variáveis
+        ("LOG_POST_LINES", "100"),
+        ("LOG_POST_FULL", "0"),
+        ("LOG_POST_TIMEOUT", "8"),
+        ("SCREENSHOT_ON_FAIL", "0"),
+        ("SCREENSHOT_INTERVAL", "10"),
+        ("SCREENSHOT_KEEP", "20"),
+        ("WORKER_IDLE_EXIT_CODE", ""),
+        ("WORKER_IDLE_MAX_DELAY", "1800"),
+        ("WORKER_STATUS", "0"),
     ],
 )
 def test_entrypoint_env_defaults(entrypoint_text, var, default):
@@ -220,7 +231,7 @@ def test_loop_timeout_kills_a_script_that_ignores_sigterm(entrypoint_text):
 
 def test_loop_cleans_up_right_after_each_iteration(entrypoint_text):
     loop = _function_body(entrypoint_text, "execute_with_loop")
-    assert loop.index("timeout --kill-after") < loop.index("cleanup_iteration") < loop.index("sleep \"${WORKER_RESTART_DELAY}\"")
+    assert loop.index("timeout --kill-after") < loop.index("cleanup_iteration") < loop.index("run_child sleep \"${delay}\"")
     body = _function_body(entrypoint_text, "cleanup_iteration")
     assert 'WORKER_CLEANUP}" = "1" ] || return 0' in body
     assert "kill -TERM" in body and "kill -KILL" in body
@@ -396,7 +407,7 @@ def test_rotate_logs(tmp_path):
 def test_logs_rotate_at_start_and_between_iterations(entrypoint_text):
     assert "rotate_logs" in _function_body(entrypoint_text, "setup_directories")
     loop = _function_body(entrypoint_text, "execute_with_loop")
-    assert loop.index("cleanup_iteration") < loop.index("rotate_logs") < loop.index('sleep "${WORKER_RESTART_DELAY}"')
+    assert loop.index("cleanup_iteration") < loop.index("rotate_logs") < loop.index('run_child sleep "${delay}"')
 
 
 @pytest.mark.parametrize("xmx, ok", [("512m", True), ("1G", True), ("512", False), ("1g; rm -rf /", False)])
@@ -443,3 +454,136 @@ def test_script_hash_mismatch_is_not_retried(entrypoint_text):
     body = _function_body(entrypoint_text, "download_script_with_retry")
     assert 'if [ "$rc" -eq 3 ]; then' in body
     assert body.index('"$rc" -eq 3') < body.index("sleep $wait_time")
+
+
+# --- observabilidade: LOG_POST_URL, telas, ping, espera sem trabalho, status.json ----------
+
+@pytest.mark.parametrize("restart, cap, count, expected", [
+    ("120", "1800", 1, "240"), ("120", "1800", 2, "480"), ("120", "1800", 4, "1800"),
+    ("120", "1800", 10, "1800"), ("0", "1800", 3, "8"), ("120", "60", 3, "120"), ("120", "x", 2, "120"),
+])
+def test_idle_delay_doubles_up_to_the_cap(tmp_path, restart, cap, count, expected):
+    result = _run_function(tmp_path, ["idle_delay"], f"idle_delay {count}",
+                           env={"WORKER_RESTART_DELAY": restart, "WORKER_IDLE_MAX_DELAY": cap})
+    assert result.stdout.strip() == expected, result.stderr
+
+
+@pytest.mark.parametrize("code, valid", [("75", "75"), ("", ""), ("0", ""), ("124", ""), ("137", ""),
+                                         ("256", ""), ("x", ""), ("1", "1")])
+def test_idle_exit_code_validation(tmp_path, code, valid):
+    result = _run_function(tmp_path, ["idle_exit_code"], "idle_exit_code", env={"WORKER_IDLE_EXIT_CODE": code})
+    assert result.stdout.strip() == valid
+
+
+def test_loop_treats_idle_exit_as_no_work(entrypoint_text):
+    loop = _function_body(entrypoint_text, "execute_with_loop")
+    assert '[ $exit_code -eq "$idle_code" ]' in loop
+    assert 'delay="$(idle_delay "$idle_count")"' in loop and "idle_count=0" in loop
+    # sem WORKER_IDLE_EXIT_CODE a espera é a de sempre
+    assert 'local delay="${WORKER_RESTART_DELAY}"' in loop
+
+
+def test_run_child_keeps_exit_code_and_stdin(tmp_path):
+    for env in ({}, {"LOG_POST_URL": "http://x"}):
+        result = _run_function(tmp_path, ["log_post_enabled", "run_child"],
+                               "echo entrada | run_child bash -c 'cat; exit 7'; echo rc=$?", env=env)
+        assert result.stdout.split() == ["entrada", "rc=7"], (env, result.stdout, result.stderr)
+
+
+@pytest.mark.parametrize("post, max_secs", [({"LOG_POST_URL": "http://x"}, 5), ({}, None)])
+def test_run_child_lets_sigterm_trap_run_with_log_post(tmp_path, post, max_secs):
+    """Com LOG_POST_URL o trap do SIGTERM roda na hora (docker stop); sem ele, como sempre."""
+    marker = tmp_path / "trapped"
+    prelude = f"trap 'echo > {marker}; exit 0' TERM\n"
+    text = ENTRYPOINT.read_text(encoding="utf-8")
+    script = tmp_path / "t.sh"
+    funcs = "".join(f"{n}() {{\n{_function_body(text, n)}}}\n" for n in ["log_post_enabled", "run_child"])
+    script.write_text(prelude + funcs + "run_child sleep 3\n")
+    began = time.monotonic()
+    proc = subprocess.Popen(["bash", str(script)], env={"PATH": "/usr/bin:/bin", **post},
+                            start_new_session=True)
+    try:
+        time.sleep(0.5)
+        proc.send_signal(signal.SIGTERM)
+        proc.wait(timeout=10)
+        elapsed = time.monotonic() - began
+        assert marker.exists()
+        if max_secs:
+            assert elapsed < 2, f"o trap esperou o comando terminar ({elapsed:.1f}s)"
+        else:
+            assert elapsed >= 2.5  # comportamento antigo: o trap só roda no fim do comando
+    finally:
+        try:
+            os.killpg(proc.pid, signal.SIGKILL)  # o sleep que sobrou (só deste grupo)
+        except ProcessLookupError:
+            pass
+
+
+def test_capture_output_tees_stdout_and_stderr(tmp_path):
+    log = tmp_path / "worker.log"
+    result = _run_function(tmp_path, ["log_post_enabled", "capture_output"],
+                           "capture_output; echo para-stdout; echo para-stderr >&2; sleep 0.3",
+                           env={"LOG_POST_URL": "http://x", "WORKER_LOG": str(log)})
+    assert "para-stdout" in result.stdout and "para-stderr" not in result.stdout
+    assert "para-stderr" in result.stderr
+    content = log.read_text()
+    assert "para-stdout" in content and "para-stderr" in content
+
+
+def test_capture_output_is_off_without_log_post(tmp_path):
+    log = tmp_path / "worker.log"
+    _run_function(tmp_path, ["log_post_enabled", "capture_output"], "capture_output; echo x",
+                  env={"WORKER_LOG": str(log)})
+    assert not log.exists()
+
+
+_FAKE_PYTHON = ('python() { echo "PY $*"; }\n'
+                'timeout() { while [[ "$1" == -* || "$1" =~ ^[0-9]+$ ]]; do shift; done; "$@"; }\n')
+
+
+@pytest.mark.parametrize("stopped, code", [("0", 3), ("1", 0), ("0", 0)])
+def test_on_exit_posts_the_log_and_keeps_exit_code(tmp_path, stopped, code):
+    result = _run_function(
+        tmp_path, ["log_post_enabled", "worker_status", "on_exit"],
+        f"STOPPED_BY_SIGNAL={stopped}; SCREEN_WATCH_PID=''; trap on_exit EXIT; (exit {code})",
+        env={"LOG_POST_URL_FILE": "/run/secrets/x", "LOG_POST_TIMEOUT": "8", "WORKER_STATUS": "1",
+             "WORKER_RUN_MODE": "script", "WORKER_STARTED_AT": "100"},
+        prelude=_FAKE_PYTHON)
+    assert result.returncode == code
+    assert f"PY /app/worker_events.py status fase=encerrado exit_code={code}" in result.stdout
+    post = next(line for line in result.stdout.splitlines() if " post " in line)
+    assert f"--exit-code {code} --mode script --started-at 100 --timeout 8" in post
+    assert ("--stopped" in post) == (stopped == "1")
+
+
+def test_on_exit_does_nothing_without_options(tmp_path):
+    result = _run_function(tmp_path, ["log_post_enabled", "worker_status", "on_exit"],
+                           "STOPPED_BY_SIGNAL=0; SCREEN_WATCH_PID=''; trap on_exit EXIT; exit 5",
+                           prelude=_FAKE_PYTHON, env={"WORKER_STATUS": "0"})
+    assert result.returncode == 5 and "PY" not in result.stdout
+
+
+@pytest.mark.parametrize("rc, idle, ping_code, counter", [
+    ("0", "", "0", "ok"), ("3", "", "3", "falha"), ("124", "", "124", "tempo_esgotado"),
+    ("137", "", "137", "tempo_esgotado"), ("75", "idle", "0", "sem_trabalho"),
+])
+def test_after_execution_reports_result(tmp_path, rc, idle, ping_code, counter):
+    result = _run_function(
+        tmp_path, ["ping_enabled", "worker_status", "worker_ping", "screen_watch_stop", "after_execution"],
+        f"SCREEN_WATCH_PID=''; after_execution {rc} $(date +%s) '{idle}'",
+        env={"PING_URL": "http://hc/abc", "WORKER_STATUS": "1"}, prelude=_FAKE_PYTHON)
+    assert f"ping end --exit-code {ping_code}" in result.stdout, result.stdout
+    assert f"+contadores.{counter}" in result.stdout and f"ultima.exit_code={rc}" in result.stdout
+
+
+def test_single_run_keeps_the_script_exit_code(tmp_path):
+    prelude = ("before_execution() { :; }\nafter_execution() { echo \"after $1\"; }\n"
+               "download_and_execute() { return 3; }\n")
+    result = _run_function(tmp_path, ["log_post_enabled", "run_child", "run_single"],
+                           "set -e; run_single; echo nunca", prelude=prelude)
+    assert result.returncode == 3 and "after 3" in result.stdout and "nunca" not in result.stdout
+
+
+def test_direct_command_still_uses_exec(entrypoint_text):
+    main = _function_body(entrypoint_text, "main")
+    assert '\n        exec "$@"\n' in main and "run_child exec" not in main
