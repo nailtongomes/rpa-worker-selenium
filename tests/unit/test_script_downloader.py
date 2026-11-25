@@ -1,5 +1,6 @@
 """Testes do image/app/script_downloader.py (download de SCRIPT_URL e HELPER_URLS)."""
 
+import hashlib
 import http.server
 import threading
 
@@ -163,3 +164,36 @@ def test_mask_text_masks_query_repeated_without_host():
     url = "http://127.0.0.1:9/x.py?k=SEGREDO-4"
     msg = "HTTPConnectionPool(host='127.0.0.1', port=9): Max retries exceeded with url: /x.py?k=SEGREDO-4"
     assert "SEGREDO" not in sd.mask_text(msg, url)
+
+
+
+# --- SCRIPT_SHA256 -----------------------------------------------------------------
+
+def _run_main_with_hash(http_server, tmp_path, monkeypatch, expected):
+    www, base = http_server
+    (www / "job.py").write_text("print('oi')\n")
+    monkeypatch.setenv("SCRIPT_URL", f"{base}/job.py")
+    monkeypatch.delenv("HELPER_URLS", raising=False)
+    if expected is None:
+        monkeypatch.delenv("SCRIPT_SHA256", raising=False)
+    else:
+        monkeypatch.setenv("SCRIPT_SHA256", expected)
+    target = tmp_path / "out"
+    monkeypatch.setattr(sd, "download_main_script", lambda url: sd.download_file(url, target) and str(target))
+    return sd.main([]), target
+
+
+def test_script_sha256_ok(http_server, tmp_path, monkeypatch, capsys, no_proxy):
+    good = hashlib.sha256(b"print('oi')\n").hexdigest()
+    for expected in (good, good.upper(), f"sha256:{good}", None):
+        rc, target = _run_main_with_hash(http_server, tmp_path, monkeypatch, expected)
+        assert rc == 0 and target.exists()
+    assert "SHA-256 OK" in capsys.readouterr().out
+
+
+@pytest.mark.parametrize("expected", ["0" * 64, "abc"])
+def test_script_sha256_mismatch_deletes_and_exits_3(http_server, tmp_path, monkeypatch, capsys, no_proxy, expected):
+    rc, target = _run_main_with_hash(http_server, tmp_path, monkeypatch, expected)
+    assert rc == sd.EXIT_HASH_MISMATCH == 3
+    assert not target.exists()  # nunca roda um script trocado
+    assert "ERROR" in capsys.readouterr().out

@@ -4,7 +4,8 @@ This guide shows how to securely expose VNC through a Caddy reverse proxy with a
 
 ## Why Use a Reverse Proxy?
 
-The default VNC setup has no password protection. A reverse proxy adds:
+The default VNC setup has no password protection (set `VNC_PASSWORD_FILE` for a VNC password,
+`VNC_VIEW_ONLY=1` for watch-only access; see the README). A reverse proxy adds:
 - **Authentication**: Basic auth or other authentication methods
 - **HTTPS/TLS**: Encrypted connections
 - **Access control**: Restrict by IP, user, etc.

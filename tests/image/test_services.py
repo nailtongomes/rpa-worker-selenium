@@ -64,6 +64,19 @@ def test_openbox_running():
 
 
 @_needs("USE_PJEOFFICE")
+@pytest.mark.skipif(not os.getenv("PJEOFFICE_JAVA_XMX"), reason="PJEOFFICE_JAVA_XMX não definido")
+def test_pjeoffice_java_uses_configured_xmx():
+    """PJEOFFICE_JAVA_XMX troca só o -Xmx do launcher (o teste de assinatura abaixo roda com ele)."""
+    xmx = os.environ["PJEOFFICE_JAVA_XMX"]
+    deadline = time.time() + 30
+    args = ""
+    while time.time() < deadline and "pjeoffice-pro.jar" not in args:
+        args = subprocess.run(["pgrep", "-af", "pjeoffice-pro.jar"], capture_output=True, text=True).stdout
+        time.sleep(0.5)
+    assert f"-Xmx{xmx}" in args and "-Xmx2048m" not in args, args
+
+
+@_needs("USE_PJEOFFICE")
 def test_pjeoffice_running():
     assert _wait_process("pjeoffice", timeout=30), "PJeOffice não está rodando"
 
