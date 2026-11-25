@@ -7,7 +7,7 @@
 #   ./workers.sh stop          para e remove todos os workers
 #   ./workers.sh restart [N]   stop + start
 #   ./workers.sh update [N]    baixa a imagem mais recente e recria os workers
-#   ./workers.sh status        lista workers, estado e uso de CPU/RAM
+#   ./workers.sh status        lista workers, estado, uso de CPU/RAM e, com WORKER_STATUS=1, a fase de cada um
 #   ./workers.sh logs <NN>     acompanha os logs de um worker (ex.: logs 02)
 #
 # Configuração:
@@ -141,6 +141,20 @@ cmd_status() {
         echo
         # shellcheck disable=SC2086
         docker stats --no-stream --format 'table {{.Name}}\t{{.CPUPerc}}\t{{.MemUsage}}' $names
+        # Com WORKER_STATUS=1 no .env: o que cada worker está fazendo (/app/logs/status.json)
+        local name line header=""
+        for name in $names; do
+            line="$(docker exec "$name" python -c '
+import json
+s = json.load(open("/app/logs/status.json"))
+u, c = s.get("ultima", {}), s.get("contadores", {})
+print(s.get("fase", "?"), "desde", s.get("desde", "?")[11:19], "· iteração", s.get("iteracao", "-"),
+      "· última:", u.get("resultado", "-"), "(%ss)" % u.get("duracao_s", "-"),
+      "· ok/falha/tempo/sem trabalho:", c.get("ok", 0), c.get("falha", 0), c.get("tempo_esgotado", 0), c.get("sem_trabalho", 0))
+' 2>/dev/null)" || continue
+            [ -n "$header" ] || { echo; echo "Estado (WORKER_STATUS=1):"; header=1; }
+            echo "  ${name}: ${line}"
+        done
     fi
 }
 

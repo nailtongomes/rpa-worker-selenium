@@ -51,6 +51,29 @@ export RESOURCE_PROCESSES=${RESOURCE_PROCESSES:-1}  # 0: no per-process breakdow
 # Files in /app/logs above this size (MB) are rotated (one .1 copy kept); 0 (default) never rotates
 export LOG_MAX_MB=${LOG_MAX_MB:-0}
 
+# End of the container (optional): LOG_POST_URL_FILE (preferred) or LOG_POST_URL receives a POST
+# with the last LOG_POST_LINES lines, exit code and duration; LOG_POST_FULL=1 attaches the whole
+# log (worker.txt). See /app/worker_events.py.
+export LOG_POST_LINES=${LOG_POST_LINES:-100}
+export LOG_POST_FULL=${LOG_POST_FULL:-0}
+export LOG_POST_TIMEOUT=${LOG_POST_TIMEOUT:-8}  # seconds; docker stop waits 10 s by default
+export WORKER_LOG=/app/logs/worker.log
+
+# Screenshots of the Xvfb screen when a script fails (off by default): one every
+# SCREENSHOT_INTERVAL seconds while it runs, the last ones kept in /app/logs/falhas/<date>/
+export SCREENSHOT_ON_FAIL=${SCREENSHOT_ON_FAIL:-0}
+export SCREENSHOT_INTERVAL=${SCREENSHOT_INTERVAL:-10}
+export SCREENSHOT_KEEP=${SCREENSHOT_KEEP:-20}
+
+# Loop mode: a script exiting with WORKER_IDLE_EXIT_CODE had nothing to do; each such iteration
+# in a row doubles the wait (WORKER_RESTART_DELAY x2, x4...) up to WORKER_IDLE_MAX_DELAY seconds
+export WORKER_IDLE_EXIT_CODE=${WORKER_IDLE_EXIT_CODE:-}
+export WORKER_IDLE_MAX_DELAY=${WORKER_IDLE_MAX_DELAY:-1800}
+
+# /app/logs/status.json with phase, iteration, last run, counters and startup times (off by default)
+export WORKER_STATUS=${WORKER_STATUS:-0}
+# PING_URL / PING_URL_FILE (optional): healthchecks.io-style ping before and after each run
+
 # VNC: VNC_PASSWORD_FILE (preferred) or VNC_PASSWORD asks for a password; VNC_VIEW_ONLY=1
 # lets viewers watch without clicking or typing. Without a password VNC stays open, as always.
 export VNC_VIEW_ONLY=${VNC_VIEW_ONLY:-0}
@@ -76,6 +99,9 @@ FFMPEG_PID=""
 VNC_PID=""
 NOVNC_PID=""
 EGRESS_PID=""
+CHILD_PID=""
+SCREEN_WATCH_PID=""
+STOPPED_BY_SIGNAL=0
 
 # Timestamp function for logging
 log_timestamp() {
@@ -292,7 +318,9 @@ setup_firefox_profile() {
 
 # Signal handling for graceful shutdown
 handle_sigterm() {
+    STOPPED_BY_SIGNAL=1
     echo "$(log_timestamp) 🛑 Received shutdown signal, cleaning up..."
+    [ -n "$SCREEN_WATCH_PID" ] && kill -TERM "$SCREEN_WATCH_PID" 2>/dev/null || true
     [ -n "$NOVNC_PID" ] && kill -TERM "$NOVNC_PID" 2>/dev/null || true
     [ -n "$VNC_PID" ] && kill -TERM "$VNC_PID" 2>/dev/null || true
     [ -n "$FFMPEG_PID" ] && kill -TERM "$FFMPEG_PID" 2>/dev/null || true
@@ -310,6 +338,127 @@ handle_sigterm() {
 }
 
 trap handle_sigterm SIGTERM SIGINT
+trap on_exit EXIT
+
+# --- What happened, for whoever watches from outside (all optional, off by default) ---
+
+log_post_enabled() {
+    [ -n "${LOG_POST_URL:-}" ] || [ -n "${LOG_POST_URL_FILE:-}" ]
+}
+
+ping_enabled() {
+    [ -n "${PING_URL:-}" ] || [ -n "${PING_URL_FILE:-}" ]
+}
+
+# LOG_POST_URL: the entrypoint's output (and the scripts') also goes to /app/logs/worker.log, read
+# by the POST at the end. docker logs keeps receiving everything, stdout and stderr apart. The tee
+# processes ignore INT/TERM: if they died first, the next echo would kill the entrypoint (SIGPIPE).
+capture_output() {
+    log_post_enabled || return 0
+    mkdir -p "$(dirname "${WORKER_LOG}")" 2>/dev/null || true
+    : > "${WORKER_LOG}" 2>/dev/null || return 0
+    exec > >(trap '' INT TERM; exec tee -a "${WORKER_LOG}") 2> >(trap '' INT TERM; exec tee -a "${WORKER_LOG}" >&2)
+}
+
+# Runs "$@" and returns its exit code. With LOG_POST_URL, "$@" runs in the background and the shell
+# waits with `wait`: bash only runs the SIGTERM trap after a foreground command ends, which on
+# `docker stop` is too late (everything is killed 10 s later) for the POST at the end.
+run_child() {
+    if ! log_post_enabled; then
+        "$@"
+        return $?
+    fi
+    "$@" <&0 &
+    CHILD_PID=$!
+    local rc=0
+    wait "$CHILD_PID" || rc=$?
+    CHILD_PID=""
+    return "$rc"
+}
+
+# WORKER_STATUS=1: updates /app/logs/status.json (see worker_events.py status)
+worker_status() {
+    [ "${WORKER_STATUS}" = "1" ] || return 0
+    python /app/worker_events.py status "$@" || true
+}
+
+# PING_URL: start | end <exit code>. Never stops the worker.
+worker_ping() {
+    ping_enabled || return 0
+    if [ "$1" = "start" ]; then
+        timeout 15 python /app/worker_events.py ping start || true
+    else
+        timeout 15 python /app/worker_events.py ping end --exit-code "$2" || true
+    fi
+}
+
+# SCREENSHOT_ON_FAIL=1: screenshots while the script runs (needs the Xvfb display)
+screen_watch_start() {
+    [ "${SCREENSHOT_ON_FAIL}" = "1" ] || return 0
+    if ! xdpyinfo -display "${DISPLAY}" >/dev/null 2>&1; then
+        echo "$(log_timestamp) ⚠️  SCREENSHOT_ON_FAIL=1 needs a display (USE_XVFB=1): no screenshots"
+        return 0
+    fi
+    rm -rf /app/tmp/telas
+    python /app/worker_events.py screens watch --dir /app/tmp/telas --interval "${SCREENSHOT_INTERVAL}" &
+    SCREEN_WATCH_PID=$!
+}
+
+# $1 = exit code: a failure keeps the screenshots (plus one taken now) in /app/logs/falhas/<date>/
+screen_watch_stop() {
+    [ -n "$SCREEN_WATCH_PID" ] || return 0
+    kill -TERM "$SCREEN_WATCH_PID" 2>/dev/null || true
+    wait "$SCREEN_WATCH_PID" 2>/dev/null || true
+    SCREEN_WATCH_PID=""
+    if [ "$1" -ne 0 ]; then
+        python /app/worker_events.py screens keep --dir /app/tmp/telas --keep "${SCREENSHOT_KEEP}" || true
+    fi
+    rm -rf /app/tmp/telas
+}
+
+# Before each run of the script (single run or loop iteration)
+before_execution() {
+    worker_status fase=executando "iteracao=$1" execucao.inicio=@now
+    worker_ping start
+    screen_watch_start
+}
+
+# After each run: $1 = exit code, $2 = start (epoch), $3 = "idle" when the script had nothing to do
+after_execution() {
+    local rc="$1" duration=$(( $(date +%s) - $2 )) result
+    case "$rc" in
+        0) result=ok ;;
+        124|137) result=tempo_esgotado ;;
+        *) result=falha ;;
+    esac
+    [ "${3:-}" = "idle" ] && result=sem_trabalho
+    if [ "$result" = "sem_trabalho" ]; then
+        screen_watch_stop 0
+        worker_ping end 0
+    else
+        screen_watch_stop "$rc"
+        worker_ping end "$rc"
+    fi
+    worker_status "ultima.exit_code=${rc}" "ultima.resultado=${result}" "ultima.duracao_s=${duration}" \
+        ultima.fim=@now "+contadores.${result}" "~execucao"
+}
+
+# EXIT trap: final status and, with LOG_POST_URL, the POST with the log (within LOG_POST_TIMEOUT)
+on_exit() {
+    local rc=$?
+    trap - EXIT
+    [ -n "$SCREEN_WATCH_PID" ] && kill -TERM "$SCREEN_WATCH_PID" 2>/dev/null
+    worker_status fase=encerrado "exit_code=${rc}"
+    if log_post_enabled; then
+        local post_timeout="${LOG_POST_TIMEOUT}"
+        [ "$post_timeout" -ge 1 ] 2>/dev/null || post_timeout=8
+        local args=(--exit-code "$rc" --mode "${WORKER_RUN_MODE:-}" --started-at "${WORKER_STARTED_AT:-0}"
+                    --timeout "${post_timeout}")
+        [ "${STOPPED_BY_SIGNAL}" = "1" ] && args+=(--stopped)
+        timeout -k 1 "$(( post_timeout + 1 ))" python /app/worker_events.py post "${args[@]}" || true
+    fi
+    exit "$rc"
+}
 
 # Start Xvfb virtual display
 start_xvfb() {
@@ -841,6 +990,30 @@ preflight_on_start() {
     exit 1
 }
 
+# WORKER_IDLE_EXIT_CODE: a valid exit code (1-255, not 124/137 used by the timeout), or empty
+idle_exit_code() {
+    local code="${WORKER_IDLE_EXIT_CODE}"
+    [ -n "$code" ] || return 0
+    if [[ "$code" =~ ^[0-9]+$ ]] && [ "$code" -ge 1 ] && [ "$code" -le 255 ] \
+        && [ "$code" -ne 124 ] && [ "$code" -ne 137 ]; then
+        echo "$code"
+    fi
+}
+
+# Wait after $1 idle iterations in a row: WORKER_RESTART_DELAY doubled once per idle iteration,
+# never above WORKER_IDLE_MAX_DELAY (nor below WORKER_RESTART_DELAY)
+idle_delay() {
+    local count="$1" delay="${WORKER_RESTART_DELAY}" cap="${WORKER_IDLE_MAX_DELAY}"
+    [ "$delay" -ge 1 ] 2>/dev/null || delay=1
+    [ "$cap" -ge "$delay" ] 2>/dev/null || cap="$delay"
+    while [ "$count" -gt 0 ] && [ "$delay" -lt "$cap" ]; do
+        delay=$((delay * 2))
+        count=$((count - 1))
+    done
+    [ "$delay" -le "$cap" ] || delay="$cap"
+    echo "$delay"
+}
+
 # Execute script in loop mode with restart
 execute_with_loop() {
     echo "$(log_timestamp) 🔁 Worker loop mode enabled (timeout: ${WORKER_TIMEOUT}s + ${WORKER_KILL_AFTER}s to stop, restart delay: ${WORKER_RESTART_DELAY}s)"
@@ -849,7 +1022,13 @@ execute_with_loop() {
     # functions as single-run mode
     export -f log_timestamp mask_url download_script_with_retry run_measured download_and_execute
 
-    local iteration=1
+    local iteration=1 idle_code idle_count=0
+    idle_code="$(idle_exit_code)"
+    if [ -n "${WORKER_IDLE_EXIT_CODE}" ] && [ -z "$idle_code" ]; then
+        echo "$(log_timestamp) ⚠️  WORKER_IDLE_EXIT_CODE=${WORKER_IDLE_EXIT_CODE} ignored (use 1-255, except 124 and 137)"
+    elif [ -n "$idle_code" ]; then
+        echo "$(log_timestamp) 💤 Exit code ${idle_code} means \"nothing to do\": waits double up to ${WORKER_IDLE_MAX_DELAY}s"
+    fi
 
     while true; do
         echo ""
@@ -857,46 +1036,103 @@ execute_with_loop() {
             local retry_delay="${WORKER_RESTART_DELAY}"
             [ "${retry_delay}" -ge 10 ] 2>/dev/null || retry_delay=10
             echo "$(log_timestamp) 💤 Checking the egress relay again in ${retry_delay}s..."
-            sleep "${retry_delay}"
+            run_child sleep "${retry_delay}" || true
             continue
         fi
 
         echo "$(log_timestamp) 🚀 Starting iteration #${iteration}..."
+        local began exit_code=0 idle=""
+        began=$(date +%s)
+        before_execution "${iteration}"
 
         # Execute script with timeout: SIGTERM to the whole iteration at WORKER_TIMEOUT,
         # SIGKILL WORKER_KILL_AFTER seconds later if it is still running. The child bash
         # traps TERM so it waits for the script: if bash died first, timeout would return
         # at once and a script that ignores SIGTERM would keep running into the next iteration.
-        if timeout --kill-after="${WORKER_KILL_AFTER}" "${WORKER_TIMEOUT}" bash -c 'trap : TERM; download_and_execute'; then
+        run_child timeout --kill-after="${WORKER_KILL_AFTER}" "${WORKER_TIMEOUT}" bash -c 'trap : TERM; download_and_execute' || exit_code=$?
+        if [ $exit_code -eq 0 ]; then
             echo "$(log_timestamp) ✅ Script completed successfully"
+        elif [ $exit_code -eq 124 ]; then
+            echo "$(log_timestamp) ⏱️  Script timed out after ${WORKER_TIMEOUT}s (stopped with SIGTERM)"
+        elif [ $exit_code -eq 137 ]; then
+            echo "$(log_timestamp) ⏱️  Script timed out after ${WORKER_TIMEOUT}s and ignored SIGTERM: killed after ${WORKER_KILL_AFTER}s more"
+        elif [ -n "$idle_code" ] && [ $exit_code -eq "$idle_code" ]; then
+            idle=idle
         else
-            local exit_code=$?
-            if [ $exit_code -eq 124 ]; then
-                echo "$(log_timestamp) ⏱️  Script timed out after ${WORKER_TIMEOUT}s (stopped with SIGTERM)"
-            elif [ $exit_code -eq 137 ]; then
-                echo "$(log_timestamp) ⏱️  Script timed out after ${WORKER_TIMEOUT}s and ignored SIGTERM: killed after ${WORKER_KILL_AFTER}s more"
-            else
-                echo "$(log_timestamp) ❌ Script failed with exit code: $exit_code"
-            fi
+            echo "$(log_timestamp) ❌ Script failed with exit code: $exit_code"
         fi
 
+        after_execution "$exit_code" "$began" "$idle"
         cleanup_iteration
         rotate_logs
 
         iteration=$((iteration + 1))
 
-        echo "$(log_timestamp) 💤 Waiting ${WORKER_RESTART_DELAY}s before next iteration..."
-        sleep "${WORKER_RESTART_DELAY}"
+        local delay="${WORKER_RESTART_DELAY}"
+        if [ -n "$idle" ]; then
+            idle_count=$((idle_count + 1))
+            delay="$(idle_delay "$idle_count")"
+            echo "$(log_timestamp) 💤 Nothing to do (exit ${exit_code}, ${idle_count} in a row): next iteration in ${delay}s"
+        else
+            idle_count=0
+            echo "$(log_timestamp) 💤 Waiting ${delay}s before next iteration..."
+        fi
+        worker_status fase=esperando "proxima_em=@in:${delay}"
+        run_child sleep "${delay}" || true
     done
 }
 
 # Main execution
+# How the container will run (status.json and the POST at the end)
+run_mode() {
+    if [ "${WORKER_MODE}" = "standby" ]; then
+        echo standby
+    elif [ "${WORKER_LOOP}" = "1" ]; then
+        echo loop
+    elif [ -n "$SCRIPT_URL" ]; then
+        echo script
+    else
+        echo comando
+    fi
+}
+
+# WORKER_STATUS=1: how long each enabled service took to start (status.json "partida").
+# timed_start <name> <its USE_* value> <function>
+STARTUP_TIMES=()
+timed_start() {
+    local name="$1" enabled="$2" began elapsed
+    shift 2
+    if [ "${WORKER_STATUS}" != "1" ] || [ "$enabled" != "1" ]; then
+        "$@"
+        return
+    fi
+    began=$(date +%s%N)
+    "$@"
+    elapsed=$(( ($(date +%s%N) - began) / 1000000 ))
+    STARTUP_TIMES+=("partida.${name}_s=$((elapsed / 1000)).$(( (elapsed % 1000) / 100 ))")
+}
+
+# Single run with SCRIPT_URL: the container's exit code is the script's
+run_single() {
+    local began exit_code=0
+    began=$(date +%s)
+    before_execution 1
+    run_child download_and_execute || exit_code=$?
+    after_execution "$exit_code" "$began"
+    return "$exit_code"
+}
+
 main() {
+    export WORKER_STARTED_AT WORKER_RUN_MODE
+    WORKER_STARTED_AT="$(date +%s)"
+    WORKER_RUN_MODE="$(run_mode)"
+    capture_output
     echo "$(log_timestamp) 🚀 Starting RPA Worker Selenium..."
     log_image_info
     
     # Setup directories
     setup_directories
+    worker_status --init "modo=${WORKER_RUN_MODE}" fase=iniciando
     clear_stale_locks
     setup_firefox_profile
 
@@ -907,22 +1143,31 @@ main() {
     download_chrome_profile
     
     # Start optional services
-    start_xvfb
-    start_openbox
-    start_pjeoffice
-    start_vnc
-    start_novnc
+    local services_began
+    services_began=$(date +%s%N)
+    timed_start xvfb "${USE_XVFB}" start_xvfb
+    timed_start openbox "${USE_OPENBOX}" start_openbox
+    timed_start pjeoffice "${USE_PJEOFFICE}" start_pjeoffice
+    timed_start vnc "${USE_VNC}" start_vnc
+    timed_start novnc "${USE_NOVNC}" start_novnc
     start_screen_recording
 
     # Optional: stop here if the worker is not ready (PREFLIGHT_ON_START=1)
-    preflight_on_start
+    timed_start preflight "${PREFLIGHT_ON_START}" preflight_on_start
+    if [ "${WORKER_STATUS}" = "1" ]; then
+        local total_ms=$(( ($(date +%s%N) - services_began) / 1000000 ))
+        worker_status fase=pronto "${STARTUP_TIMES[@]}" \
+            "partida.total_s=$((total_ms / 1000)).$(( (total_ms % 1000) / 100 ))"
+    fi
     
     # Check if we're in standby mode (HTTP server)
     if [ "${WORKER_MODE}" = "standby" ]; then
         echo "$(log_timestamp) 🌐 Worker mode: STANDBY (HTTP server)"
         echo "$(log_timestamp) 🚀 Starting task server on port ${TASK_SERVER_PORT}..."
-        python /app/task_server.py
-        exit $?
+        worker_status fase=standby
+        local rc=0
+        run_child python /app/task_server.py || rc=$?
+        exit "$rc"
     fi
     
     # Check if we're in loop mode or single execution mode
@@ -930,9 +1175,12 @@ main() {
         execute_with_loop
     elif [ -n "$SCRIPT_URL" ]; then
         # Single execution with SCRIPT_URL
-        download_and_execute
+        run_single
     else
         # No SCRIPT_URL and no loop mode, execute arguments as normal
+        if log_post_enabled; then
+            echo "$(log_timestamp) ⚠️  LOG_POST_URL does not apply to a direct command (it replaces the entrypoint): nothing is sent at the end"
+        fi
         echo "$(log_timestamp) ▶️  Executing command: $*"
         exec "$@"
     fi

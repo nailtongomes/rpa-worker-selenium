@@ -58,6 +58,7 @@ def _requires(feature: str):
         ("/app/pjeoffice_check.py", True),
         ("/app/resource_usage.py", True),
         ("/app/image_info.py", True),
+        ("/app/worker_events.py", True),
         ("/app/image_info.json", False),
         ("/app/requirements.txt", False),
     ],
