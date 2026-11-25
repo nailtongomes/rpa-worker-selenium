@@ -48,8 +48,8 @@ export RESOURCE_SAMPLE_SECS=${RESOURCE_SAMPLE_SECS:-1}
 export RESOURCE_LOG=${RESOURCE_LOG:-/app/logs/resources.jsonl}
 export RESOURCE_PROCESSES=${RESOURCE_PROCESSES:-1}  # 0: no per-process breakdown
 
-# Files in /app/logs above this size (MB) are rotated (one .1 copy kept); 0 never rotates
-export LOG_MAX_MB=${LOG_MAX_MB:-50}
+# Files in /app/logs above this size (MB) are rotated (one .1 copy kept); 0 (default) never rotates
+export LOG_MAX_MB=${LOG_MAX_MB:-0}
 
 # VNC: VNC_PASSWORD_FILE (preferred) or VNC_PASSWORD asks for a password; VNC_VIEW_ONLY=1
 # lets viewers watch without clicking or typing. Without a password VNC stays open, as always.

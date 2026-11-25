@@ -264,8 +264,9 @@ qualquer serviço, o entrypoint remove o que ficou para trás:
 Uma trava só é removida se o processo dono não estiver rodando: um Xvfb vivo no display é reaproveitado.
 Se o Xvfb não subir, o log mostra o erro dele na hora, sem esperar 10 s.
 
-Os arquivos de `/app/logs` acima de `LOG_MAX_MB` (padrão 50) são rodados na partida e entre as iterações
-do loop: o conteúdo vai para `<arquivo>.1` e o arquivo recomeça vazio.
+Para workers que ficam no ar por muito tempo, `LOG_MAX_MB=50` (desligado por padrão) roda os arquivos de
+`/app/logs` acima desse tamanho, na partida e entre as iterações do loop: o conteúdo vai para `<arquivo>.1` e o
+arquivo recomeça vazio.
 
 ### Sem `SCRIPT_URL`
 
@@ -319,7 +320,7 @@ antigo (aceitar o fallback via `requests`).
 | `USE_SCREEN_RECORDING` | `0` | Grava a tela com FFmpeg (exige imagem com `ENABLE_FFMPEG=1`) |
 | `PJEOFFICE_EXECUTABLE` | `/opt/pjeoffice/pjeoffice-pro.sh` | Executável do PJeOffice |
 | `PJEOFFICE_JAVA_XMX` | — (o launcher usa `2048m`) | Teto de memória (heap) do Java do PJeOffice, ex.: `512m`; o preflight avisa quando o teto deixa menos de 1 GB para o Chrome |
-| `LOG_MAX_MB` | `50` | Arquivos de `/app/logs` maiores que isso são rodados (`.1`); `0` nunca roda |
+| `LOG_MAX_MB` | `0` (desligado) | Arquivos de `/app/logs` maiores que isso (MB) são rodados (`.1`) |
 | `PJEOFFICE_CONFIG_DIR` | `/app/.pjeoffice-pro` | Configuração do PJeOffice |
 | `FIREFOX_PROFILE_DIR` | `/root/.mozilla/firefox/selenium.default-release` | Profile do Firefox com NSS |
 

@@ -246,7 +246,7 @@ noVNC → VNC) devem checar a dependência e pular com aviso, não falhar.
   para script travado (`WORKER_KILL_AFTER`) e limpeza de browsers/drivers esquecidos entre iterações
   (`WORKER_CLEANUP`); `PREFLIGHT_ON_START=1` para falhar na partida.
 - [x] **Partida defensiva:** locks velhos do Xvfb/Chrome/Firefox removidos depois de restart; Xvfb falha
-  rápido mostrando o erro; `PJEOFFICE_JAVA_XMX`; `SCRIPT_SHA256`; rotação de `/app/logs` (`LOG_MAX_MB`); VNC com
+  rápido mostrando o erro; `PJEOFFICE_JAVA_XMX`; `SCRIPT_SHA256`; rotação opcional de `/app/logs` (`LOG_MAX_MB`, desligada por padrão); VNC com
   senha (`VNC_PASSWORD_FILE`) e só visualização (`VNC_VIEW_ONLY`).
 - [ ] **Fase 3:** alinhar `requirements.txt` com o que de fato roda (`cryptography`, `psutil`,
   `oscrypto`); revisar `set -e` x falha no download do profile.

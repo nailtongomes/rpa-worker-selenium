@@ -63,7 +63,7 @@ def test_entrypoint_shellcheck_errors():
         ("PREFLIGHT_ON_START", "0"),
         ("PREFLIGHT_ARGS", ""),
         ("PJEOFFICE_JAVA_XMX", ""),
-        ("LOG_MAX_MB", "50"),
+        ("LOG_MAX_MB", "0"),  # rotação desligada: logs como sempre
         ("VNC_VIEW_ONLY", "0"),
     ],
 )
