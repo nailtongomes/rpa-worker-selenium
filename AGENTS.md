@@ -18,8 +18,10 @@ Usuários da imagem dependem do que está abaixo. Não mude nada disso sem pedid
   `/opt/firefox`, `/opt/pjeoffice`, `/opt/venv`, `/opt/novnc`,
   `/root/.mozilla/firefox/selenium.default-release`, `/etc/opt/chrome*/policies/managed`,
   `/app/a1cert.py` (API usada pelos scripts), `/app/a1_check.py`, `/app/egress_proxy.py`, `/app/egress_check.py`,
-  `/app/preflight.py`, `/app/pjeoffice_check.py`, `/app/resource_usage.py`, `/app/image_info.py`, `/app/worker_events.py`
-  (+ `/app/image_info.json`, gravado no build), `/opt/icp-brasil/` (`raizes.pem`, `acs.pem`).
+  `/app/preflight.py`, `/app/pjeoffice_check.py`, `/app/resource_usage.py`, `/app/image_info.py`, `/app/worker_events.py`,
+  `/app/browser_stability.py` (+ `/app/image_info.json`, gravado no build), `/opt/icp-brasil/` (`raizes.pem`, `acs.pem`),
+  `/etc/opt/chrome*/policies/managed/popups.json` e os drivers do SeleniumBase (`seleniumbase/drivers/chromedriver`,
+  `uc_driver`, `cft_drivers/{chromedriver,uc_driver,chrome-linux64 -> /opt/chrome}`).
 - Variáveis de ambiente e seus defaults (`USE_*`, `WORKER_*`, `SCRIPT_URL`, `HELPER_URLS`,
   `CHROME_PROFILE_URL`, `TASK_*`, `SCREEN_*`, `PJEOFFICE_*`, `A1_PFX_*`, `EGRESS_*`, `RESOURCE_*`, `PREFLIGHT_*`,
   `VNC_*`, `LOG_MAX_MB`, `SCRIPT_SHA256`, `LOG_POST_*`, `PING_URL*`, `SCREENSHOT_*`).
@@ -27,7 +29,8 @@ Usuários da imagem dependem do que está abaixo. Não mude nada disso sem pedid
   estão travados em `tests/unit/test_entrypoint.py`.
 - Build-args usados pelo release: `BUILD_PJEOFFICE=1`, `ENABLE_PDF_TOOLS=1`,
   `ENABLE_VNC=1`, `ENABLE_NOVNC=1`, `CHROME_PROFILE_URL`, `SELENIUMBASE_REFRESH`,
-  `IMAGE_REVISION`/`IMAGE_CREATED` (só a identificação, na última camada).
+  `IMAGE_REVISION`/`IMAGE_CREATED` (só a identificação, na última camada). `SELENIUMBASE_VERSION` (fixo no
+  Dockerfile; `latest` só no canário do nightly).
 
 Para conferir se uma mudança alterou o contrato, compare snapshots
 (veja "Validação" abaixo).
@@ -45,6 +48,7 @@ Para conferir se uma mudança alterou o contrato, compare snapshots
 | `image/app/preflight.py` | "o worker está pronto?": browsers + `a1_check` + `egress_check` num JSON |
 | `image/app/resource_usage.py` | CPU/memória de cada execução pelo cgroup (média, p95, pico, sugestão de reserva) e por grupo de processos pelo `/proc` (Chrome, PJeOffice, Xvfb, script...); o entrypoint e o standby rodam o script através dele (`RESOURCE_SUMMARY=1`); `report` junta `/app/logs/resources.jsonl` |
 | `image/app/worker_events.py` | o que aconteceu, para quem acompanha de fora (tudo opcional): `status.json` (`WORKER_STATUS=1`), ping por execução (`PING_URL`), telas da falha (`SCREENSHOT_ON_FAIL=1`) e POST do log no fim do container (`LOG_POST_URL`) |
+| `image/app/browser_stability.py` | o browser aguenta? sessão longa, sessões recriadas, falhas controladas (lenta, travada, cortada, 500/503), regressão do UC (`uc_especial`) e os modos Selenium/SeleniumBase/UC/UC+cft; classifica cada falha (`CHROMEDRIVER_EXITED`, `SESSION_LOST`...) e guarda o diagnóstico (log `--verbose` do ChromeDriver, PIDs, cgroup/OOM, shm, zombies); roda no portão e no servidor ([docs/CHROMEDRIVER_STABILITY.md](docs/CHROMEDRIVER_STABILITY.md)) |
 | `image/app/image_info.py` | qual imagem é esta: grava `/app/image_info.json` no build (`IMAGE_REVISION`), primeira linha do log e `"imagem"` no preflight |
 | `image/app/pjeoffice_check.py` | o PJeOffice assina? Chrome clica em "Testar" na página local dele (127.0.0.1:8800), xdotool responde a senha; usado pelo `a1_check` com `USE_PJEOFFICE=1` |
 | `image/icp-brasil/` | raízes (fingerprint fixado) + ACs oficiais da ICP-Brasil (ITI) → `/opt/icp-brasil`; só para validar cadeia do A1, fora do trust store |
@@ -69,11 +73,18 @@ Para conferir se uma mudança alterou o contrato, compare snapshots
 **Adicionar um arquivo ao `/app` da imagem:** coloque-o em `image/app/`. Nada fora de
 `image/` chega à imagem. Se for executável, marque no git (`git update-index --chmod=+x`).
 
-**Adicionar um pacote Python:** edite `requirements.txt`. O SeleniumBase é atualizado
-para a versão mais recente do PyPI logo depois, na mesma camada. Ele pode passar por cima
+**Adicionar um pacote Python:** edite `requirements.txt`. O SeleniumBase é instalado no mesmo `pip install`,
+na versão fixa de `ARG SELENIUMBASE_VERSION` (ele fixa o Selenium). Ele pode passar por cima
 de pins do `requirements.txt` (hoje: `psutil==6.1.0` → roda 7.2.2). Pacotes
 instalados em camadas posteriores, como o `websockify` do noVNC, também podem fazer isso
 (hoje: `cryptography<47` → roda 50.0.2).
+
+**Atualizar o SeleniumBase:** só depois do canário do nightly (`seleniumbase-canary`, que constrói com
+`SELENIUMBASE_VERSION=latest` e roda o `browser_stability.py`) passar com a versão nova; então troque o ARG num PR.
+A 4.58.0 quebrou o modo UC em produção quando a imagem seguia "sempre a mais recente". Os drivers do SeleniumBase
+são hard links do ChromeDriver da imagem e `cft_drivers/chrome-linux64` aponta para `/opt/chrome`: o build confere
+(`cmp`) e falha se o SeleniumBase baixar outro. A policy `popups.json` é necessária para o modo UC (abre páginas
+4xx/5xx/reCAPTCHA com `window.open()`); não a remova sem rodar o cenário `uc_especial`.
 
 **Atualizar Chrome/Firefox:** altere `ARG CHROME_VERSION`, `ARG FIREFOX_VERSION` e
 `ARG GECKODRIVER_VERSION` no estágio builder. Chrome e ChromeDriver usam a mesma versão
@@ -231,7 +242,7 @@ noVNC → VNC) devem checar a dependência e pular com aviso, não falhar.
 
 - [x] **Fase 0:** baseline da imagem de produção (`docs/baseline/`) e `scripts/image-snapshot.sh`.
 - [x] **Fase 1:** remoção das imagens legadas, nova estrutura (`image/`, `tests/`, `examples/`, `docs/`),
-  `.dockerignore` em allowlist, `COPY` explícito, SeleniumBase sempre na versão mais recente,
+  `.dockerignore` em allowlist, `COPY` explícito, SeleniumBase sempre na versão mais recente (hoje fixo + canário, veja abaixo),
   compose de exemplo corrigidos, testes unitários consolidados e rodando no CI.
 - [x] **Fase 2:** release só publica após `scripts/test-image.sh` na mesma imagem; gatilho inclui
   `image/**` e `requirements.txt`; um único build igual ao de produção no CI; sem `|| exit 0`;
@@ -263,6 +274,10 @@ noVNC → VNC) devem checar a dependência e pular com aviso, não falhar.
 - [x] **Partida defensiva:** locks velhos do Xvfb/Chrome/Firefox removidos depois de restart; Xvfb falha
   rápido mostrando o erro; `PJEOFFICE_JAVA_XMX`; `SCRIPT_SHA256`; rotação opcional de `/app/logs` (`LOG_MAX_MB`, desligada por padrão); VNC com
   senha (`VNC_PASSWORD_FILE`) e só visualização (`VNC_VIEW_ONLY`).
+- [x] **Estabilidade do ChromeDriver:** causa do `Connection refused` ~60 s depois de navegar (SeleniumBase 4.58 no UC
+  sem `--disable-popup-blocking`) corrigida com policy de pop-ups; SeleniumBase fixo + canário no nightly; drivers do
+  SeleniumBase (inclusive `cft=True`) = ChromeDriver/Chrome da imagem; `browser_stability.py` no portão (sozinho e 3
+  containers com 2 GB/1 CPU, com e sem PJeOffice) com diagnóstico classificado.
 - [x] **Observabilidade e eficiência:** POST do log no fim do container (`LOG_POST_URL`, últimas linhas +
   `worker.txt` opcional), telas do Xvfb na falha (`SCREENSHOT_ON_FAIL`), ping por execução (`PING_URL`), espera
   crescente no loop sem trabalho (`WORKER_IDLE_EXIT_CODE`) e `/app/logs/status.json` (`WORKER_STATUS`); tudo opt-in.

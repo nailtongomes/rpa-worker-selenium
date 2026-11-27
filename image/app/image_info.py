@@ -40,6 +40,15 @@ def _version(cmd: list) -> str:
     return next((w for w in words if w[:1].isdigit()), "")
 
 
+def _package(name: str) -> str:
+    try:
+        from importlib import metadata
+
+        return metadata.version(name)
+    except Exception:  # noqa: BLE001 - fora da imagem o pacote pode não existir
+        return ""
+
+
 def tag_for(revision: str, arch: str) -> str:
     """Tag publicada pelo release para esta revisão (sha-<7>, com -arm64 no ARM)."""
     if not revision or revision == "dev":
@@ -58,6 +67,8 @@ def collect(revision: str = "dev", created: str = "") -> dict:
         "chromedriver": _version(["chromedriver", "--version"]),
         "firefox": _version(["firefox", "--version"]),
         "geckodriver": _version(["geckodriver", "--version"]),
+        "selenium": _package("selenium"),
+        "seleniumbase": _package("seleniumbase"),
         "python": platform.python_version(),
     }
 
@@ -78,7 +89,7 @@ def summary_line(info: dict) -> str:
     parts = [f"Imagem {info.get('tag') or 'desconhecida'} ({info.get('arquitetura', '?')})"]
     if info.get("criada_em"):
         parts.append(f"build {info['criada_em']}")
-    for key, name in (("chrome", "Chrome"), ("firefox", "Firefox")):
+    for key, name in (("chrome", "Chrome"), ("firefox", "Firefox"), ("seleniumbase", "SeleniumBase")):
         if info.get(key):
             parts.append(f"{name} {info[key]}")
     return " · ".join(parts)

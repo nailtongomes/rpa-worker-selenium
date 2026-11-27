@@ -28,7 +28,7 @@ testada no mesmo portão num runner ARM ([receita do servidor ARM](recipes/servi
 | Python | 3.13 (venv em `/opt/venv`) | pacotes em [`requirements.txt`](requirements.txt) |
 | Google Chrome for Testing + ChromeDriver | `ARG CHROME_VERSION` | mesma versão, baixados juntos |
 | Firefox ESR (pt-BR) + GeckoDriver | `ARG FIREFOX_VERSION` / `ARG GECKODRIVER_VERSION` | profile `selenium.default-release` com NSS pronto |
-| SeleniumBase | **sempre a mais recente do PyPI** no momento do release | camada própria, renovada a cada release |
+| SeleniumBase (+ Selenium, fixado por ele) | `ARG SELENIUMBASE_VERSION` (fixo; hoje 4.59.0) | versões novas passam antes pelo canário do nightly; `Driver()`, `Driver(uc=True)` e `Driver(uc=True, cft=True)` prontos com o ChromeDriver e o Chrome da imagem, sem download na hora |
 | PJeOffice Pro (com o Java 8 dele, que também é o `java`/`keytool` do PATH) | 2.5.16 | `BUILD_PJEOFFICE=1` no release |
 | ImageMagick + Ghostscript | Debian | `ENABLE_PDF_TOOLS=1` no release |
 | x11vnc + noVNC | Debian / GitHub | `ENABLE_VNC=1`, `ENABLE_NOVNC=1` no release |
@@ -192,11 +192,30 @@ sistema que o worker usa.
 A primeira linha do log diz a tag, a arquitetura, a data do build e os browsers:
 
 ```text
-🏷️  Imagem sha-4eda8ad (arm64) · build 20261124-153000 · Chrome 158.0.8127.36 · Firefox 153.7.0esr
+🏷️  Imagem sha-4eda8ad (arm64) · build 20261124-153000 · Chrome 158.0.8127.36 · Firefox 153.7.0esr · SeleniumBase 4.59.0
 ```
 
 `python /app/image_info.py --json` mostra o mesmo em JSON (gravado no build em `/app/image_info.json`).
 Um build local, sem `IMAGE_REVISION`, aparece como `dev`.
+
+### O browser aguenta? (`browser_stability.py`)
+
+Muitas navegações numa sessão, sessões recriadas, uma sessão longa, página lenta/travada/cortada/500/503 e os
+modos Selenium, SeleniumBase, UC e UC + `cft=True` (headless e headful), com os mesmos limites do worker:
+
+```bash
+docker run --rm --memory=2g --cpus=1 --shm-size=2g --init -e USE_XVFB=1 -e USE_OPENBOX=1 \
+  -v "$PWD/estabilidade:/app/logs/stability" ghcr.io/nailtongomes/rpa-worker-selenium:latest \
+  python /app/browser_stability.py --mode uc-headful --external
+```
+
+Cada falha sai classificada (`CHROMEDRIVER_EXITED`, `SESSION_LOST`, `CHROME_CRASH`, `RESOURCE_EXHAUSTED`,
+`NAVIGATION_TIMEOUT`, `DNS_ERROR`...). O diagnóstico vai junto: log detalhado do ChromeDriver, PIDs e exit code,
+memória e OOM do cgroup, `/dev/shm`, zombies, Xvfb, PJeOffice e screenshot. Site externo fora do ar é só aviso.
+
+O mesmo teste roda no portão do CI e do release. Foi ele que mostrou a causa do `Connection refused` na porta
+do ChromeDriver uns 60 s depois de uma navegação: regressão do SeleniumBase 4.58 no modo UC, corrigida na
+imagem. Veja [docs/CHROMEDRIVER_STABILITY.md](docs/CHROMEDRIVER_STABILITY.md).
 
 ### Quanto o script consumiu (para dimensionar)
 
@@ -548,6 +567,7 @@ Mais detalhes em [`docs/TESTING.md`](docs/TESTING.md).
 - [docs/VNC_CADDY_PROXY.md](docs/VNC_CADDY_PROXY.md) — VNC atrás de proxy reverso
 - [docs/FULL_SMOKE_TEST.md](docs/FULL_SMOKE_TEST.md) — smoke test completo
 - [docs/TESTING.md](docs/TESTING.md) — estratégia de testes
+- [docs/CHROMEDRIVER_STABILITY.md](docs/CHROMEDRIVER_STABILITY.md) — `Connection refused` no ChromeDriver: investigação, causa (SeleniumBase 4.58 no UC), testes de estabilidade e versões fixas
 - [AGENTS.md](AGENTS.md) — guia para agentes de IA trabalhando neste repositório
 
 ## Licença

@@ -88,9 +88,33 @@ def test_release_build_args_are_declared(dockerfile_text):
     assert not missing, f"build-args do release sem ARG no Dockerfile: {missing}"
 
 
-def test_seleniumbase_tracks_latest(dockerfile_text):
+def test_seleniumbase_is_pinned(dockerfile_text):
+    """Versão fixa (resolvida junto com o requirements.txt, num pip só); "latest" é o comportamento
+    antigo, usado pelo canário do nightly para validar versões novas antes de mudar o pin."""
     assert "ARG SELENIUMBASE_REFRESH" in dockerfile_text
-    assert "pip install --upgrade seleniumbase" in dockerfile_text
+    assert re.search(r"^ARG SELENIUMBASE_VERSION=\d+\.\d+\.\d+$", dockerfile_text, re.MULTILINE)
+    assert 'pip install -r requirements.txt "seleniumbase==${SELENIUMBASE_VERSION}"' in dockerfile_text
+    assert 'if [ "$SELENIUMBASE_VERSION" = "latest" ]' in dockerfile_text
+    requirement = next(l for l in (REPO_ROOT / "requirements.txt").read_text().splitlines()
+                       if l.split("#")[0].strip().startswith("seleniumbase"))
+    assert requirement.split("#")[0].strip() == "seleniumbase", "versão do SeleniumBase só no Dockerfile"
+
+
+def test_chrome_allows_popups(dockerfile_text):
+    """Regressão do SeleniumBase 4.58 no modo UC (docs/CHROMEDRIVER_STABILITY.md)."""
+    assert '{"DefaultPopupsSetting": 1}' in dockerfile_text
+    assert "/etc/opt/chrome/policies/managed /etc/opt/chrome_for_testing/policies/managed" in dockerfile_text
+
+
+def test_seleniumbase_drivers_are_the_image_chromedriver(dockerfile_text):
+    """Driver()/uc/cft prontos com o ChromeDriver e o Chrome da imagem, sem download em runtime."""
+    warm = dockerfile_text[dockerfile_text.index('RUN D="$(python -c'):]
+    warm = warm[:warm.index("\n\n")]
+    assert 'install -m 0755 /usr/local/bin/chromedriver "$D/chromedriver"' in warm
+    assert 'ln -s /opt/chrome "$D/cft_drivers/chrome-linux64"' in warm
+    for kw in ("dict(uc=True, incognito=True)", "dict(uc=True, cft=True)", "dict()", "dict(cft=True)"):
+        assert kw in warm
+    assert "cmp /usr/local/bin/chromedriver" in warm and "ln -f" in warm
 
 
 def test_chrome_and_chromedriver_share_version(dockerfile_text):

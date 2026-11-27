@@ -304,3 +304,17 @@ def test_builds_record_the_revision(path, job):
 def test_release_records_the_tag_timestamp():
     args = _build_args(_build_step(_load(RELEASE), "build-and-push"))
     assert args["IMAGE_CREATED"] == "${{ steps.meta.outputs.timestamp }}"
+
+
+def test_seleniumbase_pinned_in_production_and_canary_tries_the_newest():
+    """Release/CI/nightly usam o pin do Dockerfile; só o canário do nightly testa o mais novo do PyPI."""
+    for path, job in [(CI, "image"), (RELEASE, "build-and-push"), (NIGHTLY, "production-image")]:
+        assert "SELENIUMBASE_VERSION" not in _build_args(_build_step(_load(path), job)), path.name
+    canary = _load(NIGHTLY)["jobs"]["seleniumbase-canary"]
+    args = _build_args(_build_step(_load(NIGHTLY), "seleniumbase-canary"))
+    assert args["SELENIUMBASE_VERSION"] == "latest"
+    release_features = {k: v for k, v in _build_args(_build_step(_load(RELEASE), "build-and-push")).items()
+                        if k.startswith(("BUILD_", "ENABLE_"))}
+    assert {k: v for k, v in args.items() if k.startswith(("BUILD_", "ENABLE_"))} == release_features
+    run = "\n".join(step.get("run", "") for step in canary["steps"])
+    assert "browser_stability.py" in run and "--memory=2g" in run and "uc_especial" in run

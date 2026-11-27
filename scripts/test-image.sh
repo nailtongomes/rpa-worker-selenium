@@ -16,8 +16,10 @@
 #   RUN_ONLINE_TESTS  1 (padrão) inclui a visita à página do projeto no GitHub
 #   EXPECT_FEATURES   recursos opcionais esperados (padrão: pjeoffice,pdf,vnc,novnc)
 #   DOCKER_RUN_ARGS   argumentos extras para todo `docker run` (ex.: proxy/CA)
+#   STABILITY_EXTERNAL_URLS  sites dos testes externos de estabilidade (padrão: browser_stability.py)
+#   STABILITY_DURATION       segundos da sessão prolongada (padrão: 120)
 #
-# Resultados em <dir-resultados>: junit-*.xml, screenshots/, logs/, summary.md
+# Resultados em <dir-resultados>: junit-*.xml, screenshots/, logs/, stability/, summary.md
 # =============================================================================
 set -uo pipefail
 
@@ -613,6 +615,100 @@ PY
     return "$ok"
 }
 
+# --- estabilidade do browser (image/app/browser_stability.py) --------------------------------
+# Limites de um worker em produção. O script roda pelo entrypoint (serviços como em produção);
+# relatórios e, em falha, o diagnóstico (log do ChromeDriver, processos, cgroup...) ficam em stability/.
+STABILITY_LIMITS=(--memory=2g --cpus=1 --shm-size=2g --init)
+STABILITY_UC_SCENARIOS="modos,sequencial,sessoes,recuperacao,uc_especial"
+
+stability_container() {  # <label> <log> [args do docker] -- [args do browser_stability.py]
+    local label="$1" log="$2" docker_args=()
+    shift 2
+    while [ "$#" -gt 0 ] && [ "$1" != "--" ]; do docker_args+=("$1"); shift; done
+    shift
+    timeout 900 docker run --rm "${STABILITY_LIMITS[@]}" -v "$RESULTS:/results" \
+        -e STABILITY_EXTERNAL_URLS="${STABILITY_EXTERNAL_URLS:-}" "${docker_args[@]}" "${EXTRA_ARGS[@]}" \
+        "$IMAGE" python /app/browser_stability.py --out /results/stability --label "$label" "$@" > "$log" 2>&1
+}
+
+stability_show() {
+    grep -E '^\[[0-9: -]+\] (✅|❌|⚠️|⏭️|🏷️|🔎)' "$1" | cut -c1-260
+}
+
+scenario_stability_alone() {
+    # Um container sozinho: referência de tempos, regressão do UC (4xx/5xx/reCAPTCHA) e sites externos
+    # (falha de site é aviso; sessão/driver perdido reprova). Headful em Xvfb como os workers.
+    local log="$RESULTS/logs/stability-base.log" rc ext=()
+    mkdir -p "$RESULTS/stability" && chmod 777 "$RESULTS/stability"
+    [ "$RUN_ONLINE_TESTS" = "1" ] && ext=(--external)
+    stability_container base "$log" -e USE_XVFB=1 -e USE_OPENBOX=1 -- \
+        --mode uc-headful --scenarios sequencial,uc_especial "${ext[@]}"
+    rc=$?
+    stability_show "$log"
+    return "$rc"
+}
+
+scenario_stability_concurrent() {
+    # Três containers ao mesmo tempo, mesma imagem e mesmos limites: sem e com PJeOffice (só isso muda
+    # entre os dois) e uma sessão UC headless de STABILITY_DURATION segundos. Reprova se qualquer um perder
+    # sessão/driver/browser, falhar um cenário local ou tiver OOM; degradação de tempo só gera aviso.
+    local labels=(sem-pjeoffice com-pjeoffice prolongada) pids=() i rc ok=0
+    mkdir -p "$RESULTS/stability" && chmod 777 "$RESULTS/stability"
+    stability_container sem-pjeoffice "$RESULTS/logs/stability-sem-pjeoffice.log" \
+        -e USE_XVFB=1 -e USE_OPENBOX=1 -- --mode uc-headful --scenarios "$STABILITY_UC_SCENARIOS" &
+    pids+=($!)
+    stability_container com-pjeoffice "$RESULTS/logs/stability-com-pjeoffice.log" \
+        -e USE_XVFB=1 -e USE_OPENBOX=1 -e USE_PJEOFFICE=1 -- --mode uc-headful --scenarios "$STABILITY_UC_SCENARIOS" &
+    pids+=($!)
+    stability_container prolongada "$RESULTS/logs/stability-prolongada.log" -- \
+        --mode uc-headless --scenarios prolongada --duration "${STABILITY_DURATION:-120}" &
+    pids+=($!)
+    for i in 0 1 2; do
+        wait "${pids[$i]}"
+        rc=$?
+        echo "--- ${labels[$i]} (exit $rc)"
+        stability_show "$RESULTS/logs/stability-${labels[$i]}.log"
+        [ "$rc" -eq 0 ] || ok=1
+    done
+    python3 - "$RESULTS/stability" <<'PY' || ok=1
+import json, sys
+from pathlib import Path
+out = Path(sys.argv[1])
+rows, med, fails = [], {}, []
+for label in ("base", "sem-pjeoffice", "com-pjeoffice", "prolongada"):
+    f = out / f"{label}.json"
+    if not f.exists():
+        rows.append(f"| {label} | sem relatório | | | | | |"); fails.append(label); continue
+    r = json.loads(f.read_text())
+    navs = sorted(t for c in r["cenarios"] for t in [c["navegacoes"].get("mediana_s")] if t is not None)
+    seq = next((c["navegacoes"].get("mediana_s") for c in r["cenarios"] if c["cenario"] == "sequencial"), None)
+    med[label] = seq
+    rec = r["recursos"]
+    pje = (r.get("ambiente_fim") or {}).get("servicos", {}).get("pjeoffice", {})
+    n = sum(c["navegacoes"].get("n", 0) for c in r["cenarios"])
+    rows.append(f"| {label} | {'✅' if r['resultado'] == 'ok' else '❌'} | {n} | "
+                f"{seq if seq is not None else '-'} s | {rec.get('memoria_pico_mb')} / {rec.get('memoria_limite_mb')} MB | "
+                f"{rec.get('oom_kill')} | {rec.get('zombies_fim')} | "
+                f"{(str(pje.get('rss_mb')) + ' MB') if pje.get('rodando') else '-'} |")
+    if r["resultado"] != "ok" or rec.get("oom_kill"):
+        fails.append(label)
+table = ["### 🧭 Estabilidade do browser (2 GB, 1 CPU, shm 2 GB, --init)", "",
+         "| container | resultado | navegações | mediana sequencial | pico de memória / limite | OOM kill | zombies | PJeOffice |",
+         "|---|---|---|---|---|---|---|---|", *rows, ""]
+if med.get("base") and med.get("sem-pjeoffice"):
+    ratio = med["sem-pjeoffice"] / med["base"]
+    note = f"Degradação com 3 containers simultâneos: mediana {ratio:.1f}x a do container sozinho"
+    table.append(("⚠️ " if ratio > 3 else "") + note + (" (acima de 3x: conferir a máquina)" if ratio > 3 else ""))
+if med.get("sem-pjeoffice") and med.get("com-pjeoffice"):
+    table.append(f"Com PJeOffice: mediana {med['com-pjeoffice'] / med['sem-pjeoffice']:.1f}x a sem PJeOffice")
+text = "\n".join(table) + "\n"
+(out / "resumo.md").write_text(text, encoding="utf-8")
+print(text)
+sys.exit(1 if fails else 0)
+PY
+    return "$ok"
+}
+
 scenario_passthrough_command() {
     run_in_image "$IMAGE" python --version | tee "$RESULTS/logs/passthrough.log" | grep -q "Python 3"
 }
@@ -663,6 +759,8 @@ SCENARIOS=(
     "execução única com SCRIPT_URL:scenario_single_run_ok"
     "falha do script propaga exit code:scenario_single_run_failure_propagates"
     "limites do container - avisos do preflight e resumo de recursos (shm 64 MB, 1 GB, 0,5 CPU):scenario_limits_and_resources"
+    "estabilidade do browser - container sozinho (UC headful, reCAPTCHA/4xx/5xx, sites externos):scenario_stability_alone"
+    "estabilidade do browser - 3 containers simultâneos (sem e com PJeOffice, sessão de 120 s, 2 GB e 1 CPU):scenario_stability_concurrent"
     "comando direto (passthrough):scenario_passthrough_command"
     "modo standby (HTTP):scenario_standby"
 )
@@ -684,6 +782,7 @@ done
     for name in "${FAILED[@]}"; do echo "- ❌ $name"; done
     echo
     echo "Online: \`$RUN_ONLINE_TESTS\` · Features: \`$EXPECT_FEATURES\`"
+    if [ -f "$RESULTS/stability/resumo.md" ]; then echo; cat "$RESULTS/stability/resumo.md"; fi
 } > "$RESULTS/summary.md"
 
 echo
