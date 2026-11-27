@@ -73,8 +73,9 @@ Para conferir se uma mudança alterou o contrato, compare snapshots
 **Adicionar um arquivo ao `/app` da imagem:** coloque-o em `image/app/`. Nada fora de
 `image/` chega à imagem. Se for executável, marque no git (`git update-index --chmod=+x`).
 
-**Adicionar um pacote Python:** edite `requirements.txt`. O SeleniumBase é instalado no mesmo `pip install`,
-na versão fixa de `ARG SELENIUMBASE_VERSION` (ele fixa o Selenium). Ele pode passar por cima
+**Adicionar um pacote Python:** edite `requirements.txt`. O SeleniumBase é instalado logo depois, num segundo `pip install`
+da mesma camada, na versão fixa de `ARG SELENIUMBASE_VERSION` (ele fixa o Selenium; num pip só daria conflito com
+`psutil==6.1.0`). Ele pode passar por cima
 de pins do `requirements.txt` (hoje: `psutil==6.1.0` → roda 7.2.2). Pacotes
 instalados em camadas posteriores, como o `websockify` do noVNC, também podem fazer isso
 (hoje: `cryptography<47` → roda 50.0.2).

@@ -450,9 +450,12 @@ fi
 # ============================================================================
 # Python dependencies (virtual environment)
 #
-# SeleniumBase is pinned (SELENIUMBASE_VERSION; it pins selenium itself) and resolved
-# together with requirements.txt in ONE pip install, in the SAME layer (a separate
-# layer would duplicate every package it changes, e.g. selenium/psutil, ~50 MB).
+# SeleniumBase is pinned (SELENIUMBASE_VERSION; it pins selenium itself) and installed
+# right after requirements.txt, in a second pip install of the SAME layer (a separate
+# layer would duplicate every package it changes, e.g. selenium/psutil, ~50 MB). It has
+# to be a second step: requirements.txt pins psutil==6.1.0, which the newest SeleniumBase
+# releases reject, so the first step settles on an old SeleniumBase and this one moves it
+# (and psutil/selenium) to the pinned versions, the same way the old --upgrade did.
 # New releases are validated by the nightly canary (SELENIUMBASE_VERSION=latest +
 # browser_stability.py) before the pin is bumped: SeleniumBase 4.58.0 shipped a UC
 # regression that reached production through the old "always latest" policy.
@@ -473,7 +476,7 @@ RUN --mount=type=cache,target=/root/.cache/pip \
  && if [ "$SELENIUMBASE_VERSION" = "latest" ]; then \
         pip install -r requirements.txt && pip install --upgrade seleniumbase; \
     else \
-        pip install -r requirements.txt "seleniumbase==${SELENIUMBASE_VERSION}"; \
+        pip install -r requirements.txt && pip install "seleniumbase==${SELENIUMBASE_VERSION}"; \
     fi \
  && if [ "$ENABLE_NOVNC" = "1" ]; then pip install websockify; fi \
  && pip show seleniumbase | grep -E '^(Name|Version):' \

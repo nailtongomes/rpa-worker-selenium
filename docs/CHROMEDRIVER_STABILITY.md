@@ -153,8 +153,10 @@ Contra a `:latest` atual (sem a correção), o portão **reprova** com `CHROMEDR
 
 ## Versões: fixas, com canário
 
-- `ARG SELENIUMBASE_VERSION=4.59.0` no Dockerfile, a versão que já estava em produção. O SeleniumBase fixa o Selenium
-  (`selenium==4.54.0`).
+- `ARG SELENIUMBASE_VERSION=4.59.0` no Dockerfile, a versão que já estava em produção. Ela é instalada num segundo
+  `pip install`, depois do `requirements.txt`, como o `--upgrade` antigo. Num pip só daria `ResolutionImpossible`: o
+  `requirements.txt` fixa `psutil==6.1.0`, que o SeleniumBase novo recusa. O resultado é igual ao de produção
+  (SeleniumBase 4.59.0, Selenium 4.54.0, psutil 7.2.2) e o `pip check` fica limpo. O SeleniumBase fixa o Selenium.
 - **Canário:** todo dia, o job `seleniumbase-canary` do nightly constrói a imagem igual à do release com
   `SELENIUMBASE_VERSION=latest` e roda o `browser_stability.py` com os limites de produção.
   - **Verde:** suba o ARG num PR, que passa pelo portão completo.

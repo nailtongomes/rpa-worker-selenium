@@ -89,15 +89,13 @@ def test_release_build_args_are_declared(dockerfile_text):
 
 
 def test_seleniumbase_is_pinned(dockerfile_text):
-    """Versão fixa (resolvida junto com o requirements.txt, num pip só); "latest" é o comportamento
-    antigo, usado pelo canário do nightly para validar versões novas antes de mudar o pin."""
+    """Versão fixa, num segundo pip install depois do requirements.txt (que fixa psutil==6.1.0, recusado pelo
+    SeleniumBase novo: num pip só dá ResolutionImpossible); "latest" é o comportamento antigo, usado pelo
+    canário do nightly para validar versões novas antes de mudar o pin."""
     assert "ARG SELENIUMBASE_REFRESH" in dockerfile_text
     assert re.search(r"^ARG SELENIUMBASE_VERSION=\d+\.\d+\.\d+$", dockerfile_text, re.MULTILINE)
-    assert 'pip install -r requirements.txt "seleniumbase==${SELENIUMBASE_VERSION}"' in dockerfile_text
+    assert 'pip install -r requirements.txt && pip install "seleniumbase==${SELENIUMBASE_VERSION}"' in dockerfile_text
     assert 'if [ "$SELENIUMBASE_VERSION" = "latest" ]' in dockerfile_text
-    requirement = next(l for l in (REPO_ROOT / "requirements.txt").read_text().splitlines()
-                       if l.split("#")[0].strip().startswith("seleniumbase"))
-    assert requirement.split("#")[0].strip() == "seleniumbase", "versão do SeleniumBase só no Dockerfile"
 
 
 def test_chrome_allows_popups(dockerfile_text):
