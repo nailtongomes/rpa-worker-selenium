@@ -21,7 +21,9 @@ pytest
 ```
 
 Cobrem: entrypoint (sintaxe, shellcheck, defaults do contrato, ordem dos serviços,
-SIGTERM, espera sem trabalho, POST no fim), `worker_events` (status.json, ping, envio do log, URLs fora do log), Dockerfile x `.dockerignore` x build-args, `script_downloader` (com servidor
+SIGTERM, espera sem trabalho, POST no fim), `worker_events` (status.json, ping, envio do log, URLs fora do log),
+`browser_stability` (classificação das falhas, servidor de falhas controladas, cgroup, `/proc`, porta do driver),
+Dockerfile x `.dockerignore` x build-args (SeleniumBase fixo, policy de pop-ups, drivers do SeleniumBase = ChromeDriver da imagem), `script_downloader` (com servidor
 HTTP local), `task_server`, `smoke_test`, exemplos de compose, scripts `.sh` e **as regras
 dos workflows** (`test_workflows.py`): o release só faz push depois do portão, CI/nightly
 constroem com as mesmas flags do release e não existe `|| exit 0` em nenhum workflow.
@@ -60,6 +62,8 @@ Cenários (cada um é um `docker run` separado; qualquer falha => exit 1):
 | execução única | `SCRIPT_URL` executa e o helper de `/app/src` é importável; o log começa com a linha da imagem e termina com o resumo de recursos (`📊` e `RESOURCE_SUMMARY`, com a divisão por processo) |
 | falha propaga exit code | script com `sys.exit(3)` => container termina com exit 3, mesmo com o medidor de recursos no meio |
 | limites do container | `--shm-size=64m -m 1g --cpus 0.5` com `USE_PJEOFFICE=1`: o preflight avisa sobre `/dev/shm`, memória e CPU **sem reprovar**; o `resource_usage.py` lê os limites e mede um pico de 300 MB alocados, atribuídos ao grupo do script na divisão por processo |
+| estabilidade do browser: container sozinho | `/app/browser_stability.py` com 2 GB, 1 CPU, shm 2 GB, `--init` e Xvfb: `sequencial` e `uc_especial` (UC abrindo 503, reCAPTCHA e 403, a regressão do SeleniumBase 4.58) em `uc-headful`, + `externos` (páginas de teste do Selenium e httpbingo) com `RUN_ONLINE_TESTS=1`; site fora do ar é aviso, sessão/driver perdido reprova |
+| estabilidade do browser: 3 containers simultâneos | mesmos limites, ao mesmo tempo: sem PJeOffice e com PJeOffice (`modos`, `sequencial`, `sessoes`, `recuperacao`, `uc_especial`) e uma sessão `prolongada` de 120 s; tabela com pico de memória, OOM kill, zombies, RSS do PJeOffice e degradação de tempo (aviso acima de 3x). Relatórios e diagnóstico das falhas em `test-results/stability/` ([detalhes](CHROMEDRIVER_STABILITY.md)) |
 | comando direto | `docker run <imagem> python --version` |
 | modo standby | `/health` = 200 e `/task` sem token = 401 |
 
@@ -103,7 +107,7 @@ docker run --rm --shm-size=2g -v "$PWD:/repo:ro" -w /tmp -e USE_XVFB=1 -e USE_OP
 |---|---|---|
 | `ci.yml` | todo PR e push na `main` | `unit-tests` → build com as flags do release → `test-image.sh` → ClearCote (informativo) |
 | `build-push-ghcr.yml` | push na `main` que muda `Dockerfile.trixie`, `requirements.txt` ou `image/**` (ou manual) | build (sem push) → `test-image.sh` na **mesma** imagem → diff com a `:latest` atual → `docker push` das tags `latest`, `sha-<7>`, `YYYYMMDD-HHMMSS` → GitHub Release (`scripts/release-notes.sh`: digest, PRs, mudanças na imagem, rollback) |
-| `nightly.yml` | todo dia 04:17 (Brasília) e manual | build **sem cache** + `test-image.sh` + relatório do que mudaria (Debian/PyPI) + variante com FFmpeg (gravação de tela) + ACs da ICP-Brasil x ITI (falha se o ITI publicou AC nova: rode `scripts/update-icp-brasil.py`) |
+| `nightly.yml` | todo dia 04:17 (Brasília) e manual | build **sem cache** + `test-image.sh` + relatório do que mudaria (Debian/PyPI) + **canário do SeleniumBase** (o mais novo do PyPI com `browser_stability.py`; verde = pode subir `SELENIUMBASE_VERSION`) + variante com FFmpeg (gravação de tela) + ACs da ICP-Brasil x ITI (falha se o ITI publicou AC nova: rode `scripts/update-icp-brasil.py`) |
 
 Se o portão falhar no release, **nada é publicado** e a `:latest` atual continua em
 produção. Falhas do nightly chegam por e-mail (notificação padrão do GitHub para workflows
@@ -125,5 +129,8 @@ A foto da imagem de produção usada como referência está em [`docs/baseline/`
   Em produção há sempre Xvfb; os testes refletem isso.
 - **No modo UC do SeleniumBase, use `driver.get()`**: `driver.open()` desconecta o
   chromedriver e a chamada seguinte falha (era o bug do antigo `smoke_test.py`).
+- **SeleniumBase 4.58+ no modo UC** perdia a sessão ~60 s depois de abrir página 4xx/5xx/reCAPTCHA
+  (`Connection refused` na porta do ChromeDriver): o pop-up do `window.open()` era bloqueado. A imagem libera
+  pop-ups por policy e o portão tem o cenário `uc_especial` ([detalhes](CHROMEDRIVER_STABILITY.md)).
 - `oscrypto` está no `requirements.txt` para os scripts de automação; o teste garante que
   ele carrega o backend OpenSSL.

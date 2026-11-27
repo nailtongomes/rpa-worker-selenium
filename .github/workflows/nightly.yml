@@ -1,10 +1,11 @@
 # =============================================================================
 # Nightly — detecta quebras vindas de fora ANTES do próximo release
 #
-# Debian Trixie, PyPI (SeleniumBase sempre na última versão) e os sites
-# mudam sem commit neste repositório. Toda noite:
+# Debian Trixie, PyPI e os sites mudam sem commit neste repositório. Toda noite:
 #   - build da imagem de produção SEM cache + scripts/test-image.sh (amd64 e arm64)
 #   - relatório do que mudaria em relação à :latest publicada
+#   - canário do SeleniumBase: o mais novo do PyPI (a imagem usa o fixo em
+#     SELENIUMBASE_VERSION) contra browser_stability.py; verde = pode subir o pin
 #   - build da variante com FFmpeg + teste de gravação de tela
 #   - ACs da ICP-Brasil empacotadas x repositório do ITI
 # Nada é publicado. Falhas de workflows agendados geram e-mail do GitHub.
@@ -88,6 +89,58 @@ jobs:
           path: |
             test-results/
             snapshots/
+          retention-days: 14
+
+  # SeleniumBase mais novo do PyPI antes de ir para produção: a 4.58.0 quebrou o modo UC (sessão
+  # perdida 60 s depois de abrir página 4xx/5xx/reCAPTCHA) e chegou ao :latest pelo "sempre o mais novo".
+  # Mesmo build do release com SELENIUMBASE_VERSION=latest + browser_stability.py com os limites de
+  # produção. Falha aqui = não subir o pin (ARG SELENIUMBASE_VERSION no Dockerfile.trixie).
+  seleniumbase-canary:
+    runs-on: ubuntu-latest
+    timeout-minutes: 90
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v7
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v4
+
+      - name: Build with the newest SeleniumBase (SELENIUMBASE_VERSION=latest)
+        uses: docker/build-push-action@v7
+        with:
+          context: .
+          file: ./Dockerfile.trixie
+          platforms: linux/amd64
+          load: true
+          push: false
+          tags: rpa-worker:seleniumbase-latest
+          build-args: |
+            BUILD_PJEOFFICE=1
+            ENABLE_PDF_TOOLS=1
+            ENABLE_VNC=1
+            ENABLE_NOVNC=1
+            SELENIUMBASE_VERSION=latest
+            IMAGE_REVISION=${{ github.sha }}
+          cache-from: type=gha,scope=buildkit
+
+      - name: Browser stability with the newest SeleniumBase
+        run: |
+          mkdir -p canary && chmod 777 canary
+          pinned="$(sed -n 's/^ARG SELENIUMBASE_VERSION=//p' Dockerfile.trixie)"
+          newest="$(docker run --rm --entrypoint python rpa-worker:seleniumbase-latest -c \
+            'from importlib.metadata import version; print(version("seleniumbase"))')"
+          echo "### 🐤 SeleniumBase: fixo ${pinned} x PyPI ${newest}" >> "$GITHUB_STEP_SUMMARY"
+          docker run --rm --memory=2g --cpus=1 --shm-size=2g --init -e USE_XVFB=1 -e USE_OPENBOX=1 \
+            -v "$(pwd)/canary:/results" rpa-worker:seleniumbase-latest \
+            python /app/browser_stability.py --out /results --label "seleniumbase-${newest}" \
+              --mode uc-headful --scenarios modos,sequencial,sessoes,recuperacao,uc_especial
+
+      - name: Upload results
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: nightly-seleniumbase-canary
+          path: canary/
           retention-days: 14
 
   # A1 de AC nova (criada pelo ITI depois do pacote em image/icp-brasil) não fecha

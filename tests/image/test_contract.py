@@ -59,6 +59,7 @@ def _requires(feature: str):
         ("/app/resource_usage.py", True),
         ("/app/image_info.py", True),
         ("/app/worker_events.py", True),
+        ("/app/browser_stability.py", True),
         ("/app/image_info.json", False),
         ("/app/requirements.txt", False),
     ],
@@ -100,6 +101,38 @@ def test_seleniumbase_uc_driver_prewarmed():
 
     drivers = Path(seleniumbase.__file__).parent / "drivers"
     assert (drivers / "uc_driver").exists(), "uc_driver não foi pré-baixado no build"
+
+
+def test_seleniumbase_drivers_are_the_image_chromedriver():
+    """Driver(), Driver(uc=True) e Driver(uc=True, cft=True) usam o ChromeDriver da imagem e o Chrome de
+    /opt/chrome: nada é baixado em tempo de execução (sem isso, com internet, o Driver() não-UC baixava o
+    ChromeDriver mais novo da versão e o cft=True baixava outro Chrome de ~440 MB)."""
+    import seleniumbase
+
+    drivers = Path(seleniumbase.__file__).parent / "drivers"
+    shipped = Path("/usr/local/bin/chromedriver").read_bytes()
+    copies = [drivers / "chromedriver", drivers / "uc_driver", drivers / "cft_drivers" / "chromedriver",
+              drivers / "cft_drivers" / "uc_driver"]
+    for copy in copies:
+        assert copy.read_bytes() == shipped, f"{copy} difere de /usr/local/bin/chromedriver"
+    assert len({c.stat().st_ino for c in copies}) == 1, "cópias do ChromeDriver não são um arquivo só (hard link)"
+    assert (drivers / "cft_drivers" / "chrome-linux64").resolve() == Path("/opt/chrome")
+
+
+def test_seleniumbase_is_the_pinned_version():
+    from importlib import metadata
+
+    info = json.loads(Path("/app/image_info.json").read_text(encoding="utf-8"))
+    assert info["seleniumbase"] == metadata.version("seleniumbase")
+    assert info["selenium"] == metadata.version("selenium")
+
+
+@pytest.mark.parametrize("policy_dir", ["/etc/opt/chrome/policies/managed", "/etc/opt/chrome_for_testing/policies/managed"])
+def test_chrome_allows_popups(policy_dir):
+    """O modo UC do SeleniumBase (4.58+) abre páginas 4xx/5xx/reCAPTCHA com window.open() e fecha a aba
+    atual: com o bloqueador de pop-ups ligado o Chrome fica sem abas e a sessão morre (browser_stability.py,
+    cenário uc_especial)."""
+    assert json.loads((Path(policy_dir) / "popups.json").read_text()) == {"DefaultPopupsSetting": 1}
 
 
 @pytest.mark.parametrize("policy_dir", ["/etc/opt/chrome/policies/managed", "/etc/opt/chrome_for_testing/policies/managed"])

@@ -32,9 +32,11 @@ def test_write_and_load(tmp_path):
     assert data["tag"].startswith("sha-abcdef1")
     loaded = image_info.load(out)
     assert loaded["imagem"] == f"{image_info.REGISTRY}:{data['tag']}"
-    line = image_info.summary_line({**loaded, "chrome": "158.0.1", "firefox": "153.7.0esr"})
+    assert "selenium" in data and "seleniumbase" in data
+    line = image_info.summary_line({**loaded, "chrome": "158.0.1", "firefox": "153.7.0esr",
+                                    "seleniumbase": "4.59.0"})
     assert line.startswith(f"Imagem {data['tag']} (") and "build 20261124-120000" in line
-    assert "Chrome 158.0.1" in line and "Firefox 153.7.0esr" in line
+    assert "Chrome 158.0.1" in line and "Firefox 153.7.0esr" in line and line.endswith("SeleniumBase 4.59.0")
 
 
 def test_load_without_file(tmp_path):

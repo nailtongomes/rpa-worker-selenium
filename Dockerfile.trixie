@@ -390,6 +390,15 @@ RUN mkdir -p /etc/opt/chrome_for_testing/policies/managed \
     && chown -R rpauser:rpauser /etc/opt/chrome_for_testing/policies/managed \
     && chmod 755 /etc/opt/chrome_for_testing/policies/managed
 
+# Pop-ups allowed (managed policy, both policy dirs). ChromeDriver always starts Chrome with
+# --disable-popup-blocking, but SeleniumBase UC mode starts Chrome itself and dropped that flag in 4.58.0,
+# while its driver.get() still opens 4xx/5xx/reCAPTCHA pages with window.open() + close(): with the blocker
+# on, Chrome is left without tabs and the next command fails ~60 s later with "Connection refused" on the
+# ChromeDriver port. See docs/CHROMEDRIVER_STABILITY.md (scenario uc_especial of browser_stability.py).
+RUN for d in /etc/opt/chrome/policies/managed /etc/opt/chrome_for_testing/policies/managed; do \
+        printf '{"DefaultPopupsSetting": 1}\n' > "$d/popups.json" && chmod 644 "$d/popups.json"; \
+    done
+
 # Set up OpenBox configuration to prevent menu warnings
 RUN mkdir -p /var/lib/openbox && \
     echo '<?xml version="1.0" encoding="UTF-8"?>' > /var/lib/openbox/debian-menu.xml && \
@@ -441,24 +450,34 @@ fi
 # ============================================================================
 # Python dependencies (virtual environment)
 #
-# SeleniumBase always tracks the latest release on PyPI: it is upgraded right
-# after requirements.txt, in the SAME layer (a separate layer would duplicate
-# every package it upgrades, e.g. selenium/psutil, adding ~50 MB).
+# SeleniumBase is pinned (SELENIUMBASE_VERSION; it pins selenium itself) and installed
+# right after requirements.txt, in a second pip install of the SAME layer (a separate
+# layer would duplicate every package it changes, e.g. selenium/psutil, ~50 MB). It has
+# to be a second step: requirements.txt pins psutil==6.1.0, which the newest SeleniumBase
+# releases reject, so the first step settles on an old SeleniumBase and this one moves it
+# (and psutil/selenium) to the pinned versions, the same way the old --upgrade did.
+# New releases are validated by the nightly canary (SELENIUMBASE_VERSION=latest +
+# browser_stability.py) before the pin is bumped: SeleniumBase 4.58.0 shipped a UC
+# regression that reached production through the old "always latest" policy.
+# SELENIUMBASE_VERSION=latest keeps that old behaviour (pip install --upgrade).
 # Any new value for SELENIUMBASE_REFRESH busts the cache of this layer; the
-# release workflow passes the run id, so every published image ships the
-# newest SeleniumBase even when the GitHub Actions layer cache is warm.
+# release workflow passes the run id (the other unpinned packages refresh).
 # websockify (noVNC), removing the pandas/numpy test suites and the chown to
 # rpauser also happen HERE: doing any of them in a later layer would store a
 # second copy of every touched file (the old separate chown cost ~670 MB).
 # ============================================================================
 COPY requirements.txt .
 ARG SELENIUMBASE_REFRESH=""
+ARG SELENIUMBASE_VERSION=4.59.0
 RUN --mount=type=cache,target=/root/.cache/pip \
     apt-get update \
  && apt-get install -y --no-install-recommends build-essential python3-dev \
  && pip install --upgrade pip \
- && pip install -r requirements.txt \
- && pip install --upgrade seleniumbase \
+ && if [ "$SELENIUMBASE_VERSION" = "latest" ]; then \
+        pip install -r requirements.txt && pip install --upgrade seleniumbase; \
+    else \
+        pip install -r requirements.txt && pip install "seleniumbase==${SELENIUMBASE_VERSION}"; \
+    fi \
  && if [ "$ENABLE_NOVNC" = "1" ]; then pip install websockify; fi \
  && pip show seleniumbase | grep -E '^(Name|Version):' \
  && find /opt/venv/lib/python*/site-packages/pandas /opt/venv/lib/python*/site-packages/numpy \
@@ -516,10 +535,26 @@ RUN mkdir -p /root/.mozilla/firefox \
 # do not invalidate them
 # ============================================================================
 
-# Pre-download drivers as root
-RUN python -c "from seleniumbase import Driver; d = Driver(uc=True, incognito=True, headless=True); \
-    d.get('about:blank'); d.quit()" \
-    && ls /opt/venv/lib/python*/site-packages/seleniumbase/drivers/uc_driver \
+# SeleniumBase drivers, ready and identical to /usr/local/bin/chromedriver (CHROME_VERSION, patched):
+# without drivers/chromedriver, Driver() (non-UC) downloaded the newest ChromeDriver of the milestone
+# at runtime when there was internet (another binary/version than the image's, ~1-3 s per container).
+# cft=True: cft_drivers/chrome-linux64 -> /opt/chrome, which IS Chrome for Testing ${CHROME_VERSION}
+# (SeleniumBase would otherwise download the newest CfT, ~440 MB, and on arm64 it looks for this same
+# folder name). Warm-up: Driver(uc=True), Driver(uc=True, cft=True), Driver() and Driver(cft=True);
+# afterwards every driver copy must be the image's binary (cmp) and becomes a hard link to one file.
+RUN D="$(python -c 'import os, seleniumbase.drivers as d; print(os.path.dirname(d.__file__))')" \
+    && install -m 0755 /usr/local/bin/chromedriver "$D/chromedriver" \
+    && ln "$D/chromedriver" "$D/cft_drivers/chromedriver" \
+    && ln -s /opt/chrome "$D/cft_drivers/chrome-linux64" \
+    && python -c "from seleniumbase import Driver; \
+warm = lambda d: (d.get('about:blank'), print(d.capabilities['browserVersion'], d.service.path), d.quit()); \
+[warm(Driver(headless=True, **kw)) for kw in \
+ (dict(uc=True, incognito=True), dict(uc=True, cft=True), dict(), dict(cft=True))]" \
+    && for f in uc_driver cft_drivers/uc_driver cft_drivers/chromedriver; do \
+        cmp /usr/local/bin/chromedriver "$D/$f" || exit 1; \
+        [ "$D/$f" -ef "$D/chromedriver" ] || ln -f "$D/chromedriver" "$D/$f" || exit 1; \
+    done \
+    && test "$(readlink -f "$D/cft_drivers/chrome-linux64/chrome")" = /opt/chrome/chrome \
     && rm -rf /root/.cache/selenium /tmp/* ~/.cache/pip \
     && mkdir -p /tmp/runtime-root && chmod 700 /tmp/runtime-root
 

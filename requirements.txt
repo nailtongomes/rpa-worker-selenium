@@ -1,4 +1,5 @@
 # Selenium and WebDriver
+# version actually installed: ARG SELENIUMBASE_VERSION in Dockerfile.trixie (second pip install, it pins selenium)
 seleniumbase>=4.48.4
 selenium
 
